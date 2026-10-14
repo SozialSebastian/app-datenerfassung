@@ -1,5 +1,5 @@
 // Offline-Cache für die App. Bei jeder Änderung an den Dateien VERSION erhöhen.
-const VERSION = "taeglich-v2";
+const VERSION = "taeglich-v3";
 const FILES = [
   "./",
   "./index.html",
