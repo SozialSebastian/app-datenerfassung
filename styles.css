@@ -210,3 +210,36 @@ textarea.paste { width: 100%; min-height: 70px; padding: 10px; border-radius: va
 @media (prefers-reduced-motion: reduce) {
   * { transition: none !important; }
 }
+
+/* ---------- Folgefragen ---------- */
+.q.child { margin-left: 14px; }
+label.check { display: flex; align-items: center; gap: 10px; margin: 12px 0 16px; font-weight: 600; font-size: 15px; }
+label.check input { width: 22px; height: 22px; accent-color: var(--act); }
+.field select {
+  padding: 12px; border-radius: var(--r-sm); border: 1.5px solid var(--line);
+  background: var(--surface); font-size: 17px; font-weight: 400; width: 100%; -webkit-appearance: none; appearance: none;
+}
+
+/* ---------- Abfrage ---------- */
+body.in-quiz .tabbar { display: none; }
+body.in-quiz main { padding-bottom: calc(env(safe-area-inset-bottom) + 24px); }
+.quiz { display: flex; flex-direction: column; min-height: calc(100dvh - env(safe-area-inset-top) - env(safe-area-inset-bottom) - 36px); }
+.quiz-top { display: flex; justify-content: space-between; align-items: center; font-size: 15px; }
+.bar { height: 6px; border-radius: 3px; background: var(--line); margin: 8px 0 36px; overflow: hidden; }
+.bar span { display: block; height: 100%; background: var(--hold); transition: width .3s ease; }
+.quiz-q { flex: 1; }
+.quiz-title { font-size: 30px; margin-bottom: 24px; }
+.quiz-q .chips { gap: 10px; }
+.quiz-q .chip { font-size: 19px; padding: 12px 22px; min-height: 52px; }
+.quiz-q .scale .chip { padding: 14px 0; }
+.quiz-q .numrow input { font-size: 28px; width: 7ch; }
+.quiz-nav { display: grid; grid-template-columns: 1fr 2fr; gap: 10px; padding-top: 20px; }
+.quiz-done { flex: 1; display: flex; flex-direction: column; padding-top: 32px; }
+.quiz-done h1 { margin: 18px 0 6px; }
+.hold.big { width: 64px; height: 64px; border-width: 5px; }
+.hold.big::after { width: calc(52px * var(--p)); height: calc(52px * var(--p)); }
+ul.summary { list-style: none; padding: 0; margin: 12px 0 24px; background: var(--surface); border-radius: var(--r-lg); }
+ul.summary li { display: flex; justify-content: space-between; gap: 12px; padding: 12px 16px; border-bottom: 1px solid var(--line); }
+ul.summary li:last-child { border-bottom: 0; }
+ul.summary strong { text-align: right; }
+.chips + .q-hint { margin: 8px 0 0; }

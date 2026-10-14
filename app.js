@@ -48,19 +48,62 @@ const parseNum = (v) => {
 };
 const fmtNum = (n) => (n === null || n === undefined ? "" : String(n).replace(".", ","));
 
-const activeQuestions = () => state.questions.filter((q) => !q.archived);
-const isAnswered = (v) => v !== undefined && v !== null && v !== "";
+const isAnswered = (v) => v !== undefined && v !== null && v !== "" && !(Array.isArray(v) && v.length === 0);
+const qById = (id) => state.questions.find((q) => q.id === id);
+const childrenOf = (id) => state.questions.filter((q) => q.cond && q.cond.qid === id);
+
+// Alle Fragen in Anzeigereihenfolge: Folgefragen stehen direkt hinter ihrer Ausgangsfrage
+function ordered() {
+  const ids = new Set(state.questions.map((q) => q.id));
+  const out = [];
+  const seen = new Set();
+  const visit = (q, depth) => {
+    if (seen.has(q.id)) return;
+    seen.add(q.id);
+    out.push({ q, depth });
+    childrenOf(q.id).forEach((c) => visit(c, depth + 1));
+  };
+  state.questions.filter((q) => !q.cond || !ids.has(q.cond.qid)).forEach((q) => visit(q, 0));
+  state.questions.forEach((q) => visit(q, 0)); // Sicherheitsnetz
+  return out;
+}
+
+// Ist die Bedingung einer Folgefrage an diesem Tag erfüllt?
+function condMet(q, a, guard = 0) {
+  if (!q.cond) return true;
+  const p = qById(q.cond.qid);
+  if (!p || p.archived || guard > 20) return false;
+  if (!condMet(p, a, guard + 1)) return false;
+  const v = a[p.id];
+  if (!isAnswered(v)) return false;
+  const vals = (Array.isArray(v) ? v : [v]).map(String);
+  return vals.some((x) => q.cond.values.includes(x));
+}
+
+const visibleQuestions = (date) => {
+  const a = state.answers[date] || {};
+  return ordered().map((o) => o.q).filter((q) => !q.archived && condMet(q, a));
+};
 
 function setAnswer(date, qid, value) {
   if (!state.answers[date]) state.answers[date] = {};
-  if (isAnswered(value)) state.answers[date][qid] = value;
-  else delete state.answers[date][qid];
-  if (Object.keys(state.answers[date]).length === 0) delete state.answers[date];
+  const a = state.answers[date];
+  if (isAnswered(value)) a[qid] = value;
+  else delete a[qid];
+  // Antworten von Folgefragen entfernen, deren Bedingung nicht mehr erfüllt ist
+  let changed = true;
+  while (changed) {
+    changed = false;
+    for (const q of state.questions) {
+      if (q.cond && a[q.id] !== undefined && !condMet(q, a)) { delete a[q.id]; changed = true; }
+    }
+  }
+  if (Object.keys(a).length === 0) delete state.answers[date];
   save();
 }
 
 function dayProgress(date) {
-  const qs = activeQuestions();
+  const qs = visibleQuestions(date);
   if (!qs.length) return 0;
   const a = state.answers[date] || {};
   return qs.filter((q) => isAnswered(a[q.id])).length / qs.length;
@@ -77,27 +120,95 @@ function toast(msg) {
 
 const typeLabel = { choice: "Auswahl", scale: "Skala", number: "Zahl" };
 function describe(q) {
-  if (q.type === "choice") return q.options.join(" / ");
+  if (q.type === "choice") return q.options.join(" / ") + (q.multi ? " (mehrere)" : "");
   if (q.type === "scale") return `Skala ${q.min}–${q.max}`;
   return `Zahl${q.unit ? " in " + q.unit : ""}`;
 }
+function condText(q) {
+  if (!q.cond) return "";
+  const p = qById(q.cond.qid);
+  return p ? `wenn „${p.text}“ = ${q.cond.values.join(" oder ")}` : "";
+}
+const fmtVal = (v) => (Array.isArray(v) ? v.join(", ") : typeof v === "number" ? fmtNum(v) : v);
 
 /* ================= Navigation ================= */
 let tab = "day";
 let current = todayIso();
+let quiz = null; // { date, idx } während einer Abfrage
 
 document.querySelectorAll(".tabbar button").forEach((b) =>
-  b.addEventListener("click", () => { tab = b.dataset.tab; render(); window.scrollTo(0, 0); })
+  b.addEventListener("click", () => { quiz = null; tab = b.dataset.tab; render(); window.scrollTo(0, 0); })
 );
 
 function render() {
+  document.body.classList.toggle("in-quiz", !!quiz);
   document.querySelectorAll(".tabbar button").forEach((b) => {
     if (b.dataset.tab === tab) b.setAttribute("aria-current", "page");
     else b.removeAttribute("aria-current");
   });
-  if (tab === "day") renderDay();
+  if (quiz) renderQuiz();
+  else if (tab === "day") renderDay();
   else if (tab === "questions") renderQuestions();
   else renderData();
+}
+
+/* ================= Antwort-Eingaben (Tag und Abfrage) ================= */
+function answerInput(q, val) {
+  if (q.type === "choice") {
+    const sel = (o) => (q.multi ? Array.isArray(val) && val.includes(o) : val === o);
+    return `<div class="chips">${q.options.map((o) =>
+      `<button class="chip" data-val="${esc(o)}" aria-pressed="${sel(o)}">${esc(o)}</button>`).join("")}</div>
+      ${q.multi ? `<p class="q-hint">Mehrere möglich</p>` : ""}`;
+  }
+  if (q.type === "scale") {
+    let btns = "";
+    for (let i = q.min; i <= q.max; i++) btns += `<button class="chip" data-val="${i}" aria-pressed="${val === i}">${i}</button>`;
+    let s = `<div class="scale">${btns}</div>`;
+    if (q.minLabel || q.maxLabel) s += `<div class="scale-labels"><span>${esc(q.minLabel)}</span><span>${esc(q.maxLabel)}</span></div>`;
+    return s;
+  }
+  return `<div class="numrow">
+      <input type="text" inputmode="decimal" autocomplete="off" value="${esc(fmtNum(val))}" aria-label="${esc(q.text)}" placeholder="–">
+      ${q.unit ? `<span class="unit">${esc(q.unit)}</span>` : ""}
+      ${isAnswered(val) ? `<button class="clear" data-clear>Leeren</button>` : ""}
+    </div>`;
+}
+
+// after(kind): "pick" = Einzelauswahl getippt, "input" = Zahl geändert (ohne Neuzeichnen,
+// sonst geht der nächste Tipp verloren), "enter" = Zahl mit Eingabetaste bestätigt, "edit" = sonstiges
+function wireInput(root, q, date, after) {
+  const cur = () => (state.answers[date] || {})[q.id];
+
+  root.querySelectorAll(".chip").forEach((b) => b.addEventListener("click", () => {
+    const c = cur();
+    if (q.type === "choice" && q.multi) {
+      const arr = Array.isArray(c) ? [...c] : [];
+      const i = arr.indexOf(b.dataset.val);
+      if (i >= 0) arr.splice(i, 1); else arr.push(b.dataset.val);
+      const order = q.options.filter((o) => arr.includes(o)); // Reihenfolge wie Antwortliste
+      setAnswer(date, q.id, order);
+      after("edit");
+      return;
+    }
+    const v = q.type === "scale" ? Number(b.dataset.val) : b.dataset.val;
+    if (c === v) { setAnswer(date, q.id, null); after("edit"); } // erneutes Tippen hebt Auswahl auf
+    else { setAnswer(date, q.id, v); after("pick"); }
+  }));
+
+  const inp = root.querySelector("input");
+  if (inp) {
+    const commit = () => {
+      const n = parseNum(inp.value);
+      if (Number.isNaN(n)) { toast("Bitte eine Zahl eingeben, z. B. 7,5"); inp.value = fmtNum(cur()); return false; }
+      if (n === (cur() ?? null)) return true;
+      setAnswer(date, q.id, n);
+      return true;
+    };
+    inp.addEventListener("change", () => { if (commit()) after("input"); });
+    inp.addEventListener("keydown", (e) => { if (e.key === "Enter") { e.preventDefault(); if (commit()) after("enter"); } });
+    root._commit = commit;
+  }
+  root.querySelector("[data-clear]")?.addEventListener("click", () => { setAnswer(date, q.id, null); after("edit"); });
 }
 
 /* ================= Tag ================= */
@@ -123,7 +234,7 @@ function renderDay() {
   }
   week += `<button class="nav" data-week="7" aria-label="Nächste Woche">›</button>`;
 
-  const qs = activeQuestions();
+  const qs = visibleQuestions(current);
   const a = state.answers[current] || {};
   const done = qs.filter((q) => isAnswered(a[q.id])).length;
   const hasHealth = qs.some((q) => q.healthKey);
@@ -136,9 +247,17 @@ function renderDay() {
       <button class="btn" id="firstq">Frage anlegen</button>
     </div>`;
   } else {
-    body = `<p class="progress">${done} von ${qs.length} beantwortet</p>`;
+    const startLabel = done === 0 ? "Abfrage starten" : done < qs.length ? "Abfrage fortsetzen" : "Abfrage nochmal durchgehen";
+    body = `<button class="btn block ${done < qs.length ? "hold-btn" : "ghost"}" id="startquiz">${startLabel}</button>
+      <p class="progress">${done} von ${qs.length} beantwortet</p>`;
     if (hasHealth) body += `<button class="btn ghost block" id="healthbtn" style="margin-bottom:12px">Werte aus Health einfügen</button>`;
-    body += qs.map((q) => questionCard(q, a[q.id])).join("");
+    body += qs.map((q) => {
+      const val = a[q.id];
+      return `<section class="q ${isAnswered(val) ? "done" : ""} ${q.cond ? "child" : ""}" data-qid="${q.id}">
+        <p class="q-title">${esc(q.text)}</p>
+        ${answerInput(q, val)}
+      </section>`;
+    }).join("");
   }
 
   view.innerHTML = `
@@ -157,78 +276,125 @@ function renderDay() {
   $("#gotoday")?.addEventListener("click", () => { current = todayIso(); renderDay(); });
   $("#firstq")?.addEventListener("click", () => openEditor(null));
   $("#healthbtn")?.addEventListener("click", healthFromClipboard);
+  $("#startquiz")?.addEventListener("click", () => startQuiz(current));
 
-  view.querySelectorAll(".q").forEach((card) => wireCard(card));
-}
-
-function questionCard(q, val) {
-  const done = isAnswered(val);
-  let input = "";
-  if (q.type === "choice") {
-    input = `<div class="chips">${q.options.map((o) =>
-      `<button class="chip" data-val="${esc(o)}" aria-pressed="${val === o}">${esc(o)}</button>`).join("")}</div>`;
-  } else if (q.type === "scale") {
-    let btns = "";
-    for (let i = q.min; i <= q.max; i++) btns += `<button class="chip" data-val="${i}" aria-pressed="${val === i}">${i}</button>`;
-    input = `<div class="scale">${btns}</div>`;
-    if (q.minLabel || q.maxLabel) input += `<div class="scale-labels"><span>${esc(q.minLabel)}</span><span>${esc(q.maxLabel)}</span></div>`;
-  } else {
-    input = `<div class="numrow">
-      <input type="text" inputmode="decimal" autocomplete="off" value="${esc(fmtNum(val))}" aria-label="${esc(q.text)}" placeholder="–">
-      ${q.unit ? `<span class="unit">${esc(q.unit)}</span>` : ""}
-      ${done ? `<button class="clear" data-clear>Leeren</button>` : ""}
-    </div>`;
-  }
-  return `<section class="q ${done ? "done" : ""}" data-qid="${q.id}">
-    <p class="q-title">${esc(q.text)}</p>
-    ${input}
-  </section>`;
-}
-
-function wireCard(card) {
-  const q = state.questions.find((x) => x.id === card.dataset.qid);
-  const cur = (state.answers[current] || {})[q.id];
-
-  card.querySelectorAll(".chip").forEach((b) => b.addEventListener("click", () => {
-    const v = q.type === "scale" ? Number(b.dataset.val) : b.dataset.val;
-    setAnswer(current, q.id, cur === v ? null : v); // erneutes Tippen hebt Auswahl auf
-    renderDay();
+  view.querySelectorAll(".q").forEach((card) => wireInput(card, qById(card.dataset.qid), current, (kind) => {
+    if (kind !== "input") return renderDay();
+    // Zahlen können keine Folgefragen auslösen → nur Markierung und Zähler aktualisieren
+    const aa = state.answers[current] || {};
+    card.classList.toggle("done", isAnswered(aa[card.dataset.qid]));
+    const vq = visibleQuestions(current);
+    $(".progress").textContent = `${vq.filter((x) => isAnswered(aa[x.id])).length} von ${vq.length} beantwortet`;
   }));
+}
 
-  const inp = card.querySelector("input");
-  if (inp) {
-    const commit = () => {
-      const n = parseNum(inp.value);
-      if (Number.isNaN(n)) { toast("Bitte eine Zahl eingeben, z. B. 7,5"); inp.value = fmtNum(cur); return; }
-      if (n === (cur ?? null)) return;
-      setAnswer(current, q.id, n);
-      renderDay();
-    };
-    inp.addEventListener("change", commit);
-    inp.addEventListener("keydown", (e) => { if (e.key === "Enter") inp.blur(); });
+/* ================= Abfrage: eine Frage nach der anderen ================= */
+function startQuiz(date) {
+  const qs = visibleQuestions(date);
+  const a = state.answers[date] || {};
+  const first = qs.findIndex((q) => !isAnswered(a[q.id]));
+  quiz = { date, idx: first < 0 ? 0 : first };
+  render();
+  window.scrollTo(0, 0);
+}
+
+function renderQuiz() {
+  const view = $("#view");
+  const { date } = quiz;
+  const qs = visibleQuestions(date); // wird nach jeder Antwort neu berechnet → Folgefragen erscheinen
+  const a = state.answers[date] || {};
+
+  if (quiz.idx >= qs.length) {
+    const open = qs.filter((q) => !isAnswered(a[q.id]));
+    view.innerHTML = `<div class="quiz">
+      <div class="quiz-top"><span class="muted">${longDate(date)}</span><button class="linkbtn" id="qclose">Schließen</button></div>
+      <div class="quiz-done">
+        <div class="hold big" style="--p:${dayProgress(date)}"></div>
+        <h1>${open.length ? "Fast geschafft" : "Fertig"}</h1>
+        <p class="muted">${open.length ? `${open.length} Frage${open.length > 1 ? "n" : ""} übersprungen.` : `Alle ${qs.length} Fragen für den ${longDate(date)} beantwortet.`}</p>
+        <ul class="summary">${qs.map((q) => `<li><span>${esc(q.text)}</span><strong>${isAnswered(a[q.id]) ? esc(fmtVal(a[q.id])) + (q.unit ? " " + esc(q.unit) : "") : "–"}</strong></li>`).join("")}</ul>
+        <div class="stack">
+          ${open.length ? `<button class="btn hold-btn" id="qopen">Übersprungene beantworten</button>` : ""}
+          <button class="btn ${open.length ? "ghost" : ""}" id="qfinish">Zur Tagesübersicht</button>
+        </div>
+      </div>
+    </div>`;
+    $("#qclose").addEventListener("click", endQuiz);
+    $("#qfinish").addEventListener("click", endQuiz);
+    $("#qopen")?.addEventListener("click", () => { quiz.idx = qs.findIndex((q) => !isAnswered(a[q.id])); renderQuiz(); });
+    return;
   }
-  card.querySelector("[data-clear]")?.addEventListener("click", () => { setAnswer(current, q.id, null); renderDay(); });
+
+  const q = qs[quiz.idx];
+  const val = a[q.id];
+  const needsNext = q.type === "number" || (q.type === "choice" && q.multi);
+  view.innerHTML = `<div class="quiz">
+    <div class="quiz-top">
+      <span class="muted">${longDate(date)} · Frage ${quiz.idx + 1} von ${qs.length}</span>
+      <button class="linkbtn" id="qclose">Beenden</button>
+    </div>
+    <div class="bar"><span style="width:${(quiz.idx / qs.length) * 100}%"></span></div>
+    <section class="quiz-q" data-qid="${q.id}">
+      ${q.cond ? `<p class="q-hint">Weil du „${esc(fmtVal(a[q.cond.qid]))}“ geantwortet hast</p>` : ""}
+      <h1 class="quiz-title">${esc(q.text)}</h1>
+      ${answerInput(q, val)}
+    </section>
+    <div class="quiz-nav">
+      <button class="btn ghost" id="qback" ${quiz.idx === 0 ? "disabled" : ""}>Zurück</button>
+      <button class="btn ${needsNext || isAnswered(val) ? "" : "ghost"}" id="qnext">${isAnswered(val) || needsNext ? "Weiter" : "Überspringen"}</button>
+    </div>
+  </div>`;
+
+  const sec = view.querySelector(".quiz-q");
+  const next = () => { quiz.idx++; renderQuiz(); window.scrollTo(0, 0); };
+  wireInput(sec, q, date, (kind) => {
+    if (kind === "pick" || kind === "enter") { renderQuiz(); setTimeout(next, 220); } // kurz Auswahl zeigen, dann weiter
+    else if (kind !== "input") renderQuiz();
+  });
+  $("#qclose").addEventListener("click", endQuiz);
+  $("#qback").addEventListener("click", () => { quiz.idx = Math.max(0, quiz.idx - 1); renderQuiz(); });
+  $("#qnext").addEventListener("click", () => {
+    if (sec._commit && sec._commit() === false) return;
+    next();
+  });
+  if (q.type === "number" && !isAnswered(val)) setTimeout(() => sec.querySelector("input")?.focus(), 50);
+}
+
+function endQuiz() {
+  current = quiz.date;
+  quiz = null;
+  tab = "day";
+  render();
+  window.scrollTo(0, 0);
 }
 
 /* ================= Fragen verwalten ================= */
 function renderQuestions() {
   const view = $("#view");
-  const act = state.questions.filter((q) => !q.archived);
-  const arch = state.questions.filter((q) => q.archived);
-  const row = (q, i, list) => `<li class="qrow ${q.archived ? "archived" : ""}">
+  const all = ordered();
+  const act = all.filter((o) => !o.q.archived);
+  const arch = all.filter((o) => o.q.archived);
+  const siblings = (q) => state.questions.filter((x) => !x.archived && (x.cond?.qid || null) === (q.cond?.qid || null));
+  const row = ({ q, depth }) => {
+    const sib = siblings(q);
+    const pos = sib.indexOf(q);
+    return `<li class="qrow ${q.archived ? "archived" : ""}" style="margin-left:${q.archived ? 0 : depth * 18}px">
       <button class="qmain" data-edit="${q.id}">
-        <span class="qtext">${esc(q.text)}</span>
+        <span class="qtext">${q.cond && !q.archived ? "↳ " : ""}${esc(q.text)}</span>
         <span class="qmeta">${esc(describe(q))}${q.healthKey ? " · Health: " + esc(q.healthKey) : ""}</span>
+        ${q.cond ? `<span class="qmeta">${esc(condText(q))}</span>` : ""}
       </button>
       ${q.archived ? "" : `
-      <button class="iconbtn" data-move="${q.id}" data-dir="-1" aria-label="Nach oben" ${i === 0 ? "disabled" : ""}>↑</button>
-      <button class="iconbtn" data-move="${q.id}" data-dir="1" aria-label="Nach unten" ${i === list.length - 1 ? "disabled" : ""}>↓</button>`}
+      <button class="iconbtn" data-move="${q.id}" data-dir="-1" aria-label="Nach oben" ${pos === 0 ? "disabled" : ""}>↑</button>
+      <button class="iconbtn" data-move="${q.id}" data-dir="1" aria-label="Nach unten" ${pos === sib.length - 1 ? "disabled" : ""}>↓</button>`}
     </li>`;
+  };
 
   view.innerHTML = `
     <div class="dayhead"><h1>Fragen</h1></div>
     ${act.length ? `<ul class="qlist">${act.map(row).join("")}</ul>` : `<p class="muted">Noch keine Fragen angelegt.</p>`}
     <button class="btn block" id="newq" style="margin-top:8px">Neue Frage</button>
+    ${act.length ? `<p class="muted small" style="margin-top:10px">Folgefragen (↳) erscheinen nur nach einer bestimmten Antwort. Anlegen über „Neue Frage“ → „Nur fragen, wenn …“.</p>` : ""}
     ${arch.length ? `<h2>Ausgeblendet</h2>
       <p class="muted small">Werden nicht mehr abgefragt, bleiben aber im Excel-Export.</p>
       <ul class="qlist">${arch.map(row).join("")}</ul>` : ""}`;
@@ -236,13 +402,12 @@ function renderQuestions() {
   $("#newq").addEventListener("click", () => openEditor(null));
   view.querySelectorAll("[data-edit]").forEach((b) => b.addEventListener("click", () => openEditor(b.dataset.edit)));
   view.querySelectorAll("[data-move]").forEach((b) => b.addEventListener("click", () => {
-    const list = state.questions;
-    const actIds = list.filter((q) => !q.archived).map((q) => q.id);
-    const pos = actIds.indexOf(b.dataset.move);
-    const other = actIds[pos + Number(b.dataset.dir)];
+    const q = qById(b.dataset.move);
+    const sib = siblings(q);
+    const other = sib[sib.indexOf(q) + Number(b.dataset.dir)];
     if (!other) return;
-    const i1 = list.findIndex((q) => q.id === b.dataset.move);
-    const i2 = list.findIndex((q) => q.id === other);
+    const list = state.questions;
+    const i1 = list.indexOf(q), i2 = list.indexOf(other);
     [list[i1], list[i2]] = [list[i2], list[i1]];
     save();
     renderQuestions();
@@ -253,25 +418,42 @@ function answerCount(qid) {
   return Object.values(state.answers).filter((a) => isAnswered(a[qid])).length;
 }
 
+function descendants(id) {
+  const out = new Set();
+  const walk = (x) => childrenOf(x).forEach((c) => { if (!out.has(c.id)) { out.add(c.id); walk(c.id); } });
+  walk(id);
+  return out;
+}
+
 function openEditor(id) {
-  const existing = id ? state.questions.find((q) => q.id === id) : null;
+  const existing = id ? qById(id) : null;
   const used = existing ? answerCount(existing.id) : 0;
   const draft = existing
     ? JSON.parse(JSON.stringify(existing))
-    : { id: uid(), text: "", type: "choice", options: ["Ja", "Nein"], min: 1, max: 5, minLabel: "", maxLabel: "", unit: "", healthKey: "", archived: false };
+    : { id: uid(), text: "", type: "choice", options: ["Ja", "Nein"], multi: false, min: 1, max: 5, minLabel: "", maxLabel: "", unit: "", healthKey: "", archived: false, cond: null };
+  if (draft.multi === undefined) draft.multi = false;
+  if (draft.cond === undefined) draft.cond = null;
 
   const dlg = $("#sheet");
+  const hasChildren = existing && childrenOf(existing.id).length > 0;
 
   const draw = () => {
     const typeLocked = used > 0;
+    // mögliche Ausgangsfragen: Auswahl oder Skala, aktiv, nicht sie selbst und keine eigene Folgefrage
+    const blocked = existing ? descendants(existing.id) : new Set();
+    const parents = ordered().map((o) => o.q).filter((p) => p.id !== draft.id && !p.archived && !blocked.has(p.id) && (p.type === "choice" || p.type === "scale"));
+    const parent = draft.cond ? qById(draft.cond.qid) : null;
+    const parentVals = parent ? (parent.type === "choice" ? parent.options : Array.from({ length: parent.max - parent.min + 1 }, (_, i) => String(parent.min + i))) : [];
+
     let typeFields = "";
     if (draft.type === "choice") {
       typeFields = `<div class="field" style="margin-bottom:8px;font-weight:600;font-size:15px">Antwortmöglichkeiten</div>
         ${draft.options.map((o, i) => `<div class="opt">
           <input value="${esc(o)}" data-opt="${i}" aria-label="Antwort ${i + 1}">
-          <button class="iconbtn" data-delopt="${i}" aria-label="Antwort entfernen" ${draft.options.length <= 2 ? "disabled" : ""}>✕</button>
+          <button type="button" class="iconbtn" data-delopt="${i}" aria-label="Antwort entfernen" ${draft.options.length <= 2 ? "disabled" : ""}>✕</button>
         </div>`).join("")}
-        <button class="linkbtn" id="addopt">Antwort hinzufügen</button>
+        <button type="button" class="linkbtn" id="addopt">Antwort hinzufügen</button>
+        <label class="check"><input type="checkbox" id="multi" ${draft.multi ? "checked" : ""} ${typeLocked ? "disabled" : ""}> Mehrere Antworten gleichzeitig erlauben</label>
         ${used ? `<p class="muted small">Umbenennen ändert nur künftige Antworten. Bereits gespeicherte behalten den alten Text.</p>` : ""}`;
     } else if (draft.type === "scale") {
       typeFields = `<div class="row2">
@@ -286,6 +468,19 @@ function openEditor(id) {
       typeFields = `<label class="field">Einheit (optional)<input id="unit" value="${esc(draft.unit)}" placeholder="z. B. Stunden"></label>`;
     }
 
+    const condBlock = `<details class="adv" ${draft.cond ? "open" : ""}>
+        <summary>Nur fragen, wenn … (Folgefrage)</summary>
+        ${parents.length ? `<label class="field" style="margin-top:8px">Ausgangsfrage
+          <select id="cparent">
+            <option value="">– immer fragen –</option>
+            ${parents.map((p) => `<option value="${p.id}" ${draft.cond?.qid === p.id ? "selected" : ""}>${esc(p.text)}</option>`).join("")}
+          </select>
+        </label>
+        ${parent ? `<div class="field" style="font-weight:600;font-size:15px;margin-bottom:6px">… mit einer dieser Antworten beantwortet wurde</div>
+          <div class="chips" style="margin-bottom:12px">${parentVals.map((v) => `<button type="button" class="chip" data-cval="${esc(v)}" aria-pressed="${draft.cond.values.includes(v)}">${esc(v)}</button>`).join("")}</div>` : ""}`
+        : `<p class="muted small" style="margin-top:8px">Leg zuerst eine Auswahl- oder Skala-Frage an, z. B. „Heute bouldern?“. Danach kannst du hier einstellen, dass diese Frage nur bei „Ja“ kommt.</p>`}
+      </details>`;
+
     dlg.innerHTML = `<form class="sheet-inner" method="dialog" novalidate>
       <div class="sheet-head">
         <button type="button" class="linkbtn" id="cancel">Abbrechen</button>
@@ -294,10 +489,11 @@ function openEditor(id) {
       </div>
       <label class="field">Frage<input id="qtext" value="${esc(draft.text)}" placeholder="z. B. Heute bouldern?" autocomplete="off"></label>
       <div class="seg" role="group" aria-label="Antworttyp">
-        ${["choice", "scale", "number"].map((t) => `<button type="button" data-type="${t}" aria-pressed="${draft.type === t}" ${typeLocked && draft.type !== t ? "disabled" : ""}>${typeLabel[t]}</button>`).join("")}
+        ${["choice", "scale", "number"].map((t) => `<button type="button" data-type="${t}" aria-pressed="${draft.type === t}" ${(typeLocked && draft.type !== t) || (hasChildren && t === "number") ? "disabled" : ""}>${typeLabel[t]}</button>`).join("")}
       </div>
       ${typeLocked ? `<p class="muted small" style="margin-top:-8px">Der Antworttyp ist fest, weil es schon ${used} Antworten gibt.</p>` : ""}
       ${typeFields}
+      ${condBlock}
       <details class="adv" ${draft.healthKey ? "open" : ""}>
         <summary>Apple Health (optional)</summary>
         <label class="field" style="margin-top:8px">Health-Kürzel
@@ -315,6 +511,7 @@ function openEditor(id) {
     const sync = () => {
       draft.text = $("#qtext", dlg).value;
       dlg.querySelectorAll("[data-opt]").forEach((inp) => (draft.options[+inp.dataset.opt] = inp.value));
+      if ($("#multi", dlg)) draft.multi = $("#multi", dlg).checked;
       if ($("#smin", dlg)) { draft.min = parseInt($("#smin", dlg).value, 10); draft.max = parseInt($("#smax", dlg).value, 10); draft.minLabel = $("#sminl", dlg).value; draft.maxLabel = $("#smaxl", dlg).value; }
       if ($("#unit", dlg)) draft.unit = $("#unit", dlg).value;
       draft.healthKey = $("#hkey", dlg).value.trim().toLowerCase().replace(/[^a-z0-9_äöüß-]/g, "");
@@ -323,15 +520,30 @@ function openEditor(id) {
     dlg.querySelectorAll("[data-type]").forEach((b) => b.addEventListener("click", () => { sync(); draft.type = b.dataset.type; draw(); }));
     $("#addopt", dlg)?.addEventListener("click", () => { sync(); draft.options.push(""); draw(); dlg.querySelector(`[data-opt="${draft.options.length - 1}"]`).focus(); });
     dlg.querySelectorAll("[data-delopt]").forEach((b) => b.addEventListener("click", () => { sync(); draft.options.splice(+b.dataset.delopt, 1); draw(); }));
+    $("#cparent", dlg)?.addEventListener("change", (e) => {
+      sync();
+      draft.cond = e.target.value ? { qid: e.target.value, values: [] } : null;
+      // Bei Ja/Nein-Fragen gleich „Ja“ vorauswählen
+      const p = draft.cond && qById(draft.cond.qid);
+      if (p && p.type === "choice" && p.options.includes("Ja")) draft.cond.values = ["Ja"];
+      draw();
+    });
+    dlg.querySelectorAll("[data-cval]").forEach((b) => b.addEventListener("click", () => {
+      sync();
+      const v = b.dataset.cval, arr = draft.cond.values, i = arr.indexOf(v);
+      if (i >= 0) arr.splice(i, 1); else arr.push(v);
+      draw();
+    }));
     $("#cancel", dlg).addEventListener("click", () => dlg.close());
 
     $("#archive", dlg)?.addEventListener("click", () => {
       existing.archived = !existing.archived; save(); dlg.close(); render();
-      toast(existing.archived ? "Ausgeblendet" : "Wieder eingeblendet");
+      toast(existing.archived ? (hasChildren ? "Ausgeblendet – Folgefragen kommen nicht mehr" : "Ausgeblendet") : "Wieder eingeblendet");
     });
     $("#delete", dlg)?.addEventListener("click", () => {
-      if (!confirm(`„${existing.text}“ und alle ${used} Antworten endgültig löschen? Das lässt sich nicht rückgängig machen. Zum Behalten der Daten stattdessen „Ausblenden“ wählen.`)) return;
+      if (!confirm(`„${existing.text}“ und alle ${used} Antworten endgültig löschen? Das lässt sich nicht rückgängig machen. Zum Behalten der Daten stattdessen „Ausblenden“ wählen.${hasChildren ? " Ihre Folgefragen werden danach immer gestellt." : ""}`)) return;
       state.questions = state.questions.filter((q) => q.id !== existing.id);
+      state.questions.forEach((q) => { if (q.cond && q.cond.qid === existing.id) q.cond = null; });
       for (const d of Object.keys(state.answers)) { delete state.answers[d][existing.id]; if (!Object.keys(state.answers[d]).length) delete state.answers[d]; }
       save(); dlg.close(); render(); toast("Gelöscht");
     });
@@ -345,11 +557,12 @@ function openEditor(id) {
         draft.options = draft.options.map((o) => o.trim()).filter(Boolean);
         if (draft.options.length < 2) return toast("Mindestens zwei Antworten nötig");
         if (new Set(draft.options).size !== draft.options.length) return toast("Antworten müssen unterschiedlich sein");
-      }
+      } else draft.multi = false;
       if (draft.type === "scale") {
         if (!Number.isInteger(draft.min) || !Number.isInteger(draft.max) || draft.max <= draft.min) return toast("Skala: „Bis“ muss größer als „Von“ sein");
         if (draft.max - draft.min > 10) return toast("Skala: höchstens 11 Stufen");
       }
+      if (draft.cond && !draft.cond.values.length) return toast("Wähle mindestens eine Antwort, bei der die Folgefrage kommt");
       if (draft.healthKey && state.questions.some((q) => q.id !== draft.id && q.healthKey === draft.healthKey)) return toast("Dieses Health-Kürzel ist schon vergeben");
       if (existing) Object.assign(existing, draft);
       else state.questions.push(draft);
@@ -440,7 +653,7 @@ async function shareOrDownload(blob, filename) {
 }
 
 function buildWorkbook() {
-  const qs = state.questions; // alle, auch ausgeblendete
+  const qs = ordered().map((o) => o.q); // alle, auch ausgeblendete; Folgefragen hinter ihrer Ausgangsfrage
   const days = Object.keys(state.answers).sort();
   const header = ["Datum", "Wochentag", ...qs.map((q) => q.text + (q.type === "number" && q.unit ? ` (${q.unit})` : ""))];
   const rows = [header];
@@ -452,7 +665,7 @@ function buildWorkbook() {
       rows.push([
         (Date.UTC(dt.getFullYear(), dt.getMonth(), dt.getDate()) - Date.UTC(1899, 11, 30)) / 864e5, // Excel-Datumszahl
         WD[dt.getDay()],
-        ...qs.map((q) => (isAnswered(a[q.id]) ? a[q.id] : null))
+        ...qs.map((q) => (isAnswered(a[q.id]) ? (Array.isArray(a[q.id]) ? a[q.id].join(", ") : a[q.id]) : null))
       ]);
     }
   }
@@ -465,16 +678,16 @@ function buildWorkbook() {
   ws["!freeze"] = { xSplit: 1, ySplit: 1 };
   ws["!autofilter"] = { ref: XLSX.utils.encode_range({ s: { r: 0, c: 0 }, e: { r: rows.length - 1, c: header.length - 1 } }) };
 
-  const qrows = [["Frage", "Typ", "Antworten / Bereich", "Einheit", "Health-Kürzel", "Status", "Anzahl Antworten"]];
+  const qrows = [["Frage", "Typ", "Antworten / Bereich", "Mehrfachauswahl", "Folgefrage", "Einheit", "Health-Kürzel", "Status", "Anzahl Antworten"]];
   for (const q of qs) {
     qrows.push([
       q.text, typeLabel[q.type],
       q.type === "choice" ? q.options.join(" / ") : q.type === "scale" ? `${q.min}–${q.max}${q.minLabel || q.maxLabel ? ` (${q.minLabel || ""} … ${q.maxLabel || ""})` : ""}` : "",
-      q.unit || "", q.healthKey || "", q.archived ? "ausgeblendet" : "aktiv", answerCount(q.id)
+      q.multi ? "ja" : "", condText(q), q.unit || "", q.healthKey || "", q.archived ? "ausgeblendet" : "aktiv", answerCount(q.id)
     ]);
   }
   const ws2 = XLSX.utils.aoa_to_sheet(qrows);
-  ws2["!cols"] = [{ wch: 36 }, { wch: 9 }, { wch: 30 }, { wch: 10 }, { wch: 13 }, { wch: 12 }, { wch: 16 }];
+  ws2["!cols"] = [{ wch: 36 }, { wch: 9 }, { wch: 30 }, { wch: 15 }, { wch: 36 }, { wch: 10 }, { wch: 13 }, { wch: 12 }, { wch: 16 }];
 
   const wb = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(wb, ws, "Antworten");
@@ -542,7 +755,7 @@ function applyHealthText(text, fromPaste) {
     const q = state.questions.find((x) => x.healthKey === k);
     if (!q) { unknown.push(k); continue; }
     let val;
-    if (q.type === "choice") { val = q.options.find((o) => o.toLowerCase() === v.toLowerCase()); }
+    if (q.type === "choice") { val = q.options.find((o) => o.toLowerCase() === v.toLowerCase()); if (val && q.multi) val = [val]; }
     else { val = parseNum(v); if (Number.isNaN(val)) val = undefined; if (q.type === "scale" && val !== undefined) val = Math.round(val); }
     if (val === undefined || val === null) { unknown.push(k); continue; }
     setAnswer(date, q.id, val);
