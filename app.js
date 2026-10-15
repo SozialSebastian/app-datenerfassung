@@ -1,4 +1,4 @@
-/* Täglich – tägliche Fragen erfassen, lokal speichern, als Excel exportieren. */
+/* Mosaik – tägliche Fragen erfassen, lokal speichern, als Excel exportieren. */
 "use strict";
 
 /* ================= Speicher ================= */
@@ -933,14 +933,14 @@ function renderData() {
           <li>Aktion <strong>Details von Health-Stichproben abrufen</strong>: <em>Dauer</em>.</li>
           <li>Aktion <strong>Statistik berechnen</strong>: <em>Summe</em>.</li>
           <li>Aktion <strong>Maßeinheit umwandeln</strong> in <em>Stunden</em> (falls angeboten), dann <strong>Zahl runden</strong> auf 1 Nachkommastelle.</li>
-          <li>Aktion <strong>Text</strong>: <code>taeglich;schlaf=</code> und dahinter die Variable mit dem gerundeten Wert.</li>
+          <li>Aktion <strong>Text</strong>: <code>mosaik;schlaf=</code> und dahinter die Variable mit dem gerundeten Wert.</li>
           <li>Aktion <strong>In Zwischenablage kopieren</strong>.</li>
           <li>Optional: Aktion <strong>URL öffnen</strong> ist nicht nötig. Öffne danach einfach diese App vom Home-Bildschirm.</li>
         </ol>
-        <p class="small muted">Mehrere Werte gehen in einer Zeile: <code>taeglich;schlaf=7,4;schritte=9500</code>. Mit <code>datum=2026-10-14</code> landet der Wert an einem bestimmten Tag, sonst am heutigen.</p>
+        <p class="small muted">Mehrere Werte gehen in einer Zeile: <code>mosaik;schlaf=7,4;schritte=9500</code>. Mit <code>datum=2026-10-14</code> landet der Wert an einem bestimmten Tag, sonst am heutigen.</p>
       </details>
       <p class="small" style="margin-top:12px">Zum Testen ohne Kurzbefehl: Text einfügen und übernehmen.</p>
-      <textarea class="paste" id="pastebox" placeholder="taeglich;schlaf=7,5"></textarea>
+      <textarea class="paste" id="pastebox" placeholder="mosaik;schlaf=7,5"></textarea>
       <button class="btn ghost block" id="pastego" style="margin-top:8px">Text übernehmen</button>
     </section>
 
@@ -1014,12 +1014,12 @@ async function exportExcel() {
   const wb = buildWorkbook();
   const out = XLSX.write(wb, { bookType: "xlsx", type: "array" });
   const blob = new Blob([out], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" });
-  if (await shareOrDownload(blob, `Taeglich_${todayIso()}.xlsx`)) toast("Excel erstellt");
+  if (await shareOrDownload(blob, `Mosaik_${todayIso()}.xlsx`)) toast("Excel erstellt");
 }
 
 async function exportBackup() {
   const blob = new Blob([JSON.stringify(state, null, 1)], { type: "application/json" });
-  if (await shareOrDownload(blob, `Taeglich_Sicherung_${todayIso()}.json`)) {
+  if (await shareOrDownload(blob, `Mosaik_Sicherung_${todayIso()}.json`)) {
     state.lastBackup = new Date().toISOString();
     save(); renderData(); toast("Sicherung erstellt");
   }
@@ -1038,18 +1038,18 @@ function importBackup(e) {
       state = { ...empty(), ...s };
       save(); render(); toast("Sicherung wiederhergestellt");
     } catch (err) {
-      toast("Diese Datei ist keine Täglich-Sicherung");
+      toast("Diese Datei ist keine Mosaik-Sicherung");
     }
   };
   r.readAsText(f);
   e.target.value = "";
 }
 
-/* Health-Werte: "taeglich;schlaf=7,4;schritte=9500;datum=2026-10-14" */
+/* Health-Werte: "mosaik;schlaf=7,4;schritte=9500;datum=2026-10-14" */
 function applyHealthText(text, fromPaste) {
   const t = String(text || "").trim();
-  if (!/^taeglich;/i.test(t)) {
-    toast(fromPaste ? "Text muss mit „taeglich;“ beginnen" : "In der Zwischenablage sind keine Health-Werte");
+  if (!/^(mosaik|taeglich);/i.test(t)) { // „taeglich;“ = alter Name, bleibt gültig
+    toast(fromPaste ? "Text muss mit „mosaik;“ beginnen" : "In der Zwischenablage sind keine Health-Werte");
     return;
   }
   const pairs = {};
@@ -1093,10 +1093,10 @@ async function healthFromClipboard() {
   }
 }
 
-// Werte auch über die Adresse übernehmen: …/#taeglich;schlaf=7,4
+// Werte auch über die Adresse übernehmen: …/#mosaik;schlaf=7,4
 function checkHash() {
   const h = decodeURIComponent(location.hash.slice(1));
-  if (/^taeglich;/i.test(h)) {
+  if (/^(mosaik|taeglich);/i.test(h)) {
     applyHealthText(h, false);
     history.replaceState(null, "", location.pathname + location.search);
   }

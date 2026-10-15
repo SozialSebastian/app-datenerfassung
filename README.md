@@ -1,4 +1,4 @@
-# Täglich
+# Mosaik
 
 Web-App (PWA) fürs iPhone: eigene Fragen anlegen, jeden Tag beantworten, alles als Excel exportieren.
 
@@ -8,7 +8,7 @@ Web-App (PWA) fürs iPhone: eigene Fragen anlegen, jeden Tag beantworten, alles 
 - **Analyse:** Auswertung je Frage für 7 Tage, 30 Tage, 12 Monate oder alles. Über das Zahnrad pro Frage einstellbar: Balken oder Kuchen, % oder Anzahl, Verlauf über die Zeit, anzeigen oder ausblenden
 - **Speicher:** nur lokal auf dem iPhone. Sicherung als JSON-Datei (z. B. in iCloud Drive)
 - **Excel:** Blatt „Antworten“ (eine Zeile pro Tag, eine Spalte pro Frage, immer alle Daten) und Blatt „Fragen“
-- **Apple Health:** über einen Kurzbefehl, der `taeglich;schlaf=7,4` in die Zwischenablage kopiert. In der App „Werte aus Health einfügen“ tippen
+- **Apple Health:** über einen Kurzbefehl, der `mosaik;schlaf=7,4` in die Zwischenablage kopiert. In der App „Werte aus Health einfügen“ tippen
 
 ## Installation aufs iPhone
 1. GitHub Pages aktivieren: Settings → Pages → Branch `main`, Ordner `/ (root)`

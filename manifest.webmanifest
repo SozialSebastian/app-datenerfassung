@@ -1,6 +1,6 @@
 {
-  "name": "Täglich – Fragen für jeden Tag",
-  "short_name": "Täglich",
+  "name": "Mosaik – Fragen für jeden Tag",
+  "short_name": "Mosaik",
   "start_url": "./",
   "scope": "./",
   "display": "standalone",
