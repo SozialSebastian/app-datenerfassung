@@ -476,8 +476,19 @@ function analysisCard(q, days) {
   const set = qset(q);
   const vals = days.map((d) => ({ d, v: (state.answers[d] || {})[q.id] })).filter((x) => isAnswered(x.v));
   const n = vals.length;
-  const asked = q.cond ? `an ${n} Tag${n === 1 ? "" : "en"} gefragt (${esc(condText(q))})` : `an ${n} von ${days.length} Tagen beantwortet`;
   let body = "";
+  const title = `<h2 class="atitle">${q.cond ? "↳ " : ""}${esc(q.text)}</h2>`;
+
+  // Kompakt: nur „an X von Y Tagen“
+  if (q.type === "choice" && set.chart === "count") {
+    const key = q.options.includes(set.countKey) ? set.countKey : q.options[0];
+    const c = vals.filter((x) => (Array.isArray(x.v) ? x.v.includes(key) : x.v === key)).length;
+    return `<section class="panel acard compact" data-qid="${q.id}">
+      <div class="crow">${title}<p class="cnum"><strong>${c}</strong> von ${days.length} Tagen${key !== "Ja" ? ` <span class="muted">„${esc(key)}“</span>` : ""}</p></div>
+      ${set.trend ? columnChart(q, days, key, "abs") : ""}
+      <p class="acap small" aria-live="polite"></p>
+    </section>`;
+  }
 
   if (!n) {
     body = `<p class="muted small">Im gewählten Zeitraum noch keine Antworten.</p>`;
@@ -515,8 +526,7 @@ function analysisCard(q, days) {
         ${q.multi ? `<p class="muted small">Kuchen bei Mehrfachauswahl: Anteil an allen ${total} Nennungen.</p>` : ""}`;
     } else {
       const max = Math.max(...dist.map((x) => x.c), 1);
-      const heroChoice = q.type === "choice" ? (() => { const f = dist.find((x) => x.key === focusKey); return `<p class="hero"><span class="big">${fmtC(f.c, n)}</span> <span class="muted">„${esc(f.label)}“${set.unit === "pct" ? "" : ` von ${n}`}</span></p>`; })() : "";
-      body = `${hero}${heroChoice}
+      body = `${hero}
         <div class="bars">${dist.map((x) => {
           const tag = q.type === "choice" ? `button data-qid="${q.id}" data-focus="${esc(x.key)}" aria-pressed="${x.key === focusKey}"` : `div`;
           return `<${tag} class="barrow ${q.type === "scale" ? "static" : ""}">
@@ -542,8 +552,7 @@ function analysisCard(q, days) {
   }
 
   return `<section class="panel acard" data-qid="${q.id}">
-    <h2 class="atitle">${q.cond ? "↳ " : ""}${esc(q.text)}</h2>
-    <p class="muted small asub">${asked}${q.archived ? " · ausgeblendet" : ""}</p>
+    ${title}
     ${body}
     <p class="acap small" aria-live="polite"></p>
   </section>`;
@@ -649,8 +658,11 @@ function openAnalysisSettings() {
             <label class="switch"><input type="checkbox" data-q="${q.id}" data-f="show" ${s.hidden ? "" : "checked"}><span>Anzeigen</span></label>
           </div>
           ${s.hidden ? "" : `
-          ${dist ? `<div class="sq-row"><span>Diagramm</span>${seg(q, "chart", [["bars", "Balken"], ["pie", "Kuchen"]], s.chart)}</div>
-          <div class="sq-row"><span>Werte</span>${seg(q, "unit", [["pct", "%"], ["abs", "Anzahl"]], s.unit)}</div>` : ""}
+          ${dist ? `<div class="sq-row"><span>Diagramm</span>${seg(q, "chart", q.type === "choice" ? [["bars", "Balken"], ["pie", "Kuchen"], ["count", "Kompakt"]] : [["bars", "Balken"], ["pie", "Kuchen"]], s.chart)}</div>
+          ${q.type === "choice" && s.chart === "count"
+            ? `<div class="sq-row"><span>Zählt</span><select data-q="${q.id}" data-f="countKey">${q.options.map((o) => `<option ${o === (q.options.includes(s.countKey) ? s.countKey : q.options[0]) ? "selected" : ""}>${esc(o)}</option>`).join("")}</select></div>
+               <p class="muted small" style="margin:6px 0 0">Zeigt nur: an wie vielen Tagen im Zeitraum diese Antwort kam.</p>`
+            : `<div class="sq-row"><span>Werte</span>${seg(q, "unit", [["pct", "%"], ["abs", "Anzahl"]], s.unit)}</div>`}` : ""}
           <label class="switch row"><input type="checkbox" data-q="${q.id}" data-f="trend" ${s.trend ? "checked" : ""}><span>Verlauf über die Zeit</span></label>`}
         </section>`;
       }).join("")}
@@ -663,9 +675,11 @@ function openAnalysisSettings() {
       else setQ(i.dataset.q, { trend: i.checked });
       draw(); renderAnalysis();
     }));
+    dlg.querySelectorAll("select[data-f]").forEach((sel) => sel.addEventListener("change", () => { setQ(sel.dataset.q, { countKey: sel.value }); renderAnalysis(); }));
   };
   draw();
   dlg.showModal();
+  document.activeElement?.blur(); // sonst zeigt iOS einen Rahmen um „Fertig“
 }
 
 /* ================= Fragen verwalten ================= */
@@ -873,6 +887,7 @@ function openEditor(id) {
 
   draw();
   dlg.showModal();
+  document.activeElement?.blur();
   if (!existing) setTimeout(() => $("#qtext", dlg).focus(), 50);
 }
 
