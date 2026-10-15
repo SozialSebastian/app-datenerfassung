@@ -1,12 +1,12 @@
 :root {
-  --bg: #EEF2F4;          /* Kreide */
+  --bg: #F4F1EE;          /* warmes Weiß wie im Icon */
   --surface: #FFFFFF;
-  --ink: #1C2A39;         /* Tinte */
-  --ink-2: #5A6978;
-  --line: #D5DDE3;
-  --hold: #F2B705;        /* Griffgelb – markiert Beantwortetes */
-  --hold-ink: #3A2C00;
-  --act: #2F6F73;         /* Aktionen */
+  --ink: #1C2A39;         /* Dunkelblau */
+  --ink-2: #645F5A;
+  --line: #E3DCD5;
+  --hold: #D94B22;        /* Rot-Orange – markiert Beantwortetes */
+  --hold-ink: #FFFFFF;
+  --act: #1C2A39;         /* Aktionen */
   --act-ink: #FFFFFF;
   --danger: #B3261E;
   --s1: #2a78d6; --s2: #eb6834; --s3: #1baf7a; --s4: #eda100; --s5: #e87ba4; --s6: #008300; --s7: #6250d6; --s8: #e34948;
@@ -17,15 +17,15 @@
 }
 @media (prefers-color-scheme: dark) {
   :root {
-    --bg: #111A22;
-    --surface: #1A2631;
-    --ink: #E6ECF0;
-    --ink-2: #93A3B1;
-    --line: #2B3A47;
-    --hold: #F2B705;
-    --hold-ink: #241B00;
-    --act: #5FB3B8;
-    --act-ink: #0D1A1B;
+    --bg: #121A22;
+    --surface: #1B2631;
+    --ink: #EDE9E5;
+    --ink-2: #A69F98;
+    --line: #2E3A46;
+    --hold: #EE6A42;
+    --hold-ink: #1A0A04;
+    --act: #EDE9E5;
+    --act-ink: #1C2A39;
     --danger: #F2867E;
     --s1: #3987e5; --s2: #d95926; --s3: #199e70; --s4: #c98500; --s5: #d55181; --s6: #008300; --s7: #9085e9; --s8: #e66767;
     color-scheme: dark;
