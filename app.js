@@ -371,14 +371,20 @@ function endQuiz() {
 
 /* ================= Analyse ================= */
 const PREF_KEY = "taeglich.prefs";
-let prefs = { range: "30", unit: "pct", focus: {} };
-try { prefs = { ...prefs, ...JSON.parse(localStorage.getItem(PREF_KEY) || "{}") }; } catch (e) { /* egal */ }
+let prefs = { range: "30", q: {}, focus: {} };
+try { const p = JSON.parse(localStorage.getItem(PREF_KEY) || "{}"); prefs = { ...prefs, ...p, q: p.q || {}, focus: p.focus || {} }; } catch (e) { /* egal */ }
 const savePrefs = () => { try { localStorage.setItem(PREF_KEY, JSON.stringify(prefs)); } catch (e) { /* egal */ } };
 
+// Einstellungen pro Frage, mit sinnvollen Vorgaben
+const qset = (q) => ({ chart: "bars", unit: "pct", trend: q.type !== "choice", hidden: false, ...(prefs.q[q.id] || {}) });
+const setQ = (qid, patch) => { prefs.q[qid] = { ...(prefs.q[qid] || {}), ...patch }; savePrefs(); };
+
 const RANGES = [["7", "7 Tage"], ["30", "30 Tage"], ["365", "12 Monate"], ["all", "Alles"]];
+const SERIES = 8; // Farben für Kuchendiagramme, weitere Antworten → „Weitere“
 const fmt1 = (n) => (Math.round(n * 10) / 10).toLocaleString("de-DE");
 const pct = (a, b) => (b ? Math.round((a / b) * 100) : 0);
 const shortDate = (s) => { const d = parseIso(s); return `${WD_SHORT[d.getDay()]} ${d.getDate()}.${d.getMonth() + 1}.`; };
+const MON_SHORT = ["Jan", "Feb", "Mär", "Apr", "Mai", "Jun", "Jul", "Aug", "Sep", "Okt", "Nov", "Dez"];
 
 function rangeDays() {
   const t = todayIso();
@@ -392,40 +398,41 @@ function rangeDays() {
   return out;
 }
 
+const GEAR = `<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/></svg>`;
+
+function analysisQuestions(days) {
+  return ordered().map((o) => o.q).filter((q) => !q.archived || days.some((d) => isAnswered((state.answers[d] || {})[q.id])));
+}
+
 function renderAnalysis() {
   const view = $("#view");
   const days = rangeDays();
-  const qs = ordered().map((o) => o.q).filter((q) => !q.archived || days.some((d) => isAnswered((state.answers[d] || {})[q.id])));
+  const all = analysisQuestions(days);
+  const qs = all.filter((q) => !qset(q).hidden);
   const tracked = days.filter((d) => state.answers[d]).length;
+  const hiddenN = all.length - qs.length;
 
   view.innerHTML = `
-    <div class="dayhead"><h1>Analyse</h1></div>
+    <div class="dayhead">
+      <h1>Analyse</h1>
+      ${all.length ? `<button class="gear" id="asettings" aria-label="Darstellung einstellen">${GEAR}</button>` : ""}
+    </div>
     <div class="seg seg4" role="group" aria-label="Zeitraum">
       ${RANGES.map(([k, l]) => `<button data-range="${k}" aria-pressed="${prefs.range === k}">${l}</button>`).join("")}
     </div>
-    <div class="arow">
-      <p class="muted small" style="margin:0">${tracked} von ${days.length} Tagen erfasst${days.length ? ` · ${shortDate(days[0])} – ${shortDate(days[days.length - 1])}` : ""}</p>
-      <div class="seg seg2" role="group" aria-label="Darstellung">
-        <button data-unit="pct" aria-pressed="${prefs.unit === "pct"}">%</button>
-        <button data-unit="abs" aria-pressed="${prefs.unit === "abs"}">Anzahl</button>
-      </div>
-    </div>
-    ${qs.length ? qs.map((q) => analysisCard(q, days)).join("") : `<p class="muted">Noch keine Fragen angelegt.</p>`}`;
+    <p class="muted small" style="margin:0 0 16px">${tracked} von ${days.length} Tagen erfasst · ${shortDate(days[0])} – ${shortDate(days[days.length - 1])}${hiddenN ? ` · ${hiddenN} Frage${hiddenN > 1 ? "n" : ""} ausgeblendet` : ""}</p>
+    ${qs.length ? qs.map((q) => analysisCard(q, days)).join("") : `<p class="muted">${all.length ? "Alle Fragen sind über das Zahnrad ausgeblendet." : "Noch keine Fragen angelegt."}</p>`}`;
 
+  $("#asettings")?.addEventListener("click", openAnalysisSettings);
   view.querySelectorAll("[data-range]").forEach((b) => b.addEventListener("click", () => { prefs.range = b.dataset.range; savePrefs(); renderAnalysis(); }));
-  view.querySelectorAll("[data-unit]").forEach((b) => b.addEventListener("click", () => { prefs.unit = b.dataset.unit; savePrefs(); renderAnalysis(); }));
   view.querySelectorAll("[data-focus]").forEach((b) => b.addEventListener("click", () => {
     prefs.focus[b.dataset.qid] = b.dataset.focus; savePrefs(); renderAnalysis();
   }));
-  // Antippen eines Tages im Kalender oder eines Punkts im Verlauf zeigt den Wert
+
+  // Antippen im Verlauf zeigt den Wert darunter
   view.querySelectorAll(".acard").forEach((card) => {
     const cap = card.querySelector(".acap");
     const q = qById(card.dataset.qid);
-    const show = (d) => {
-      const v = (state.answers[d] || {})[q.id];
-      cap.textContent = `${shortDate(d)}: ${isAnswered(v) ? fmtVal(v) + (q.unit ? " " + q.unit : "") : "keine Antwort"}`;
-    };
-    card.querySelectorAll(".cal [data-d]").forEach((c) => c.addEventListener("click", () => show(c.dataset.d)));
     const svg = card.querySelector("svg.line");
     if (svg) {
       const pts = JSON.parse(svg.dataset.pts);
@@ -436,15 +443,37 @@ function renderAnalysis() {
         let best = pts[0];
         for (const p of pts) if (Math.abs(p.x - x) < Math.abs(best.x - x)) best = p;
         mark.setAttribute("cx", best.x); mark.setAttribute("cy", best.y); mark.style.display = "";
-        show(best.d);
+        const v = (state.answers[best.d] || {})[q.id];
+        cap.textContent = `${shortDate(best.d)}: ${fmtVal(v)}${q.unit ? " " + q.unit : ""}`;
       };
       svg.addEventListener("pointerdown", pick);
       svg.addEventListener("pointermove", (e) => { if (e.buttons || e.pointerType === "mouse") pick(e); });
     }
+    card.querySelectorAll(".col[data-cap]").forEach((c) => c.addEventListener("click", () => {
+      card.querySelectorAll(".col.sel").forEach((x) => x.classList.remove("sel"));
+      c.classList.add("sel");
+      cap.textContent = c.dataset.cap;
+    }));
   });
 }
 
+// Häufigkeiten je Antwort (Auswahl) bzw. je Stufe (Skala)
+function distribution(q, vals) {
+  if (q.type === "scale") {
+    return Array.from({ length: q.max - q.min + 1 }, (_, i) => q.min + i).map((s) => ({
+      key: String(s),
+      label: `${s}${s === q.min && q.minLabel ? " · " + q.minLabel : ""}${s === q.max && q.maxLabel ? " · " + q.maxLabel : ""}`,
+      c: vals.filter((x) => x.v === s).length
+    }));
+  }
+  const keys = [...q.options];
+  // ältere Antworttexte (z. B. nach Umbenennen) trotzdem zählen
+  vals.forEach((x) => (Array.isArray(x.v) ? x.v : [x.v]).forEach((v) => { if (!keys.includes(v)) keys.push(v); }));
+  return keys.map((k) => ({ key: k, label: k, c: vals.filter((x) => (Array.isArray(x.v) ? x.v.includes(k) : x.v === k)).length }));
+}
+
 function analysisCard(q, days) {
+  const set = qset(q);
   const vals = days.map((d) => ({ d, v: (state.answers[d] || {})[q.id] })).filter((x) => isAnswered(x.v));
   const n = vals.length;
   const asked = q.cond ? `an ${n} Tag${n === 1 ? "" : "en"} gefragt (${esc(condText(q))})` : `an ${n} von ${days.length} Tagen beantwortet`;
@@ -452,49 +481,64 @@ function analysisCard(q, days) {
 
   if (!n) {
     body = `<p class="muted small">Im gewählten Zeitraum noch keine Antworten.</p>`;
-  } else if (q.type === "choice") {
-    const counts = q.options.map((o) => ({ o, c: vals.filter((x) => (Array.isArray(x.v) ? x.v.includes(o) : x.v === o)).length }));
-    // ältere Antworttexte (z. B. nach Umbenennen) trotzdem zählen
-    vals.forEach((x) => (Array.isArray(x.v) ? x.v : [x.v]).forEach((v) => {
-      if (!counts.some((c) => c.o === v)) counts.push({ o: v, c: 0 });
-    }));
-    counts.forEach((c) => { c.c = vals.filter((x) => (Array.isArray(x.v) ? x.v.includes(c.o) : x.v === c.o)).length; });
-    const focus = counts.some((c) => c.o === prefs.focus[q.id]) ? prefs.focus[q.id] : counts[0].o;
-    const fc = counts.find((c) => c.o === focus).c;
-    const max = Math.max(...counts.map((c) => c.c), 1);
-    const val = (c) => (prefs.unit === "pct" ? `${pct(c, n)} %` : `${c}×`);
-    body = `
-      <p class="hero"><span class="big">${val(fc)}</span> <span class="muted">„${esc(focus)}“${prefs.unit === "pct" ? "" : ` von ${n}`}</span></p>
-      <div class="bars">${counts.map((c) => `
-        <button class="barrow" data-qid="${q.id}" data-focus="${esc(c.o)}" aria-pressed="${c.o === focus}">
-          <span class="bl">${esc(c.o)}</span>
-          <span class="bt"><span style="width:${prefs.unit === "pct" ? pct(c.c, n) : (c.c / max) * 100}%"></span></span>
-          <span class="bv">${val(c.c)}</span>
-        </button>`).join("")}
-      </div>
-      ${q.multi && prefs.unit === "pct" ? `<p class="muted small">Mehrfachauswahl: Prozent = Anteil der Tage, die Summe kann über 100 % liegen.</p>` : ""}
-      ${calendar(q, days, (v) => (Array.isArray(v) ? v.includes(focus) : v === focus), `Tage mit „${focus}“`)}`;
+  } else if (q.type === "choice" || q.type === "scale") {
+    const dist = distribution(q, vals);
+    const fmtC = (c, base) => (set.unit === "pct" ? `${pct(c, base)} %` : `${c}×`);
+    let focusKey = null;
+    let hero = "";
+    if (q.type === "scale") {
+      const avg = vals.reduce((s, x) => s + x.v, 0) / n;
+      hero = `<p class="hero"><span class="big">Ø ${fmt1(avg)}</span><span class="muted">auf der Skala ${q.min}–${q.max}</span></p>`;
+    } else {
+      focusKey = dist.some((x) => x.key === prefs.focus[q.id]) ? prefs.focus[q.id] : dist[0].key;
+    }
+
+    if (set.chart === "pie") {
+      // Kuchen: Anteile an allen Nennungen (bei Mehrfachauswahl ≠ Anteil der Tage)
+      let slices = dist.filter((x) => x.c > 0);
+      if (slices.length > SERIES) {
+        const rest = slices.slice(SERIES - 1);
+        slices = slices.slice(0, SERIES - 1).concat([{ key: "__rest", label: "Weitere", c: rest.reduce((s, x) => s + x.c, 0), rest: true }]);
+      }
+      const total = slices.reduce((s, x) => s + x.c, 0);
+      const colorIdx = (k) => dist.findIndex((x) => x.key === k); // Farbe hängt an der Antwort, nicht am Rang
+      const center = q.type === "choice" ? (() => { const f = dist.find((x) => x.key === focusKey); return { v: fmtC(f.c, q.multi ? total : n), l: f.label }; })() : { v: String(n), l: "Tage" };
+      body = `${hero}
+        <div class="pie-wrap">
+          ${donut(slices.map((s) => ({ ...s, color: s.rest ? "var(--ink-2)" : `var(--s${(colorIdx(s.key) % SERIES) + 1})` })), total, center, focusKey)}
+          <div class="pie-legend">${dist.map((x) => {
+            const color = x.c && slices.some((s) => s.key === x.key) ? `var(--s${(colorIdx(x.key) % SERIES) + 1})` : "var(--ink-2)";
+            const tag = q.type === "choice" ? `button data-qid="${q.id}" data-focus="${esc(x.key)}" aria-pressed="${x.key === focusKey}"` : "div";
+            return `<${tag} class="lrow"><span class="sw" style="background:${color}"></span><span class="ll">${esc(x.label)}</span><span class="lv">${fmtC(x.c, q.multi ? total : n)}</span></${tag.split(" ")[0]}>`;
+          }).join("")}</div>
+        </div>
+        ${q.multi ? `<p class="muted small">Kuchen bei Mehrfachauswahl: Anteil an allen ${total} Nennungen.</p>` : ""}`;
+    } else {
+      const max = Math.max(...dist.map((x) => x.c), 1);
+      const heroChoice = q.type === "choice" ? (() => { const f = dist.find((x) => x.key === focusKey); return `<p class="hero"><span class="big">${fmtC(f.c, n)}</span> <span class="muted">„${esc(f.label)}“${set.unit === "pct" ? "" : ` von ${n}`}</span></p>`; })() : "";
+      body = `${hero}${heroChoice}
+        <div class="bars">${dist.map((x) => {
+          const tag = q.type === "choice" ? `button data-qid="${q.id}" data-focus="${esc(x.key)}" aria-pressed="${x.key === focusKey}"` : `div`;
+          return `<${tag} class="barrow ${q.type === "scale" ? "static" : ""}">
+            <span class="bl">${esc(x.label)}</span>
+            <span class="bt"><span style="width:${set.unit === "pct" ? pct(x.c, n) : (x.c / max) * 100}%"></span></span>
+            <span class="bv">${fmtC(x.c, n)}</span>
+          </${tag.split(" ")[0]}>`;
+        }).join("")}</div>
+        ${q.multi && set.unit === "pct" ? `<p class="muted small">Mehrfachauswahl: Prozent = Anteil der Tage, die Summe kann über 100 % liegen.</p>` : ""}`;
+    }
+
+    if (set.trend) {
+      body += q.type === "scale" ? (n >= 2 ? lineChart(q, days, vals, vals.reduce((s, x) => s + x.v, 0) / n) : "")
+        : columnChart(q, days, focusKey, set.unit);
+    }
   } else {
     const nums = vals.map((x) => x.v);
     const avg = nums.reduce((s, x) => s + x, 0) / n;
-    const unit = q.unit ? ` ${esc(q.unit)}` : "";
-    let dist = "";
-    if (q.type === "scale") {
-      const steps = Array.from({ length: q.max - q.min + 1 }, (_, i) => q.min + i);
-      const counts = steps.map((s) => ({ s, c: nums.filter((x) => x === s).length }));
-      const max = Math.max(...counts.map((c) => c.c), 1);
-      dist = `<div class="bars">${counts.map((c) => `
-        <div class="barrow static">
-          <span class="bl">${c.s}${c.s === q.min && q.minLabel ? ` <span class="muted">${esc(q.minLabel)}</span>` : ""}${c.s === q.max && q.maxLabel ? ` <span class="muted">${esc(q.maxLabel)}</span>` : ""}</span>
-          <span class="bt"><span style="width:${prefs.unit === "pct" ? pct(c.c, n) : (c.c / max) * 100}%"></span></span>
-          <span class="bv">${prefs.unit === "pct" ? pct(c.c, n) + " %" : c.c + "×"}</span>
-        </div>`).join("")}</div>`;
-    }
     body = `
-      <p class="hero"><span class="big">Ø ${fmt1(avg)}</span><span class="muted">${unit}</span></p>
-      <p class="stats small"><span>Min ${fmt1(Math.min(...nums))}</span><span>Max ${fmt1(Math.max(...nums))}</span>${q.type === "number" ? `<span>Summe ${fmt1(nums.reduce((s, x) => s + x, 0))}</span>` : ""}</p>
-      ${dist}
-      ${n >= 2 ? lineChart(q, days, vals, avg) : ""}`;
+      <p class="hero"><span class="big">Ø ${fmt1(avg)}</span><span class="muted">${q.unit ? esc(q.unit) : ""}</span></p>
+      <p class="stats small"><span>Min ${fmt1(Math.min(...nums))}</span><span>Max ${fmt1(Math.max(...nums))}</span><span>Summe ${fmt1(nums.reduce((s, x) => s + x, 0))}</span></p>
+      ${set.trend && n >= 2 ? lineChart(q, days, vals, avg) : ""}`;
   }
 
   return `<section class="panel acard" data-qid="${q.id}">
@@ -505,27 +549,53 @@ function analysisCard(q, days) {
   </section>`;
 }
 
-// Kalender: Spalten = Wochen, Zeilen = Mo–So
-function calendar(q, days, hit, label) {
-  const first = mondayOf(days[0]);
-  const cells = [];
-  for (let d = first; d <= days[days.length - 1]; d = addDays(d, 1)) cells.push(d);
-  const weeks = Math.ceil(cells.length / 7);
-  const inRange = new Set(days);
-  const month = weeks <= 6; // kurze Zeiträume als normaler Kalender: Zeilen = Wochen
-  const head = month ? WD_SHORT.slice(1).concat(WD_SHORT[0]).map((w) => `<span class="wd">${w}</span>`).join("") : "";
-  return `<div class="cal-wrap">
-    <div class="cal ${month ? "month" : ""}" style="${month ? "" : `grid-template-columns:repeat(${weeks}, 1fr);max-width:${weeks * 22}px`}" role="img" aria-label="${esc(label)} im Kalender">
-      ${head}
-      ${cells.map((d) => {
-        if (!inRange.has(d)) return `<span class="c out"></span>`;
-        const v = (state.answers[d] || {})[q.id];
-        const cls = !isAnswered(v) ? "none" : hit(v) ? "hit" : "miss";
-        return `<button class="c ${cls}" data-d="${d}" aria-label="${shortDate(d)}">${month ? parseIso(d).getDate() : ""}</button>`;
-      }).join("")}
-    </div>
-    <p class="legend small"><span class="c hit"></span>${esc(label)} <span class="c miss"></span>andere Antwort <span class="c none"></span>leer</p>
-  </div>`;
+// Ring mit 2px Lücke zwischen den Stücken; ausgewählte Antwort etwas dicker
+function donut(slices, total, center, focusKey) {
+  const R = 52, C = 2 * Math.PI * R;
+  let off = 0;
+  const gap = slices.length > 1 ? 2 : 0;
+  const arcs = slices.map((s) => {
+    const len = (s.c / total) * C;
+    const a = `<circle r="${R}" cx="70" cy="70" fill="none" stroke="${s.color}" stroke-width="${s.key === focusKey ? 22 : 18}"
+      stroke-dasharray="${Math.max(len - gap, 0.5)} ${C}" stroke-dashoffset="${-off}" transform="rotate(-90 70 70)"><title>${esc(s.label)}: ${s.c}</title></circle>`;
+    off += len;
+    return a;
+  }).join("");
+  return `<svg class="donut" viewBox="0 0 140 140" role="img" aria-label="Kuchendiagramm">
+    ${arcs}
+    <text x="70" y="70" class="dv" text-anchor="middle">${esc(center.v)}</text>
+    <text x="70" y="88" class="dl" text-anchor="middle">${esc(center.l.length > 14 ? center.l.slice(0, 13) + "…" : center.l)}</text>
+  </svg>`;
+}
+
+// Säulen über die Zeit: wie oft die gewählte Antwort vorkam (pro Tag, Woche oder Monat)
+function columnChart(q, days, focusKey, unit) {
+  const span = days.length;
+  const mode = span <= 14 ? "day" : span <= 92 ? "week" : "month";
+  const buckets = [];
+  const keyOf = (d) => (mode === "day" ? d : mode === "week" ? mondayOf(d) : d.slice(0, 7));
+  for (const d of days) {
+    const k = keyOf(d);
+    let b = buckets[buckets.length - 1];
+    if (!b || b.k !== k) { b = { k, first: d, n: 0, hit: 0 }; buckets.push(b); }
+    const v = (state.answers[d] || {})[q.id];
+    if (isAnswered(v)) { b.n++; if (Array.isArray(v) ? v.includes(focusKey) : v === focusKey) b.hit++; }
+  }
+  const val = (b) => (unit === "pct" ? (b.n ? (b.hit / b.n) * 100 : 0) : b.hit);
+  const max = unit === "pct" ? 100 : Math.max(1, ...buckets.map(val));
+  const lab = (b) => {
+    const d = parseIso(b.first);
+    return mode === "day" ? WD_SHORT[d.getDay()] : mode === "week" ? `${parseIso(b.k).getDate()}.${parseIso(b.k).getMonth() + 1}.` : MON_SHORT[d.getMonth()];
+  };
+  const name = mode === "day" ? "Tag" : mode === "week" ? "Woche ab" : "";
+  const every = Math.ceil(buckets.length / 7); // nicht jede Beschriftung, sonst zu eng
+  return `<div class="cols-head small muted">„${esc(focusKey)}“ pro ${mode === "day" ? "Tag" : mode === "week" ? "Woche" : "Monat"}</div>
+    <div class="cols" style="grid-template-columns:repeat(${buckets.length}, 1fr)">
+      ${buckets.map((b, i) => `<button class="col" data-cap="${esc(`${name ? name + " " : ""}${lab(b)}: ${unit === "pct" ? Math.round(val(b)) + " %" : b.hit + "×"} „${focusKey}“ (${b.n} Tag${b.n === 1 ? "" : "e"} beantwortet)`)}">
+        <span class="cbar"><span style="height:${(val(b) / max) * 100}%"></span></span>
+        <span class="clab">${i % every === 0 ? lab(b) : ""}</span>
+      </button>`).join("")}
+    </div>`;
 }
 
 // Verlauf über die Zeit, gestrichelt der Durchschnitt
@@ -538,10 +608,9 @@ function lineChart(q, days, vals, avg) {
   const xi = (d) => (days.length === 1 ? W / 2 : P + (days.indexOf(d) / (days.length - 1)) * (W - 2 * P));
   const yi = (v) => H - P - ((v - lo) / (hi - lo)) * (H - 2 * P);
   const pts = vals.map((x) => ({ d: x.d, x: +xi(x.d).toFixed(1), y: +yi(x.v).toFixed(1) }));
-  // Linie bei Lücken unterbrechen (unbeantwortete Tage)
   let path = "";
   pts.forEach((p, i) => {
-    const gap = i === 0 || days.indexOf(p.d) - days.indexOf(pts[i - 1].d) > 1;
+    const gap = i === 0 || days.indexOf(p.d) - days.indexOf(pts[i - 1].d) > 1; // Lücke bei fehlenden Tagen
     path += `${gap ? "M" : "L"}${p.x},${p.y}`;
   });
   const dots = pts.length <= 40 ? pts.map((p) => `<circle cx="${p.x}" cy="${p.y}" r="3" class="dot"/>`).join("") : "";
@@ -555,6 +624,48 @@ function lineChart(q, days, vals, avg) {
     </svg>
   </div>
   <p class="legend small"><span class="ln-key"></span>Werte <span class="avg-key"></span>Durchschnitt · antippen für Details</p>`;
+}
+
+// Zahnrad: Darstellung pro Frage einstellen
+function openAnalysisSettings() {
+  const dlg = $("#sheet");
+  const qs = analysisQuestions(rangeDays());
+  const seg = (q, field, opts, cur) => `<div class="seg seg-${opts.length}" role="group">${opts.map(([v, l]) =>
+    `<button type="button" data-q="${q.id}" data-f="${field}" data-v="${v}" aria-pressed="${cur === v}">${l}</button>`).join("")}</div>`;
+  const draw = () => {
+    const keep = dlg.querySelector(".sheet-inner")?.scrollTop || 0;
+    dlg.innerHTML = `<div class="sheet-inner">
+      <div class="sheet-head">
+        <span></span>
+        <h2>Darstellung</h2>
+        <button type="button" class="linkbtn" id="adone">Fertig</button>
+      </div>
+      ${qs.map((q) => {
+        const s = qset(q);
+        const dist = q.type === "choice" || q.type === "scale";
+        return `<section class="sq ${s.hidden ? "off" : ""}">
+          <div class="sq-head">
+            <strong>${q.cond ? "↳ " : ""}${esc(q.text)}</strong>
+            <label class="switch"><input type="checkbox" data-q="${q.id}" data-f="show" ${s.hidden ? "" : "checked"}><span>Anzeigen</span></label>
+          </div>
+          ${s.hidden ? "" : `
+          ${dist ? `<div class="sq-row"><span>Diagramm</span>${seg(q, "chart", [["bars", "Balken"], ["pie", "Kuchen"]], s.chart)}</div>
+          <div class="sq-row"><span>Werte</span>${seg(q, "unit", [["pct", "%"], ["abs", "Anzahl"]], s.unit)}</div>` : ""}
+          <label class="switch row"><input type="checkbox" data-q="${q.id}" data-f="trend" ${s.trend ? "checked" : ""}><span>Verlauf über die Zeit</span></label>`}
+        </section>`;
+      }).join("")}
+    </div>`;
+    dlg.querySelector(".sheet-inner").scrollTop = keep;
+    $("#adone", dlg).addEventListener("click", () => dlg.close());
+    dlg.querySelectorAll("button[data-f]").forEach((b) => b.addEventListener("click", () => { setQ(b.dataset.q, { [b.dataset.f]: b.dataset.v }); draw(); renderAnalysis(); }));
+    dlg.querySelectorAll("input[data-f]").forEach((i) => i.addEventListener("change", () => {
+      if (i.dataset.f === "show") setQ(i.dataset.q, { hidden: !i.checked });
+      else setQ(i.dataset.q, { trend: i.checked });
+      draw(); renderAnalysis();
+    }));
+  };
+  draw();
+  dlg.showModal();
 }
 
 /* ================= Fragen verwalten ================= */
