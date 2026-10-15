@@ -421,6 +421,7 @@ function renderAnalysis() {
       ${RANGES.map(([k, l]) => `<button data-range="${k}" aria-pressed="${prefs.range === k}">${l}</button>`).join("")}
     </div>
     <p class="muted small" style="margin:0 0 16px">${tracked} von ${days.length} Tagen erfasst · ${shortDate(days[0])} – ${shortDate(days[days.length - 1])}${hiddenN ? ` · ${hiddenN} Frage${hiddenN > 1 ? "n" : ""} ausgeblendet` : ""}</p>
+    ${all.length && prefs.trends !== false ? trendsPanel(days) : ""}
     ${qs.length ? qs.map((q) => analysisCard(q, days)).join("") : `<p class="muted">${all.length ? "Alle Fragen sind über das Zahnrad ausgeblendet." : "Noch keine Fragen angelegt."}</p>`}`;
 
   $("#asettings")?.addEventListener("click", openAnalysisSettings);
@@ -649,6 +650,12 @@ function openAnalysisSettings() {
         <h2>Darstellung</h2>
         <button type="button" class="linkbtn" id="adone">Fertig</button>
       </div>
+      <section class="sq">
+        <div class="sq-head"><strong>Trends</strong>
+          <label class="switch"><input type="checkbox" data-f="trends" ${prefs.trends !== false ? "checked" : ""}><span>Anzeigen</span></label>
+        </div>
+        <p class="muted small" style="margin:6px 0 0">Serien und auffällige Zusammenhänge oben in der Analyse.</p>
+      </section>
       ${qs.map((q) => {
         const s = qset(q);
         const dist = q.type === "choice" || q.type === "scale";
@@ -671,7 +678,8 @@ function openAnalysisSettings() {
     $("#adone", dlg).addEventListener("click", () => dlg.close());
     dlg.querySelectorAll("button[data-f]").forEach((b) => b.addEventListener("click", () => { setQ(b.dataset.q, { [b.dataset.f]: b.dataset.v }); draw(); renderAnalysis(); }));
     dlg.querySelectorAll("input[data-f]").forEach((i) => i.addEventListener("change", () => {
-      if (i.dataset.f === "show") setQ(i.dataset.q, { hidden: !i.checked });
+      if (i.dataset.f === "trends") { prefs.trends = i.checked; savePrefs(); }
+      else if (i.dataset.f === "show") setQ(i.dataset.q, { hidden: !i.checked });
       else setQ(i.dataset.q, { trend: i.checked });
       draw(); renderAnalysis();
     }));
@@ -680,6 +688,135 @@ function openAnalysisSettings() {
   draw();
   dlg.showModal();
   document.activeElement?.blur(); // sonst zeigt iOS einen Rahmen um „Fertig“
+}
+
+/* ================= Trends: Serien und Zusammenhänge ================= */
+const MIN_GROUP = 4;   // mindestens so viele Tage je Gruppe
+const MIN_D = 0.5;     // ab mittlerem Effekt (Cohen's d) gilt ein Unterschied als auffällig
+const MIN_R = 0.4;     // ab dieser Korrelation gilt ein Zusammenhang als auffällig
+const MIN_PAIRS = 8;
+
+const ansOn = (d, q) => (state.answers[d] || {})[q.id];
+const has = (v, opt) => (Array.isArray(v) ? v.includes(opt) : v === opt);
+const mean = (a) => a.reduce((s, x) => s + x, 0) / a.length;
+const sd = (a) => { const m = mean(a); return Math.sqrt(a.reduce((s, x) => s + (x - m) ** 2, 0) / Math.max(a.length - 1, 1)); };
+const qName = (q) => `„${esc(q.text.replace(/\?$/, ""))}“`;
+
+// Serien: aktuelle Ja-Serie, Rekord und auffällige Pausen (unabhängig vom Zeitraum)
+function streakInsights() {
+  const out = [];
+  const t = todayIso();
+  const first = Object.keys(state.answers).sort()[0];
+  if (!first) return out;
+  for (const q of state.questions) {
+    if (q.archived || q.type !== "choice" || q.multi || !q.options.includes("Ja")) continue;
+    // aktuelle Serie: heute noch offen → ab gestern zählen
+    let d = isAnswered(ansOn(t, q)) ? t : addDays(t, -1);
+    let cur = 0;
+    while (d >= first && ansOn(d, q) === "Ja") { cur++; d = addDays(d, -1); }
+    // Rekord
+    let best = 0, run = 0;
+    for (let x = first; x <= t; x = addDays(x, 1)) { run = ansOn(x, q) === "Ja" ? run + 1 : 0; best = Math.max(best, run); }
+    if (cur >= 3) {
+      out.push({ score: 10 + cur, html: `<strong>${cur} Tage in Folge</strong> ${qName(q)} mit Ja${best > cur ? ` · Rekord ${best}` : best === cur && cur > 3 ? " · neuer Rekord" : ""}` });
+      continue;
+    }
+    // Pause: lange kein Ja, obwohl es sonst regelmäßig vorkommt
+    let last = null, yes = 0, answered = 0;
+    for (let x = first; x <= t; x = addDays(x, 1)) {
+      const v = ansOn(x, q);
+      if (isAnswered(v)) answered++;
+      if (v === "Ja") { yes++; last = x; }
+    }
+    if (last && answered >= 14 && yes / answered >= 1 / 7) {
+      const gap = Math.round((parseIso(t) - parseIso(last)) / 864e5);
+      const usual = answered / yes; // durchschnittlich alle … Tage
+      if (gap >= 7 && gap >= 2 * usual) out.push({ score: 5 + gap / 7, html: `<strong>Seit ${gap} Tagen</strong> kein Ja bei ${qName(q)} · sonst etwa alle ${Math.round(usual)} Tage` });
+    }
+  }
+  return out.sort((a, b) => b.score - a.score).slice(0, 3);
+}
+
+// Gruppen für Vergleiche: Ja/Nein-Fragen → Ja; sonst je Antwortmöglichkeit
+function groupings(qs) {
+  const g = [];
+  for (const q of qs) {
+    if (q.type !== "choice") continue;
+    if (q.options.includes("Ja")) g.push({ q, opt: "Ja", label: `${qName(q)} = Ja` });
+    else if (q.options.length <= 6) q.options.forEach((o) => g.push({ q, opt: o, label: `${qName(q)} = „${esc(o)}“` }));
+  }
+  return g;
+}
+
+function relationInsights(days) {
+  const qs = state.questions.filter((q) => !q.archived || days.some((d) => isAnswered(ansOn(d, q))));
+  const nums = qs.filter((q) => q.type === "number" || q.type === "scale");
+  const found = [];
+
+  // Mittelwertvergleich: Zahl/Skala an Tagen mit vs. ohne eine bestimmte Antwort (gleicher Tag und Tag danach)
+  for (const g of groupings(qs)) {
+    for (const b of nums) {
+      if (b.cond && b.cond.qid === g.q.id) continue; // Folgefrage der Gruppe → trivial
+      let bestCase = null;
+      for (const lag of [0, 1]) {
+        const inG = [], outG = [];
+        for (const d of days) {
+          const a = ansOn(d, g.q);
+          const dB = lag ? addDays(d, 1) : d;
+          if (lag && dB > days[days.length - 1]) continue;
+          const v = ansOn(dB, b);
+          if (!isAnswered(a) || typeof v !== "number") continue;
+          (has(a, g.opt) ? inG : outG).push(v);
+        }
+        if (inG.length < MIN_GROUP || outG.length < MIN_GROUP) continue;
+        const pooled = Math.sqrt(((inG.length - 1) * sd(inG) ** 2 + (outG.length - 1) * sd(outG) ** 2) / (inG.length + outG.length - 2)) || 1e-9;
+        const dEff = (mean(inG) - mean(outG)) / pooled;
+        if (Math.abs(dEff) >= MIN_D && (!bestCase || Math.abs(dEff) > Math.abs(bestCase.dEff) + 0.1)) bestCase = { lag, dEff, m1: mean(inG), m0: mean(outG), n1: inG.length, n0: outG.length };
+      }
+      if (bestCase) {
+        const unit = b.unit ? " " + esc(b.unit) : "";
+        found.push({
+          score: Math.abs(bestCase.dEff),
+          html: `${qName(b)} ${bestCase.lag ? "am Tag nach" : "an Tagen mit"} ${g.label}: <strong>Ø ${fmt1(bestCase.m1)}${unit}</strong> statt Ø ${fmt1(bestCase.m0)}${unit}`,
+          note: `${bestCase.n1} vs. ${bestCase.n0} Tage`
+        });
+      }
+    }
+  }
+
+  // Korrelation zwischen zwei Zahl/Skala-Fragen am selben Tag
+  for (let i = 0; i < nums.length; i++) for (let j = i + 1; j < nums.length; j++) {
+    const a = nums[i], b = nums[j];
+    const xs = [], ys = [];
+    for (const d of days) { const x = ansOn(d, a), y = ansOn(d, b); if (typeof x === "number" && typeof y === "number") { xs.push(x); ys.push(y); } }
+    if (xs.length < MIN_PAIRS) continue;
+    const mx = mean(xs), my = mean(ys);
+    let sxy = 0, sxx = 0, syy = 0;
+    xs.forEach((x, k) => { sxy += (x - mx) * (ys[k] - my); sxx += (x - mx) ** 2; syy += (ys[k] - my) ** 2; });
+    if (!sxx || !syy) continue;
+    const r = sxy / Math.sqrt(sxx * syy);
+    if (Math.abs(r) < MIN_R) continue;
+    found.push({
+      score: (2 * Math.abs(r)) / Math.sqrt(1 - Math.min(r * r, 0.99)), // in d umgerechnet, damit vergleichbar
+      html: `${qName(a)} und ${qName(b)}: <strong>${r > 0 ? "je mehr, desto mehr" : "je mehr, desto weniger"}</strong> (r = ${r.toLocaleString("de-DE", { minimumFractionDigits: 2, maximumFractionDigits: 2 })})`,
+      note: `${xs.length} Tage`
+    });
+  }
+  return found.sort((a, b) => b.score - a.score).slice(0, 5);
+}
+
+function trendsPanel(days) {
+  const streaks = streakInsights();
+  const rel = relationInsights(days);
+  const row = (x, kind) => `<li class="trow ${kind}"><span class="tmark" aria-hidden="true"></span><span>${x.html}${x.note ? ` <span class="muted small">· ${x.note}</span>` : ""}</span></li>`;
+  return `<section class="panel trends">
+    <h2 class="atitle">Trends</h2>
+    ${streaks.length || rel.length ? `
+      ${streaks.length ? `<ul class="tlist">${streaks.map((x) => row(x, "streak")).join("")}</ul>` : ""}
+      ${rel.length ? `<p class="tsub small muted">Auffällige Zusammenhänge im gewählten Zeitraum</p><ul class="tlist">${rel.map((x) => row(x, "rel")).join("")}</ul>
+        <p class="small muted tfoot">Zeigt nur deutliche Unterschiede ab ${MIN_GROUP} Tagen je Gruppe. Ein Zusammenhang heißt nicht, dass das eine das andere verursacht.</p>` : ""}`
+      : `<p class="muted small" style="margin:0">Noch nichts Auffälliges. Serien erscheinen ab 3 Tagen am Stück, Zusammenhänge meist nach ein paar Wochen Daten.</p>`}
+  </section>`;
 }
 
 /* ================= Fragen verwalten ================= */

@@ -5,6 +5,7 @@ Web-App (PWA) fürs iPhone: eigene Fragen anlegen, jeden Tag beantworten, alles 
 - **Antworttypen:** Auswahl (eigene Antworten, z. B. Ja/Nein, optional mehrere gleichzeitig), Skala (z. B. 1–5), Zahl (z. B. Stunden Schlaf)
 - **Folgefragen:** erscheinen nur nach einer bestimmten Antwort (z. B. „Welche Schwierigkeiten?“ nur bei „Heute bouldern? = Ja“)
 - **Abfrage:** Button „Abfrage starten“ geht alle Fragen des Tages nacheinander durch
+- **Trends:** Serien (z. B. 7 Tage in Folge), auffällige Pausen und Zusammenhänge (Mittelwertvergleich, auch „am Tag danach“, und Korrelation) oben in der Analyse
 - **Analyse:** Auswertung je Frage für 7 Tage, 30 Tage, 12 Monate oder alles. Über das Zahnrad pro Frage einstellbar: Balken oder Kuchen, % oder Anzahl, Verlauf über die Zeit, anzeigen oder ausblenden
 - **Speicher:** nur lokal auf dem iPhone. Sicherung als JSON-Datei (z. B. in iCloud Drive)
 - **Excel:** Blatt „Antworten“ (eine Zeile pro Tag, eine Spalte pro Frage, immer alle Daten) und Blatt „Fragen“

@@ -328,3 +328,13 @@ label.switch input { width: 20px; height: 20px; accent-color: var(--act); }
 .sq-row select { padding: 9px 10px; border-radius: var(--r-sm); border: 1.5px solid var(--line); background: var(--surface); font-size: 16px; width: 100%; }
 .seg.seg-3 { grid-template-columns: repeat(3, 1fr); }
 .seg.seg-3 button { padding: 7px 0; }
+
+/* ---------- Trends ---------- */
+.trends .atitle { margin-bottom: 10px; }
+.tlist { list-style: none; padding: 0; margin: 0 0 4px; display: grid; gap: 10px; }
+.trow { display: grid; grid-template-columns: 14px 1fr; gap: 10px; align-items: start; font-size: 15px; line-height: 1.4; }
+.tmark { width: 12px; height: 12px; border-radius: 3px; margin-top: 4px; }
+.trow.streak .tmark { background: var(--hold); }
+.trow.rel .tmark { background: var(--ink); }
+.tsub { margin: 14px 0 8px; }
+.tfoot { margin: 12px 0 0; }
