@@ -788,7 +788,7 @@ const MIN_D = 0.5;     // ab mittlerem Effekt (Cohen's d) gilt ein Unterschied a
 const MIN_R = 0.4;     // ab dieser Korrelation gilt ein Zusammenhang als auffällig
 const MIN_PAIRS = 8;
 
-const ansOn = (d, q) => (q.id === "__place" ? (placeCities(d).length ? placeCities(d) : undefined) : (state.answers[d] || {})[q.id]);
+const ansOn = (d, q) => (q.weather ? weatherAns(d, q) : q.id === "__place" ? (placeCities(d).length ? placeCities(d) : undefined) : (state.answers[d] || {})[q.id]);
 const has = (v, opt) => (Array.isArray(v) ? v.includes(opt) : v === opt);
 const mean = (a) => a.reduce((s, x) => s + x, 0) / a.length;
 const sd = (a) => { const m = mean(a); return Math.sqrt(a.reduce((s, x) => s + (x - m) ** 2, 0) / Math.max(a.length - 1, 1)); };
@@ -843,10 +843,11 @@ function groupings(qs) {
 function relationInsights(days) {
   const qs = state.questions.filter((q) => !q.archived || days.some((d) => isAnswered(ansOn(d, q))));
   const nums = qs.filter((q) => q.type === "number" || q.type === "scale");
+  const wx = weatherOn() ? WEATHER_QS : []; // Wetter nur als Faktor
   const found = [];
 
   // Mittelwertvergleich: Zahl/Skala an Tagen mit vs. ohne eine bestimmte Antwort (gleicher Tag und Tag danach)
-  for (const g of [...groupings(qs), ...placeGroupings(days)]) {
+  for (const g of [...groupings(qs), ...placeGroupings(days), ...(wx.length ? [{ q: RAIN_Q, opt: "Ja", label: "Regen (ab 1 mm)" }] : [])]) {
     for (const b of nums) {
       if (b.cond && b.cond.qid === g.q.id) continue; // Folgefrage der Gruppe → trivial
       let bestCase = null;
@@ -876,9 +877,11 @@ function relationInsights(days) {
     }
   }
 
-  // Korrelation zwischen zwei Zahl/Skala-Fragen am selben Tag
-  for (let i = 0; i < nums.length; i++) for (let j = i + 1; j < nums.length; j++) {
-    const a = nums[i], b = nums[j];
+  // Korrelation zwischen zwei Zahl/Skala-Fragen am selben Tag (Wetter nur mit Fragen, nicht untereinander)
+  const cnums = [...nums, ...wx];
+  for (let i = 0; i < cnums.length; i++) for (let j = i + 1; j < cnums.length; j++) {
+    const a = cnums[i], b = cnums[j];
+    if (a.weather && b.weather) continue;
     const xs = [], ys = [];
     for (const d of days) { const x = ansOn(d, a), y = ansOn(d, b); if (typeof x === "number" && typeof y === "number") { xs.push(x); ys.push(y); } }
     if (xs.length < MIN_PAIRS) continue;
@@ -892,10 +895,10 @@ function relationInsights(days) {
       score: (2 * Math.abs(r)) / Math.sqrt(1 - Math.min(r * r, 0.99)), // in d umgerechnet, damit vergleichbar
       html: (() => {
         // Uhrzeit zuerst nennen („Je später die Schlafenszeit …“), sonst Reihenfolge wie angelegt
-        const [x, y] = b.format === "clock" && a.format !== "clock" ? [b, a] : [a, b];
+        const [x, y] = b.weather ? [b, a] : b.format === "clock" && a.format !== "clock" && !a.weather ? [b, a] : [a, b];
         const up = (q) => (q.format === "clock" ? "später" : q.format === "duration" ? "länger" : "mehr");
         const down = (q) => (q.format === "clock" ? "früher" : q.format === "duration" ? "kürzer" : "weniger");
-        return `<strong>Je ${up(x)} ${qName(x)}, desto ${r > 0 ? up(y) : down(y)} ${qName(y)}</strong> (r = ${r.toLocaleString("de-DE", { minimumFractionDigits: 2, maximumFractionDigits: 2 })})`;
+        return `<strong>${x.lead || `Je ${up(x)} ${qName(x)}`}, desto ${r > 0 ? up(y) : down(y)} ${qName(y)}</strong> (r = ${r.toLocaleString("de-DE", { minimumFractionDigits: 2, maximumFractionDigits: 2 })})`;
       })(),
       note: `${xs.length} Tage`
     });
@@ -1790,6 +1793,7 @@ async function capturePlace(manual) {
     try { pos = await get(false); } catch (e) { if (e && e.code === 1) throw e; pos = await get(true); }
     const city = await cityFor(pos.coords.latitude, pos.coords.longitude);
     const now = new Date();
+    if (!WL()[iso(now)]) { WL()[iso(now)] = [+pos.coords.latitude.toFixed(2), +pos.coords.longitude.toFixed(2)]; save(); }
     settings.places.last = now.getTime(); settings.places.err = ""; saveSettings();
     const changed = addPlace(iso(now), city, `${pad(now.getHours())}:${pad(now.getMinutes())}`);
     if (changed) { save(); if (tab === "day" && !quiz && current === iso(now)) renderDay(); }
@@ -1803,6 +1807,7 @@ async function capturePlace(manual) {
     settings.places.err = `${new Date().toLocaleTimeString("de-DE", { hour: "2-digit", minute: "2-digit" })}: ${msg}`; saveSettings();
     if (manual) { toast(msg.length > 60 ? msg.slice(0, 58) + "…" : msg); if (tab === "data") renderData(); }
   } finally { placeBusy = false; }
+  syncWeather(false);
 }
 
 // Zeile unter dem Datum auf „Tag“
@@ -1900,6 +1905,112 @@ function weekPlaces(mon) {
   const counts = {};
   for (let i = 0; i < 7; i++) placeCities(addDays(mon, i)).forEach((c) => (counts[c] = (counts[c] || 0) + 1));
   return Object.entries(counts).sort((a, b) => b[1] - a[1]);
+}
+
+/* ================= Wetter (nur für Zusammenhänge) ================= */
+// state.wloc[date] = [lat, lon] (auf ca. 1 km gerundet, erster Standort des Tages)
+// state.weather[date] = { t: Höchsttemperatur °C, r: Niederschlag mm, s: Sonnenstunden }
+const W = () => { if (!state.weather || typeof state.weather !== "object") state.weather = {}; return state.weather; };
+const WL = () => { if (!state.wloc || typeof state.wloc !== "object") state.wloc = {}; return state.wloc; };
+const WDAILY = "temperature_2m_max,precipitation_sum,sunshine_duration";
+
+// Wetter als „Fragen“ für die Zusammenhänge – nur als Faktor, nie als eigener Trend
+const WEATHER_QS = [
+  { id: "__w_t", k: "t", text: "Höchsttemperatur", type: "number", unit: "°C", weather: true, lead: "Je wärmer es ist" },
+  { id: "__w_s", k: "s", text: "Sonnenstunden", type: "number", unit: "h", weather: true, lead: "Je mehr die Sonne scheint" },
+  { id: "__w_r", k: "r", text: "Regenmenge", type: "number", unit: "mm", weather: true, lead: "Je mehr es regnet" }
+];
+const RAIN_Q = { id: "__w_rain", text: "Regen", type: "choice", options: ["Ja", "Nein"], weather: true };
+const weatherOn = () => settings.weather && settings.weather.on && Object.keys(W()).length > 0;
+function weatherAns(d, q) {
+  const w = W()[d];
+  if (!w) return undefined;
+  if (q.id === "__w_rain") return typeof w.r === "number" ? (w.r >= 1 ? "Ja" : "Nein") : undefined;
+  const v = w[q.k];
+  return typeof v === "number" ? v : undefined;
+}
+
+function storeDaily(j) {
+  const d = j && j.daily;
+  if (!d || !Array.isArray(d.time)) return 0;
+  let n = 0;
+  d.time.forEach((day, i) => {
+    const t = d.temperature_2m_max[i], r = d.precipitation_sum[i], s = d.sunshine_duration[i];
+    if (t === null || t === undefined) return; // noch keine Daten
+    W()[day] = { t: Math.round(t * 10) / 10, r: Math.round((r || 0) * 10) / 10, s: Math.round(((s || 0) / 3600) * 10) / 10 };
+    n++;
+  });
+  return n;
+}
+
+// Häufigster Standort (für ältere Tage ohne eigenen Standort)
+function homeLoc() {
+  const c = {};
+  Object.values(WL()).forEach((l) => { const k = l.join(","); c[k] = (c[k] || 0) + 1; });
+  const best = Object.entries(c).sort((a, b) => b[1] - a[1])[0];
+  return best ? best[0].split(",").map(Number) : null;
+}
+
+let weatherBusy = false;
+// Fehlende abgeschlossene Tage mit bekanntem Standort nachladen (max. 1× pro Stunde)
+async function syncWeather(force) {
+  if (!settings.weather || !settings.weather.on || weatherBusy) return;
+  if (!force && settings.weather.last && Date.now() - settings.weather.last < 3600e3) return;
+  weatherBusy = true;
+  try {
+    const t = todayIso(), from = addDays(t, -30);
+    const missing = Object.keys(WL()).filter((d) => d < t && d >= from && !W()[d]);
+    const byLoc = {};
+    missing.forEach((d) => { const k = WL()[d].join(","); (byLoc[k] = byLoc[k] || []).push(d); });
+    let n = 0;
+    for (const [k, ds] of Object.entries(byLoc)) {
+      const [lat, lon] = k.split(",");
+      const start = ds.sort()[0];
+      const res = await fetch(`https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}&daily=${WDAILY}&timezone=Europe%2FBerlin&start_date=${start}&end_date=${addDays(t, -1)}`);
+      if (!res.ok) throw new Error(`Open-Meteo ${res.status}`);
+      const j = await res.json();
+      // nur die Tage übernehmen, an denen man an diesem Ort war
+      const keep = new Set(ds);
+      const tmp = {};
+      j.daily.time.forEach((day, i) => { if (keep.has(day)) tmp[day] = i; });
+      storeDaily({ daily: { time: Object.keys(tmp), temperature_2m_max: Object.values(tmp).map((i) => j.daily.temperature_2m_max[i]), precipitation_sum: Object.values(tmp).map((i) => j.daily.precipitation_sum[i]), sunshine_duration: Object.values(tmp).map((i) => j.daily.sunshine_duration[i]) } });
+      n += ds.length;
+    }
+    settings.weather.last = Date.now(); settings.weather.err = ""; saveSettings();
+    if (n) save();
+  } catch (e) {
+    settings.weather.err = e.message || "Wetter nicht abrufbar"; saveSettings();
+  } finally { weatherBusy = false; }
+}
+
+// Einmalig: ältere Tage (seit erster Antwort, max. 3 Jahre) mit dem häufigsten Standort füllen
+async function backfillWeather() {
+  const home = homeLoc();
+  if (!home) throw new Error("Noch kein Standort erfasst – erst „Orte“ einschalten und einmal erfassen");
+  const t = todayIso();
+  const days = Object.keys(state.answers).sort();
+  let start = days[0] || addDays(t, -30);
+  if (start < addDays(t, -3 * 365)) start = addDays(t, -3 * 365);
+  const lat = home[0].toFixed(2), lon = home[1].toFixed(2);
+  let n = 0;
+  const archiveEnd = addDays(t, -6);
+  if (start <= archiveEnd) {
+    const res = await fetch(`https://archive-api.open-meteo.com/v1/archive?latitude=${lat}&longitude=${lon}&daily=${WDAILY}&timezone=Europe%2FBerlin&start_date=${start}&end_date=${archiveEnd}`);
+    if (!res.ok) throw new Error(`Open-Meteo-Archiv ${res.status}`);
+    const j = await res.json();
+    // vorhandene (ortsgenaue) Werte nicht überschreiben
+    const keep = j.daily.time.map((d, i) => (W()[d] ? -1 : i)).filter((i) => i >= 0);
+    n += storeDaily({ daily: { time: keep.map((i) => j.daily.time[i]), temperature_2m_max: keep.map((i) => j.daily.temperature_2m_max[i]), precipitation_sum: keep.map((i) => j.daily.precipitation_sum[i]), sunshine_duration: keep.map((i) => j.daily.sunshine_duration[i]) } });
+  }
+  const recentStart = start > archiveEnd ? start : addDays(archiveEnd, 1);
+  const res2 = await fetch(`https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}&daily=${WDAILY}&timezone=Europe%2FBerlin&start_date=${recentStart}&end_date=${addDays(t, -1)}`);
+  if (res2.ok) {
+    const j = await res2.json();
+    const keep = j.daily.time.map((d, i) => (W()[d] ? -1 : i)).filter((i) => i >= 0);
+    n += storeDaily({ daily: { time: keep.map((i) => j.daily.time[i]), temperature_2m_max: keep.map((i) => j.daily.temperature_2m_max[i]), precipitation_sum: keep.map((i) => j.daily.precipitation_sum[i]), sunshine_duration: keep.map((i) => j.daily.sunshine_duration[i]) } });
+  }
+  save();
+  return n;
 }
 
 /* ================= Fragen verwalten ================= */
@@ -2545,8 +2656,8 @@ function openEditor(id) {
 /* ================= Mosaik-Dienst: Erinnerung und Eingang ================= */
 const SERVER = "https://mosaik-sync.sebastian-taglieber.workers.dev";
 const SETTINGS_KEY = "mosaik.settings";
-let settings = { token: "", push: { on: false, time: "23:00", endpoint: null }, weekly: { on: false, day: 0, time: "19:00" }, places: { on: false, last: 0 }, lastInbox: null };
-try { const s = JSON.parse(localStorage.getItem(SETTINGS_KEY) || "{}"); settings = { ...settings, ...s, push: { ...settings.push, ...(s.push || {}) }, weekly: { ...settings.weekly, ...(s.weekly || {}) }, places: { ...settings.places, ...(s.places || {}) } }; } catch (e) { /* egal */ }
+let settings = { token: "", push: { on: false, time: "23:00", endpoint: null }, weekly: { on: false, day: 0, time: "19:00" }, places: { on: false, last: 0 }, weather: { on: false, last: 0 }, lastInbox: null };
+try { const s = JSON.parse(localStorage.getItem(SETTINGS_KEY) || "{}"); settings = { ...settings, ...s, push: { ...settings.push, ...(s.push || {}) }, weekly: { ...settings.weekly, ...(s.weekly || {}) }, places: { ...settings.places, ...(s.places || {}) }, weather: { ...settings.weather, ...(s.weather || {}) } }; } catch (e) { /* egal */ }
 const saveSettings = () => { try { localStorage.setItem(SETTINGS_KEY, JSON.stringify(settings)); } catch (e) { /* egal */ } };
 
 async function api(path, body) {
@@ -2752,6 +2863,16 @@ function renderData() {
     </section>
 
     <section class="panel">
+      <h2>Wetter</h2>
+      <label class="switch row" style="margin-top:0"><input type="checkbox" id="weatheron" ${settings.weather.on ? "checked" : ""}><span>Wetter für Zusammenhänge nutzen</span></label>
+      <p class="muted small" style="margin:8px 0 0">Holt einmal pro Tag Höchsttemperatur, Regen und Sonnenstunden für deinen Ort (Open-Meteo, kostenlos). Erscheint nur unter Trends als Faktor, z. B. „Laune an Tagen mit Regen“. Braucht „Orte“.</p>
+      ${settings.weather.on ? `<p class="small" style="margin:8px 0 0">Wetter für <strong>${Object.keys(state.weather || {}).length}</strong> Tage vorhanden.</p>
+        ${settings.weather.err ? `<p class="small" style="margin:6px 0 0;color:var(--danger)">Letzter Fehler: ${esc(settings.weather.err)}</p>` : ""}
+        <button class="btn ghost block" id="weatherback" style="margin-top:12px">Ältere Tage nachladen</button>
+        <p class="muted small" style="margin:6px 0 0">Füllt alle Tage seit deiner ersten Antwort mit dem Wetter deines häufigsten Orts. Gut für Health-Daten von früher.</p>` : ""}
+    </section>
+
+    <section class="panel">
       <h2>Excel-Tabelle</h2>
       <p class="muted">Enthält immer alle bisher erfassten Tage, eine Spalte pro Frage. In der App wird dabei nichts gelöscht.</p>
       <p class="stat">${days.length} Tage · ${nAnswers} Antworten${days.length ? ` · seit ${longDate(days[0])} ${days[0].slice(0, 4)}` : ""}</p>
@@ -2878,6 +2999,18 @@ function renderData() {
     renderData();
   });
   $("#placenow")?.addEventListener("click", async () => { await capturePlace(true); renderData(); });
+  $("#weatheron").addEventListener("change", async (e) => {
+    settings.weather.on = e.target.checked; settings.weather.last = 0; saveSettings();
+    if (e.target.checked && !(settings.places && settings.places.on)) toast("Bitte auch „Orte“ einschalten");
+    if (e.target.checked) await syncWeather(true);
+    renderData();
+  });
+  $("#weatherback")?.addEventListener("click", async (e) => {
+    e.target.disabled = true; e.target.textContent = "Lade …";
+    try { const n = await backfillWeather(); toast(`Wetter für ${n} Tage geladen`); settings.weather.err = ""; saveSettings(); }
+    catch (err) { settings.weather.err = err.message; saveSettings(); toast(err.message.length > 60 ? err.message.slice(0, 58) + "…" : err.message); }
+    renderData();
+  });
   $("#exportopen").addEventListener("click", openExport);
   const weekSave = async () => {
     const day = Number($("#weekday").value), time = $("#weektime").value || "19:00";
@@ -3100,6 +3233,7 @@ fetchInbox(false);
 reportStatus();
 setTimeout(goalNotices, 600);
 capturePlace(false);
+syncWeather(false);
 document.addEventListener("visibilitychange", () => { if (document.visibilityState === "visible") { fetchInbox(false); reportStatus(); setTimeout(goalNotices, 600); capturePlace(false); } });
 
 if ("serviceWorker" in navigator && location.protocol !== "file:") {
