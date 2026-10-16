@@ -1655,6 +1655,7 @@ function renderFriends() {
         <tbody>${rows.map((r) => `<tr><td class="fi">${r.icon}</td><td>${r.label}</td><td class="num">${pc(r.c)}</td><td class="num">${r.c}</td></tr>`).join("")}</tbody>
       </table>
     </section>
+    ${friendChangesPanel()}
     ${FCATS.map(([c, l]) => {
       const xs = list.filter((x) => x.cat === c);
       return `<section class="panel fcat">
@@ -1672,7 +1673,77 @@ function renderFriends() {
   $("#fadd").addEventListener("click", () => openFriend(null));
   $("#ffirst")?.addEventListener("click", () => openFriend(null));
   $("#fsettings").addEventListener("click", openFriendSettings);
+  $("#fchmore")?.addEventListener("click", () => { showAllFriendChanges = !showAllFriendChanges; renderFriends(); });
   document.querySelectorAll("[data-fid]").forEach((b) => b.addEventListener("click", () => openFriend(b.dataset.fid)));
+}
+
+// Veränderung gegenüber dem vorigen Stichtag
+let showAllFriendChanges = false;
+function friendChangesPanel() {
+  const f = F();
+  const prev = f.history[f.history.length - 1];
+  if (!prev) return `<section class="panel fchg"><h2 class="atitle">Veränderung</h2>
+    <p class="muted small" style="margin:0">Erscheint, sobald du über das Zahnrad einen neuen Stichtag anlegst. Dann siehst du hier, wie sich Anzahl, Quoten und Kategorien gegenüber dem Stichtag davor verändert haben.</p></section>`;
+  const now = f.list, old = prev.list;
+  const sign = (d, unit = "") => (d > 0 ? `+${d}${unit}` : d < 0 ? `−${Math.abs(d)}${unit}` : `±0${unit}`);
+  const cls = (d) => (d > 0 ? "up" : d < 0 ? "down" : "");
+  const share = (xs, fn) => (xs.length ? (xs.filter(fn).length / xs.length) * 100 : 0);
+  const catName = Object.fromEntries(FCATS.map(([c, l]) => [c, l.replace(" Freunde", "")]));
+  const rank = { best: 0, good: 1, friend: 2 };
+
+  // Anzahl gesamt und je Kategorie
+  const cats = FCATS.map(([c]) => ({ c, n: now.filter((x) => x.cat === c).length, o: old.filter((x) => x.cat === c).length }));
+  // Quoten in Prozentpunkten
+  const quotes = FTAGS.map((t) => {
+    const a = share(now, (x) => x.tags && x.tags[t.k]), b = share(old, (x) => x.tags && x.tags[t.k]);
+    return { t, a, b, d: Math.round(a) - Math.round(b), cn: now.filter((x) => x.tags && x.tags[t.k]).length, co: old.filter((x) => x.tags && x.tags[t.k]).length };
+  });
+  // Personen: neu, weg, auf- und abgestiegen, Label-Änderungen
+  const byId = (xs) => Object.fromEntries(xs.map((x) => [x.id, x]));
+  const O = byId(old), N = byId(now);
+  const added = now.filter((x) => !O[x.id]);
+  const gone = old.filter((x) => !N[x.id]);
+  const moved = now.filter((x) => O[x.id] && O[x.id].cat !== x.cat).map((x) => ({ x, from: O[x.id].cat, up: rank[x.cat] < rank[O[x.id].cat] }));
+  const tagChanges = [];
+  for (const x of now) {
+    const o = O[x.id];
+    if (!o) continue;
+    for (const t of FTAGS) {
+      const a = !!(x.tags && x.tags[t.k]), b = !!(o.tags && o.tags[t.k]);
+      if (a !== b) tagChanges.push({ x, t, on: a });
+    }
+  }
+  const names = (xs) => xs.map((x) => esc(x.name)).join(", ");
+  const lines = [];
+  if (added.length) lines.push(`<li><strong>${added.length} neu:</strong> ${names(added)}</li>`);
+  if (gone.length) lines.push(`<li><strong>${gone.length} nicht mehr dabei:</strong> ${names(gone)}</li>`);
+  moved.filter((m) => m.up).forEach((m) => lines.push(`<li><span class="arrow up">▲</span> <strong>${esc(m.x.name)}</strong>: ${catName[m.from]} → ${catName[m.x.cat]}</li>`));
+  moved.filter((m) => !m.up).forEach((m) => lines.push(`<li><span class="arrow down">▼</span> <strong>${esc(m.x.name)}</strong>: ${catName[m.from]} → ${catName[m.x.cat]}</li>`));
+  tagChanges.forEach((c) => lines.push(`<li>${tagIcon(c.t)} <strong>${esc(c.x.name)}</strong>: ${c.on ? "jetzt" : "nicht mehr"} ${esc(tagLabel(c.t))}</li>`));
+  const PREV_N = 4;
+  const shownLines = showAllFriendChanges ? lines : lines.slice(0, PREV_N);
+
+  // Verlauf über alle Stichtage
+  const points = [...f.history.map((h) => ({ d: h.date, n: h.list.length })), { d: f.stichtag, n: now.length }];
+
+  return `<section class="panel fchg">
+    <div class="ghead"><h2 class="atitle">Veränderung</h2><span class="small muted">seit ${fdate(prev.date)}</span></div>
+    <div class="fcmp">
+      <div><span class="fv ${cls(now.length - old.length)}">${sign(now.length - old.length)}</span><span class="small muted">gesamt (${old.length} → ${now.length})</span></div>
+      ${cats.map((c) => `<div><span class="fv ${cls(c.n - c.o)}">${sign(c.n - c.o)}</span><span class="small muted">${catName[c.c]} (${c.o} → ${c.n})</span></div>`).join("")}
+    </div>
+    <table class="ftable fq">
+      <thead><tr><th></th><th></th><th>vorher</th><th>jetzt</th><th>Δ</th></tr></thead>
+      <tbody>${quotes.map((q) => `<tr><td class="fi">${tagIcon(q.t)}</td><td>${esc(tagLabel(q.t))}</td>
+        <td class="num muted">${Math.round(q.b)} %</td><td class="num">${Math.round(q.a)} %</td>
+        <td class="num ${cls(q.d)}">${q.d === 0 ? "±0" : sign(q.d)} PP</td></tr>`).join("")}</tbody>
+    </table>
+    ${lines.length ? `<ul class="fchlist">${shownLines.join("")}</ul>
+      ${lines.length > PREV_N ? `<button class="btn ghost block" id="fchmore" style="margin-top:10px">${showAllFriendChanges ? "Weniger anzeigen" : `Alle Änderungen anzeigen (${lines.length - PREV_N} weitere)`}</button>` : ""}`
+      : `<p class="muted small">Keine Personen hinzugekommen, weggefallen oder verschoben.</p>`}
+    ${points.length > 2 ? `<p class="small muted fhist">Verlauf: ${points.map((p) => `${fdate(p.d).slice(0, 6)}${p.d.slice(2, 4)} <strong>${p.n}</strong>`).join(" → ")}</p>` : ""}
+    <p class="small muted" style="margin:10px 0 0">PP = Prozentpunkte. Quoten beziehen sich jeweils auf alle Freunde zum Stichtag.</p>
+  </section>`;
 }
 
 function friendsChanged() {

@@ -469,3 +469,16 @@ input.flabel { flex: 1; padding: 8px 10px; border-radius: var(--r-sm); border: 1
 .sheet-head h2 { font-size: 17px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .sheet-head .linkbtn { font-size: 16px; white-space: nowrap; }
 .chip[aria-pressed="true"] .ftag.fem svg { stroke: currentColor; }
+
+/* ---------- Freunde: Veränderung ---------- */
+.fcmp { display: grid; grid-template-columns: repeat(2, 1fr); gap: 10px 14px; margin: 6px 0 14px; }
+.fcmp > div { display: grid; gap: 2px; }
+.fv { font-size: 22px; font-weight: 800; font-variant-numeric: tabular-nums; }
+.fv.up, .arrow.up { color: var(--s6); }
+.fv.down, .arrow.down { color: var(--hold); }
+.fq td.num { width: 56px; }
+.fq td.num.muted { color: var(--ink-2); font-weight: 600; }
+.fq th { white-space: nowrap; }
+.fchlist { list-style: none; padding: 0; margin: 14px 0 0; display: grid; gap: 8px; font-size: 15px; }
+.fchlist .ftag { vertical-align: middle; }
+.fhist { margin: 12px 0 0; }
