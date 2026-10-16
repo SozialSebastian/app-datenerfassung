@@ -1168,7 +1168,7 @@ function renderData() {
   else if (!pushSupport || !standalone) pushBody = `<p class="muted small">Mitteilungen gehen nur in der App vom Home-Bildschirm (ab iOS 16.4). Öffne Mosaik über das Icon und komm hierher zurück.</p>`;
   else pushBody = `
       <label class="switch row" style="margin-top:0"><input type="checkbox" id="pushon" ${p.on ? "checked" : ""}><span>Tägliche Erinnerung</span></label>
-      <div class="sq-row" style="grid-template-columns:76px 1fr"><span>Uhrzeit</span><input type="time" id="pushtime" value="${esc(p.time)}" class="timein"></div>
+      <div class="timerow"><span>Uhrzeit</span><input type="time" id="pushtime" value="${esc(p.time)}" class="timein"></div>
       <p class="muted small" style="margin:8px 0 0">Kommt nur, wenn an dem Tag noch Fragen offen sind. Tippen auf die Mitteilung startet direkt die Abfrage für diesen Tag.</p>
       ${p.on ? `<button class="btn ghost block" id="pushtest" style="margin-top:12px">Test-Erinnerung senden</button>` : ""}
       <p class="small" id="pushmsg" style="margin:8px 0 0"></p>`;

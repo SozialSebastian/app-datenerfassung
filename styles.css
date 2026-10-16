@@ -340,7 +340,9 @@ label.switch input { width: 20px; height: 20px; accent-color: var(--act); }
 .tfoot { margin: 12px 0 0; }
 
 /* ---------- Einstellungen ---------- */
-input.timein { padding: 9px 10px; border-radius: var(--r-sm); border: 1.5px solid var(--line); background: var(--surface); font-size: 17px; font-weight: 600; width: 100%; font-variant-numeric: tabular-nums; }
+.timerow { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-top: 10px; font-size: 15px; color: var(--ink-2); }
+input.timein { -webkit-appearance: none; appearance: none; display: block; box-sizing: border-box; width: 120px; min-width: 0; max-width: 50%; padding: 8px 12px; border-radius: var(--r-sm); border: 1.5px solid var(--line); background: var(--bg); color: var(--ink); font-size: 18px; font-weight: 700; text-align: center; font-variant-numeric: tabular-nums; }
+input.timein::-webkit-date-and-time-value { text-align: center; }
 .panel details { margin-top: 10px; }
 .panel details summary { padding: 6px 0; }
 .tabbar button { font-size: 11px; }
