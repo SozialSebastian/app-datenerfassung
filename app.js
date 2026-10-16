@@ -440,14 +440,14 @@ const pct = (a, b) => (b ? Math.round((a / b) * 100) : 0);
 const shortDate = (s) => { const d = parseIso(s); return `${WD_SHORT[d.getDay()]} ${d.getDate()}.${d.getMonth() + 1}.`; };
 const MON_SHORT = ["Jan", "Feb", "Mär", "Apr", "Mai", "Jun", "Jul", "Aug", "Sep", "Okt", "Nov", "Dez"];
 
-function rangeDays() {
+function rangeDays(range = prefs.range) {
   const t = todayIso();
   let start;
-  if (prefs.range === "all") {
+  if (range === "all") {
     const first = Object.keys(state.answers).sort()[0];
     start = first && first < t ? first : t;
-  } else if (prefs.range === "ytd") start = t.slice(0, 4) + "-01-01"; // seit Jahresbeginn
-  else start = addDays(t, -(Number(prefs.range) - 1));
+  } else if (range === "ytd") start = t.slice(0, 4) + "-01-01"; // seit Jahresbeginn
+  else start = addDays(t, -(Number(range) - 1));
   const out = [];
   for (let d = start; d <= t; d = addDays(d, 1)) out.push(d);
   return out;
@@ -1531,8 +1531,8 @@ function exportItems() {
     items.push({ id: "flist", group: "Freunde", label: "Liste nach Kategorien", file: "Freunde_Liste", html: () => friendsListHtml() });
   }
   if (state.questions.length) {
-    const days = rangeDays();
-    const range = (RANGES.find(([k]) => k === prefs.range) || [, ""])[1];
+    const days = rangeDays(exportRange);
+    const range = (RANGES.find(([k]) => k === exportRange) || [, ""])[1];
     items.push({ id: "trends", group: "Analyse", label: `Trends (${range})`, file: "Trends", html: () => withAllOpen(() => trendsPanel(days)) });
     if (goalItems().length) items.push({ id: "goals", group: "Analyse", label: "Ziele", file: "Ziele", html: () => withAllOpen(goalsPanel) });
     analysisQuestions(days).filter((q) => !qset(q).hidden).forEach((q) =>
@@ -1544,24 +1544,35 @@ function exportItems() {
 }
 
 let exportSel = new Set();
+let exportRange = null; // eigener Zeitraum für Grafiken, startet mit dem der Analyse
 function openExport() {
   const dlg = $("#sheet");
-  const items = exportItems();
+  if (!exportRange) exportRange = prefs.range;
+  let items = exportItems();
   exportSel = new Set([...exportSel].filter((id) => items.some((x) => x.id === id)));
   const draw = () => {
     const groups = [...new Set(items.map((x) => x.group))];
     dlg.innerHTML = `<div class="sheet-inner">
       <div class="sheet-head"><button type="button" class="linkbtn" id="xclose">Schließen</button><h2>Grafik erstellen</h2><span></span></div>
       ${items.length ? `
+      <div class="field" style="font-weight:600;font-size:15px;margin-bottom:8px">Zeitraum für Analyse-Grafiken</div>
+      <div class="seg seg4" role="group" aria-label="Zeitraum">${RANGES.map(([k, l]) => `<button type="button" data-xr="${k}" aria-pressed="${exportRange === k}">${l}</button>`).join("")}</div>
       <div class="xbar"><button type="button" class="linkbtn" id="xall">${exportSel.size === items.length ? "Keine auswählen" : "Alle auswählen"}</button><span class="muted small">${exportSel.size} ausgewählt</span></div>
       ${groups.map((g) => `<section class="sq"><strong>${g}</strong>
         ${items.filter((x) => x.group === g).map((x) => `<label class="xrow"><input type="checkbox" data-xid="${esc(x.id)}" ${exportSel.has(x.id) ? "checked" : ""}><span>${esc(x.label)}</span></label>`).join("")}
       </section>`).join("")}
-      <p class="muted small">Die Analyse-Grafiken nutzen den Zeitraum, der unter Analyse eingestellt ist. Bilder sind immer hell, damit sie in Präsentationen passen.</p>
+      <p class="muted small">Bilder sind immer hell mit weißem Hintergrund, damit sie in Präsentationen passen.</p>
       <button type="button" class="btn block hold-btn" id="xgo" ${exportSel.size ? "" : "disabled"}>${exportSel.size > 1 ? `${exportSel.size} Bilder erstellen` : "Bild erstellen"}</button>`
       : `<p class="muted">Noch nichts da. Leg zuerst Fragen oder Freunde an.</p>`}
     </div>`;
     $("#xclose", dlg).addEventListener("click", () => dlg.close());
+    dlg.querySelectorAll("[data-xr]").forEach((b) => b.addEventListener("click", () => {
+      exportRange = b.dataset.xr;
+      // Auswahl behalten: Kennungen ändern sich durch den Zeitraum nicht
+      items = exportItems();
+      const keep = dlg.querySelector(".sheet-inner").scrollTop;
+      draw(); dlg.querySelector(".sheet-inner").scrollTop = keep;
+    }));
     $("#xall", dlg)?.addEventListener("click", () => { exportSel = exportSel.size === items.length ? new Set() : new Set(items.map((x) => x.id)); draw(); });
     dlg.querySelectorAll("[data-xid]").forEach((c) => c.addEventListener("change", () => { if (c.checked) exportSel.add(c.dataset.xid); else exportSel.delete(c.dataset.xid); draw(); }));
     $("#xgo", dlg)?.addEventListener("click", () => makeImages(items.filter((x) => exportSel.has(x.id))));
@@ -1600,7 +1611,7 @@ async function makeImages(list) {
       stage.innerHTML = `<div class="export-card">${it.html()}<p class="export-foot">Mosaik · ${stamp}</p></div>`;
       const node = stage.firstElementChild;
       await new Promise((r) => requestAnimationFrame(() => r()));
-      const url = await modernScreenshot.domToPng(node, { scale: 3, backgroundColor: "#F4F1EE" });
+      const url = await modernScreenshot.domToPng(node, { scale: 3, backgroundColor: "#FFFFFF" });
       const blob = await (await fetch(url)).blob();
       out.push({ name: `Mosaik_${it.file}_${todayIso()}.png`, url, blob, label: it.label });
     }

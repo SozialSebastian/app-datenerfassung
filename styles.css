@@ -500,8 +500,14 @@ input.flabel { flex: 1; padding: 8px 10px; border-radius: var(--r-sm); border: 1
   --s1: #2a78d6; --s2: #eb6834; --s3: #1baf7a; --s4: #eda100; --s5: #e87ba4; --s6: #008300; --s7: #6250d6; --s8: #e34948;
   color-scheme: light; color: var(--ink); font-family: var(--font);
 }
-.export-card { background: var(--bg); padding: 16px 16px 10px; width: 430px; }
+.export-card { background: #FFFFFF; padding: 4px 8px 10px; width: 430px; }
+.export-card .panel, .export-card .sq { background: #FFFFFF; border-radius: 0; }
 .export-card .panel, .export-card .sq { margin-bottom: 12px; }
 .export-card .btn, .export-card details, .export-card .acap:empty, .export-card .legend { display: none; }
 .export-foot { margin: 0; text-align: right; font-size: 11px; color: var(--ink-2); }
 .export-card .report .sq:last-of-type { margin-bottom: 12px; }
+.export-card .panel + .panel, .export-card .sq + .sq { border-top: 1px solid var(--line); padding-top: 18px; }
+.export-card svg.line { background: #FFFFFF; border-radius: 0; border-left: 1px solid var(--line); border-bottom: 1px solid var(--line); }
+.export-card .cbar { background: #FFFFFF; border-bottom: 1px solid var(--line); border-radius: 0; }
+.export-card .barrow[aria-pressed="true"], .export-card .lrow[aria-pressed="true"] { background: transparent; }
+.export-card .barrow[aria-pressed="true"] .bt { background: var(--bg); }
