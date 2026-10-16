@@ -1,5 +1,5 @@
 // Offline-Cache für die App. Bei jeder Änderung an den Dateien VERSION erhöhen.
-const VERSION = "mosaik-v9";
+const VERSION = "mosaik-v10";
 const FILES = [
   "./",
   "./index.html",
@@ -26,7 +26,8 @@ self.addEventListener("activate", (e) => {
 
 // Erst Netz (damit Updates sofort ankommen), offline aus dem Cache.
 self.addEventListener("fetch", (e) => {
-  if (e.request.method !== "GET") return;
+  // nur eigene Dateien cachen, nie Anfragen an den Mosaik-Dienst
+  if (e.request.method !== "GET" || new URL(e.request.url).origin !== self.location.origin) return;
   e.respondWith(
     fetch(e.request)
       .then((res) => {
@@ -36,4 +37,32 @@ self.addEventListener("fetch", (e) => {
       })
       .catch(() => caches.match(e.request, { ignoreSearch: true }).then((r) => r || caches.match("./index.html")))
   );
+});
+
+// Tägliche Erinnerung vom Mosaik-Dienst
+self.addEventListener("push", (e) => {
+  let d = {};
+  try { d = e.data ? e.data.json() : {}; } catch (err) { /* ohne Inhalt */ }
+  e.waitUntil(self.registration.showNotification(d.title || "Mosaik", {
+    body: d.body || "Zeit für die Abfrage von heute.",
+    icon: "icons/icon-192.png",
+    badge: "icons/icon-192.png",
+    tag: "mosaik-taeglich",
+    data: { date: d.date || null }
+  }));
+});
+
+// Tippen auf die Mitteilung: App öffnen und Abfrage für den Tag starten
+self.addEventListener("notificationclick", (e) => {
+  e.notification.close();
+  const date = e.notification.data && e.notification.data.date;
+  const url = new URL(date ? `./?quiz=${date}` : "./", self.registration.scope).href;
+  e.waitUntil((async () => {
+    const wins = await self.clients.matchAll({ type: "window", includeUncontrolled: true });
+    for (const c of wins) {
+      if (!c.url.startsWith(self.registration.scope)) continue;
+      try { await c.focus(); c.postMessage({ type: "quiz", date }); return; } catch (err) { /* weiter mit neuem Fenster */ }
+    }
+    await self.clients.openWindow(url);
+  })());
 });

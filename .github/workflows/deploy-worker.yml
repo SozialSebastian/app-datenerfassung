@@ -1,0 +1,53 @@
+# Veröffentlicht den Mosaik-Dienst (worker/) bei Cloudflare, sobald sich dort etwas ändert.
+name: Mosaik-Dienst veröffentlichen
+on:
+  push:
+    branches: [main]
+    paths: ["worker/**", ".github/workflows/deploy-worker.yml"]
+  workflow_dispatch:
+concurrency: deploy-worker
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: worker
+    env:
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - name: Datenbank suchen oder anlegen (Westeuropa)
+        run: |
+          api() { curl -s -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" -H "Content-Type: application/json" "$@"; }
+          base="https://api.cloudflare.com/client/v4/accounts/$CLOUDFLARE_ACCOUNT_ID/d1/database"
+          id=$(api "$base?name=mosaik" | jq -r '.result[]? | select(.name=="mosaik") | .uuid' | head -n1)
+          if [ -z "$id" ]; then
+            id=$(api -X POST "$base" --data '{"name":"mosaik","primary_location_hint":"weur"}' | jq -r '.result.uuid')
+            echo "Datenbank angelegt"
+          fi
+          [ -n "$id" ] && [ "$id" != "null" ] || { echo "::error::Datenbank konnte nicht angelegt werden"; exit 1; }
+          sed -i "s/__D1_ID__/$id/" wrangler.toml
+      - name: Tabellen anlegen
+        run: npx --yes wrangler@4 d1 execute mosaik --remote --file schema.sql
+      - name: Veröffentlichen
+        run: npx --yes wrangler@4 deploy
+      - name: Schlüssel hinterlegen
+        env:
+          MOSAIK_TOKEN: ${{ secrets.MOSAIK_TOKEN }}
+        run: |
+          if [ -n "$MOSAIK_TOKEN" ]; then
+            printf '%s' "$MOSAIK_TOKEN" | npx --yes wrangler@4 secret put SYNC_TOKEN
+          else
+            echo "::warning title=Schlüssel fehlt::Secret MOSAIK_TOKEN ist noch nicht in GitHub hinterlegt"
+          fi
+      - name: Prüfen
+        env:
+          MOSAIK_TOKEN: ${{ secrets.MOSAIK_TOKEN }}
+        run: |
+          sleep 8
+          echo "::notice title=Status::$(curl -s https://mosaik-sync.sebastian-taglieber.workers.dev/)"
+          echo "::notice title=Mit Schlüssel::$(curl -s -o /dev/null -w '%{http_code}' -H "Authorization: Bearer $MOSAIK_TOKEN" https://mosaik-sync.sebastian-taglieber.workers.dev/ping)"

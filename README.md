@@ -7,6 +7,8 @@ Web-App (PWA) fürs iPhone: eigene Fragen anlegen, jeden Tag beantworten, alles 
 - **Abfrage:** Button „Abfrage starten“ geht alle Fragen des Tages nacheinander durch
 - **Trends:** Serien (z. B. 7 Tage in Folge), auffällige Pausen und Zusammenhänge (Mittelwertvergleich, auch „am Tag danach“, und Korrelation) oben in der Analyse
 - **Analyse:** Auswertung je Frage für 7 Tage, 30 Tage, 12 Monate oder alles. Über das Zahnrad pro Frage einstellbar: Balken oder Kuchen, % oder Anzahl, Verlauf über die Zeit, anzeigen oder ausblenden
+- **Erinnerung:** tägliche Push-Mitteilung zur eingestellten Uhrzeit (Einstellungen), Tippen startet die Abfrage
+- **Kurzbefehle im Hintergrund:** Werte per POST an den Mosaik-Dienst (`worker/`), die App holt sie beim Öffnen ab
 - **Speicher:** nur lokal auf dem iPhone. Sicherung als JSON-Datei (z. B. in iCloud Drive)
 - **Excel:** Blatt „Antworten“ (eine Zeile pro Tag, eine Spalte pro Frage, immer alle Daten) und Blatt „Fragen“
 - **Apple Health:** über einen Kurzbefehl, der `mosaik;schlaf=7,4` in die Zwischenablage kopiert. In der App „Werte aus Health einfügen“ tippen

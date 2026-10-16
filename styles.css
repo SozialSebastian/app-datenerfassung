@@ -338,3 +338,9 @@ label.switch input { width: 20px; height: 20px; accent-color: var(--act); }
 .trow.rel .tmark { background: var(--ink); }
 .tsub { margin: 14px 0 8px; }
 .tfoot { margin: 12px 0 0; }
+
+/* ---------- Einstellungen ---------- */
+input.timein { padding: 9px 10px; border-radius: var(--r-sm); border: 1.5px solid var(--line); background: var(--surface); font-size: 17px; font-weight: 600; width: 100%; font-variant-numeric: tabular-nums; }
+.panel details { margin-top: 10px; }
+.panel details summary { padding: 6px 0; }
+.tabbar button { font-size: 11px; }

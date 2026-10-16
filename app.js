@@ -100,6 +100,7 @@ function setAnswer(date, qid, value) {
   }
   if (Object.keys(a).length === 0) delete state.answers[date];
   save();
+  if (typeof reportStatus === "function" && date === todayIso()) reportStatus();
 }
 
 function dayProgress(date) {
@@ -1029,6 +1030,94 @@ function openEditor(id) {
 }
 
 /* ================= Export, Backup, Health ================= */
+/* ================= Mosaik-Dienst: Erinnerung und Eingang ================= */
+const SERVER = "https://mosaik-sync.sebastian-taglieber.workers.dev";
+const SETTINGS_KEY = "mosaik.settings";
+let settings = { token: "", push: { on: false, time: "23:00", endpoint: null }, lastInbox: null };
+try { const s = JSON.parse(localStorage.getItem(SETTINGS_KEY) || "{}"); settings = { ...settings, ...s, push: { ...settings.push, ...(s.push || {}) } }; } catch (e) { /* egal */ }
+const saveSettings = () => { try { localStorage.setItem(SETTINGS_KEY, JSON.stringify(settings)); } catch (e) { /* egal */ } };
+
+async function api(path, body) {
+  let res;
+  try {
+    res = await fetch(SERVER + path, {
+      method: body ? "POST" : "GET",
+      headers: { Authorization: `Bearer ${settings.token}`, ...(body ? { "Content-Type": "application/json" } : {}) },
+      body: body ? JSON.stringify(body) : undefined
+    });
+  } catch (e) { throw new Error("Dienst nicht erreichbar. Bist du online?"); }
+  let data = {};
+  try { data = await res.json(); } catch (e) { /* keine JSON-Antwort */ }
+  if (res.status === 401) throw new Error("Der Schlüssel stimmt nicht.");
+  if (!res.ok) throw new Error(data.error || `Fehler ${res.status}`);
+  return data;
+}
+
+const b64ToBytes = (s) => { s = s.replace(/-/g, "+").replace(/_/g, "/"); while (s.length % 4) s += "="; return Uint8Array.from(atob(s), (c) => c.charCodeAt(0)); };
+
+async function enablePush(time) {
+  // Erlaubnis zuerst anfragen: iOS verlangt das direkt nach dem Tippen
+  const perm = await Notification.requestPermission();
+  if (perm !== "granted") throw new Error("Mitteilungen sind nicht erlaubt. iPhone-Einstellungen → Mitteilungen → Mosaik → Mitteilungen erlauben.");
+  const reg = await navigator.serviceWorker.ready;
+  let sub = await reg.pushManager.getSubscription();
+  if (!sub) {
+    const { key } = await api("/vapid");
+    sub = await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: b64ToBytes(key) });
+  }
+  await api("/subscribe", { subscription: sub.toJSON(), time, tz: Intl.DateTimeFormat().resolvedOptions().timeZone || "Europe/Berlin" });
+  settings.push = { on: true, time, endpoint: sub.endpoint };
+  saveSettings();
+  reportStatus();
+}
+
+async function disablePush() {
+  const reg = await navigator.serviceWorker.ready;
+  const sub = await reg.pushManager.getSubscription();
+  const endpoint = (sub && sub.endpoint) || settings.push.endpoint;
+  if (endpoint) await api("/unsubscribe", { endpoint }).catch(() => {});
+  if (sub) await sub.unsubscribe().catch(() => {});
+  settings.push = { ...settings.push, on: false, endpoint: null };
+  saveSettings();
+}
+
+// Dem Dienst mitteilen, wie viele Fragen heute noch offen sind (keine Antworten!)
+let statusTimer;
+function reportStatus() {
+  if (!settings.token || !settings.push.on || !settings.push.endpoint) return;
+  clearTimeout(statusTimer);
+  statusTimer = setTimeout(() => {
+    const t = todayIso();
+    const a = state.answers[t] || {};
+    const open = visibleQuestions(t).filter((q) => !isAnswered(a[q.id])).length;
+    api("/status", { endpoint: settings.push.endpoint, date: t, open }).catch(() => {});
+  }, 1500);
+}
+
+// Werte abholen, die Kurzbefehle im Hintergrund geschickt haben
+let inboxBusy = false, inboxLast = 0;
+async function fetchInbox(manual) {
+  if (!settings.token || inboxBusy) return;
+  if (!manual && Date.now() - inboxLast < 30000) return;
+  inboxBusy = true; inboxLast = Date.now();
+  try {
+    const { items } = await api("/inbox");
+    const done = [], unknown = new Set();
+    let setCount = 0;
+    for (const it of items) {
+      const r = applyPairs({ [it.key]: it.value }, it.date);
+      if (r.set.length) { done.push(it.id); setCount += r.set.length; } else r.unknown.forEach((k) => unknown.add(k));
+    }
+    if (done.length) await api("/inbox/ack", { ids: done });
+    settings.lastInbox = new Date().toISOString(); saveSettings();
+    if (setCount) { toast(`${setCount} Wert${setCount > 1 ? "e" : ""} aus Kurzbefehlen übernommen`); render(); }
+    else if (manual) toast(unknown.size ? `Kein passendes Health-Kürzel: ${[...unknown].join(", ")}` : "Keine neuen Werte");
+    else if (tab === "data") renderData();
+  } catch (e) {
+    if (manual) toast(e.message);
+  } finally { inboxBusy = false; }
+}
+
 function renderData() {
   const view = $("#view");
   const days = Object.keys(state.answers).sort();
@@ -1036,9 +1125,29 @@ function renderData() {
   const last = state.lastBackup ? longDate(state.lastBackup.slice(0, 10)) + " " + state.lastBackup.slice(0, 4) : "noch nie";
   const backupOld = !state.lastBackup || (Date.now() - new Date(state.lastBackup).getTime()) > 30 * 864e5;
   const base = location.href.split("#")[0].split("?")[0];
+  const connected = !!settings.token;
+  const p = settings.push;
+  const pushSupport = "serviceWorker" in navigator && "PushManager" in window && "Notification" in window;
+  const standalone = window.matchMedia("(display-mode: standalone)").matches || navigator.standalone === true;
+  const lastIn = settings.lastInbox ? new Date(settings.lastInbox).toLocaleString("de-DE", { day: "numeric", month: "numeric", hour: "2-digit", minute: "2-digit" }) : "noch nie";
+
+  let pushBody;
+  if (!connected) pushBody = `<p class="muted small">Trag zuerst unten unter „Verbindung“ deinen Schlüssel ein.</p>`;
+  else if (!pushSupport || !standalone) pushBody = `<p class="muted small">Mitteilungen gehen nur in der App vom Home-Bildschirm (ab iOS 16.4). Öffne Mosaik über das Icon und komm hierher zurück.</p>`;
+  else pushBody = `
+      <label class="switch row" style="margin-top:0"><input type="checkbox" id="pushon" ${p.on ? "checked" : ""}><span>Tägliche Erinnerung</span></label>
+      <div class="sq-row" style="grid-template-columns:76px 1fr"><span>Uhrzeit</span><input type="time" id="pushtime" value="${esc(p.time)}" class="timein"></div>
+      <p class="muted small" style="margin:8px 0 0">Kommt nur, wenn an dem Tag noch Fragen offen sind. Tippen auf die Mitteilung startet direkt die Abfrage für diesen Tag.</p>
+      ${p.on ? `<button class="btn ghost block" id="pushtest" style="margin-top:12px">Test-Erinnerung senden</button>` : ""}
+      <p class="small" id="pushmsg" style="margin:8px 0 0"></p>`;
 
   view.innerHTML = `
-    <div class="dayhead"><h1>Export</h1></div>
+    <div class="dayhead"><h1>Einstellungen</h1></div>
+
+    <section class="panel">
+      <h2>Erinnerung</h2>
+      ${pushBody}
+    </section>
 
     <section class="panel">
       <h2>Excel-Tabelle</h2>
@@ -1059,26 +1168,50 @@ function renderData() {
     </section>
 
     <section class="panel">
-      <h2>Apple Health</h2>
-      <p class="muted">Eine Web-App kann Health nicht direkt lesen. Ein Kurzbefehl kann es: Er liest z. B. deine Schlafdauer und kopiert sie. In der App tippst du dann auf „Werte aus Health einfügen“.</p>
+      <h2>Kurzbefehle und Apple Health</h2>
+      <p class="muted">Kurzbefehle können Werte eintragen, z. B. die Schlafdauer aus Health. Dafür braucht die Frage unter „Fragen“ ein Health-Kürzel, z. B. <code>schlaf</code>.</p>
+      <details ${connected ? "" : ""}>
+        <summary><strong>Im Hintergrund senden</strong> (empfohlen)</summary>
+        ${connected ? `<ol class="steps small">
+          <li>In Kurzbefehle den Wert besorgen, z. B. die Schlafdauer (Schritte siehe „Schlafdauer aus Health“ unten, nur ohne „In Zwischenablage kopieren“).</li>
+          <li>Aktion <strong>Text</strong>: <code>mosaik;schlaf=</code> und dahinter die Variable mit dem Wert.</li>
+          <li>Aktion <strong>Inhalte von URL abrufen</strong> mit der Adresse <code>${SERVER}/in</code></li>
+          <li>Dort auf „Mehr anzeigen“: Methode <em>POST</em>, unter <em>Header</em> einen Eintrag <code>Authorization</code> mit dem Wert aus „Header kopieren“, unter <em>Haupttext anfragen</em> <em>Datei</em> und als Inhalt die Text-Variable.</li>
+          <li>Für jeden Tag automatisch: Kurzbefehle → <strong>Automation</strong> → <em>Tageszeit</em>, z. B. 9:00 → <em>Sofort ausführen</em> → diesen Kurzbefehl wählen.</li>
+        </ol>
+        <button class="btn ghost block" id="copyhdr" style="margin-top:8px">Header kopieren</button>
+        <p class="small muted" style="margin:10px 0 0">Die Werte liegen beim Dienst nur, bis Mosaik sie abholt (beim Öffnen), danach werden sie dort gelöscht. Zuletzt abgeholt: ${lastIn}</p>
+        <button class="btn ghost block" id="inboxnow" style="margin-top:8px">Jetzt abholen</button>`
+        : `<p class="muted small">Trag zuerst unten unter „Verbindung“ deinen Schlüssel ein.</p>`}
+      </details>
       <details>
-        <summary><strong>Kurzbefehl für Schlaf einrichten</strong></summary>
+        <summary><strong>Über die Zwischenablage</strong></summary>
+        <p class="small" style="margin-top:8px">Kurzbefehl endet mit <strong>In Zwischenablage kopieren</strong> (Text <code>mosaik;schlaf=7,4</code>). Danach Mosaik öffnen und unter „Tag“ auf „Werte aus Health einfügen“ tippen.</p>
+      </details>
+      <details>
+        <summary><strong>Schlafdauer aus Health</strong></summary>
         <ol class="steps small">
-          <li>Leg hier unter Fragen eine Zahl-Frage an, z. B. „Wie lange geschlafen?“ mit Einheit Stunden, und trag unter Apple Health das Kürzel <code>schlaf</code> ein.</li>
-          <li>Öffne die App Kurzbefehle und tippe auf <strong>+</strong>.</li>
           <li>Aktion <strong>Health-Stichproben suchen</strong>: Typ <em>Schlafanalyse</em>, Filter <em>Startdatum ist in den letzten 1 Tagen</em> und <em>Wert ist nicht Im Bett</em> und <em>Wert ist nicht Wach</em>.</li>
           <li>Aktion <strong>Details von Health-Stichproben abrufen</strong>: <em>Dauer</em>.</li>
           <li>Aktion <strong>Statistik berechnen</strong>: <em>Summe</em>.</li>
           <li>Aktion <strong>Maßeinheit umwandeln</strong> in <em>Stunden</em> (falls angeboten), dann <strong>Zahl runden</strong> auf 1 Nachkommastelle.</li>
-          <li>Aktion <strong>Text</strong>: <code>mosaik;schlaf=</code> und dahinter die Variable mit dem gerundeten Wert.</li>
-          <li>Aktion <strong>In Zwischenablage kopieren</strong>.</li>
-          <li>Optional: Aktion <strong>URL öffnen</strong> ist nicht nötig. Öffne danach einfach diese App vom Home-Bildschirm.</li>
         </ol>
         <p class="small muted">Mehrere Werte gehen in einer Zeile: <code>mosaik;schlaf=7,4;schritte=9500</code>. Mit <code>datum=2026-10-14</code> landet der Wert an einem bestimmten Tag, sonst am heutigen.</p>
       </details>
-      <p class="small" style="margin-top:12px">Zum Testen ohne Kurzbefehl: Text einfügen und übernehmen.</p>
+      <p class="small" style="margin-top:12px">Zum Testen: Text einfügen und übernehmen.</p>
       <textarea class="paste" id="pastebox" placeholder="mosaik;schlaf=7,5"></textarea>
       <button class="btn ghost block" id="pastego" style="margin-top:8px">Text übernehmen</button>
+    </section>
+
+    <section class="panel">
+      <h2>Verbindung</h2>
+      <p class="muted small">Der Mosaik-Dienst verschickt die Erinnerung und nimmt Werte von Kurzbefehlen an. Deine Antworten bleiben auf dem iPhone.</p>
+      ${connected
+        ? `<p class="small" id="connmsg"><strong>Schlüssel gespeichert.</strong> <span class="muted">Dienst: ${SERVER.replace("https://", "")}</span></p>
+           <div class="stack"><button class="btn ghost" id="conntest">Verbindung prüfen</button><button class="btn ghost" id="connreset">Schlüssel entfernen</button></div>`
+        : `<label class="field">Schlüssel<input id="tokenin" type="password" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="Schlüssel einfügen"></label>
+           <button class="btn block" id="connsave">Sichern und prüfen</button>
+           <p class="small" id="connmsg" style="margin:8px 0 0"></p>`}
     </section>
 
     <p class="muted small">Adresse dieser App: <code>${esc(base)}</code></p>`;
@@ -1088,6 +1221,49 @@ function renderData() {
   $("#restore").addEventListener("click", () => $("#restorefile").click());
   $("#restorefile").addEventListener("change", importBackup);
   $("#pastego").addEventListener("click", () => applyHealthText($("#pastebox").value, true));
+
+  const msg = (id, t, bad) => { const el = $("#" + id); if (el) { el.textContent = t; el.style.color = bad ? "var(--danger)" : ""; } };
+
+  $("#connsave")?.addEventListener("click", async () => {
+    const t = $("#tokenin").value.trim();
+    if (!t) return msg("connmsg", "Bitte den Schlüssel einfügen.", true);
+    settings.token = t;
+    try { await api("/ping"); saveSettings(); toast("Verbunden"); renderData(); }
+    catch (e) { settings.token = ""; msg("connmsg", e.message, true); }
+  });
+  $("#conntest")?.addEventListener("click", async () => {
+    try { await api("/ping"); msg("connmsg", "Verbindung klappt."); } catch (e) { msg("connmsg", e.message, true); }
+  });
+  $("#connreset")?.addEventListener("click", async () => {
+    if (!confirm("Schlüssel entfernen? Die Erinnerung wird dann abgeschaltet.")) return;
+    try { await disablePush(); } catch (e) { /* egal */ }
+    settings.token = ""; saveSettings(); renderData();
+  });
+
+  $("#pushon")?.addEventListener("change", async (e) => {
+    const on = e.target.checked;
+    try {
+      if (on) { await enablePush($("#pushtime").value || "23:00"); toast(`Erinnerung täglich um ${settings.push.time} Uhr`); }
+      else { await disablePush(); toast("Erinnerung aus"); }
+      renderData();
+    } catch (err) { e.target.checked = !on; msg("pushmsg", err.message, true); }
+  });
+  $("#pushtime")?.addEventListener("change", async (e) => {
+    const t = e.target.value;
+    if (!/^\d{2}:\d{2}$/.test(t)) return;
+    settings.push.time = t; saveSettings();
+    if (!settings.push.on) return;
+    try { await enablePush(t); toast(`Erinnerung täglich um ${t} Uhr`); } catch (err) { msg("pushmsg", err.message, true); }
+  });
+  $("#pushtest")?.addEventListener("click", async () => {
+    try { await api("/test", { endpoint: settings.push.endpoint }); msg("pushmsg", "Test verschickt. Die Mitteilung kommt in wenigen Sekunden."); }
+    catch (e) { msg("pushmsg", e.message, true); }
+  });
+  $("#copyhdr")?.addEventListener("click", async () => {
+    try { await navigator.clipboard.writeText(`Bearer ${settings.token}`); toast("Header-Wert kopiert"); }
+    catch (e) { toast("Kopieren nicht möglich"); }
+  });
+  $("#inboxnow")?.addEventListener("click", () => fetchInbox(true));
 }
 
 async function shareOrDownload(blob, filename) {
@@ -1182,6 +1358,24 @@ function importBackup(e) {
   e.target.value = "";
 }
 
+// Werte (Kürzel → Wert) an einem Tag eintragen; gibt eingetragene und unbekannte Kürzel zurück
+function applyPairs(pairs, date) {
+  const set = [], unknown = [];
+  for (const [k, v] of Object.entries(pairs)) {
+    const q = state.questions.find((x) => x.healthKey === k);
+    if (!q) { unknown.push(k); continue; }
+    let val;
+    if (q.type === "choice") {
+      val = q.options.find((o) => o.toLowerCase() === String(v).toLowerCase());
+      if (val && q.multi) { const cur = (state.answers[date] || {})[q.id]; val = Array.from(new Set([...(Array.isArray(cur) ? cur : []), val])); }
+    } else { val = parseNum(v); if (Number.isNaN(val)) val = undefined; if (q.type === "scale" && val !== undefined) val = Math.round(val); }
+    if (val === undefined || val === null) { unknown.push(k); continue; }
+    setAnswer(date, q.id, val);
+    set.push(q.text);
+  }
+  return { set, unknown };
+}
+
 /* Health-Werte: "mosaik;schlaf=7,4;schritte=9500;datum=2026-10-14" */
 function applyHealthText(text, fromPaste) {
   const t = String(text || "").trim();
@@ -1201,18 +1395,7 @@ function applyHealthText(text, fromPaste) {
     else if (/^\d{1,2}\.\d{1,2}\.\d{4}$/.test(pairs.datum)) { const [d, m, y] = pairs.datum.split("."); date = `${y}-${pad(m)}-${pad(d)}`; }
     delete pairs.datum;
   }
-  const set = [];
-  const unknown = [];
-  for (const [k, v] of Object.entries(pairs)) {
-    const q = state.questions.find((x) => x.healthKey === k);
-    if (!q) { unknown.push(k); continue; }
-    let val;
-    if (q.type === "choice") { val = q.options.find((o) => o.toLowerCase() === v.toLowerCase()); if (val && q.multi) val = [val]; }
-    else { val = parseNum(v); if (Number.isNaN(val)) val = undefined; if (q.type === "scale" && val !== undefined) val = Math.round(val); }
-    if (val === undefined || val === null) { unknown.push(k); continue; }
-    setAnswer(date, q.id, val);
-    set.push(q.text);
-  }
+  const { set, unknown } = applyPairs(pairs, date);
   if (set.length) {
     current = date; tab = "day"; render();
     toast(`${set.length} Wert${set.length > 1 ? "e" : ""} für ${longDate(date)} eingetragen`);
@@ -1226,7 +1409,7 @@ async function healthFromClipboard() {
     const text = await navigator.clipboard.readText();
     applyHealthText(text, false);
   } catch (e) {
-    toast("Zwischenablage nicht lesbar – Text unter Export einfügen");
+    toast("Zwischenablage nicht lesbar – Text unter Einstellungen einfügen");
   }
 }
 
@@ -1250,6 +1433,23 @@ document.addEventListener("visibilitychange", () => {
 
 render();
 checkHash();
+
+// Tippen auf die Erinnerung: …/?quiz=2026-10-16 startet die Abfrage für diesen Tag
+function openQuizFromLink(date) {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(date || "") || date > todayIso()) return;
+  if (!visibleQuestions(date).length) { current = date; tab = "day"; quiz = null; render(); return; }
+  startQuiz(date);
+}
+{
+  const qd = new URLSearchParams(location.search).get("quiz");
+  if (qd) { history.replaceState(null, "", location.pathname); openQuizFromLink(qd); }
+}
+if ("serviceWorker" in navigator) {
+  navigator.serviceWorker.addEventListener("message", (e) => { if (e.data && e.data.type === "quiz") openQuizFromLink(e.data.date); });
+}
+fetchInbox(false);
+reportStatus();
+document.addEventListener("visibilitychange", () => { if (document.visibilityState === "visible") { fetchInbox(false); reportStatus(); } });
 
 if ("serviceWorker" in navigator && location.protocol !== "file:") {
   navigator.serviceWorker.register("sw.js").catch((e) => console.warn("SW", e));
