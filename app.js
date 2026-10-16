@@ -1921,7 +1921,7 @@ const WEATHER_QS = [
   { id: "__w_r", k: "r", text: "Regenmenge", type: "number", unit: "mm", weather: true, lead: "Je mehr es regnet" }
 ];
 const RAIN_Q = { id: "__w_rain", text: "Regen", type: "choice", options: ["Ja", "Nein"], weather: true };
-const weatherOn = () => settings.weather && settings.weather.on && Object.keys(W()).length > 0;
+const weatherOn = () => settings.places && settings.places.on && Object.keys(W()).length > 0; // Wetter läuft automatisch mit „Orte“
 function weatherAns(d, q) {
   const w = W()[d];
   if (!w) return undefined;
@@ -1946,7 +1946,7 @@ function storeDaily(j) {
 let weatherBusy = false;
 // Fehlende abgeschlossene Tage mit bekanntem Standort nachladen (max. 1× pro Stunde)
 async function syncWeather(force) {
-  if (!settings.weather || !settings.weather.on || weatherBusy) return;
+  if (!settings.places || !settings.places.on || weatherBusy) return;
   if (!force && settings.weather.last && Date.now() - settings.weather.last < 3600e3) return;
   weatherBusy = true;
   try {
@@ -2827,18 +2827,11 @@ function renderData() {
       <h2>Orte</h2>
       <label class="switch row" style="margin-top:0"><input type="checkbox" id="placeson" ${settings.places.on ? "checked" : ""}><span>Stadt beim Öffnen erfassen</span></label>
       <p class="muted small" style="margin:8px 0 0">Mosaik merkt sich beim Öffnen die Stadt, höchstens alle 20 Minuten, z. B. „Wedel → Hamburg → Wedel“. Gespeichert wird nur der Ortsname, auf dem iPhone. Für den Namen werden die auf ca. 1 km gerundeten Koordinaten an BigDataCloud geschickt, ersatzweise an OpenStreetMap. Orte lassen sich unter „Tag“ antippen und von Hand ergänzen.</p>
+      <p class="muted small" style="margin:8px 0 0">Zusätzlich holt Mosaik für jeden Tag mit Standort das Wetter (Höchsttemperatur, Regen, Sonnenstunden, über Open-Meteo). Es wird nur in den Trends als Faktor für Zusammenhänge genutzt.${settings.places.on ? ` Wetter vorhanden für ${Object.keys(state.weather || {}).length} Tage.` : ""}</p>
       ${settings.places.on && settings.places.err ? `<p class="small" style="margin:8px 0 0;color:var(--danger)">Letzter Fehler ${esc(settings.places.err)}</p>` : ""}
       ${settings.places.on ? `<button class="btn ghost block" id="placenow" style="margin-top:12px">Standort jetzt erfassen</button>` : ""}
     </section>
 
-    <section class="panel">
-      <h2>Wetter</h2>
-      <label class="switch row" style="margin-top:0"><input type="checkbox" id="weatheron" ${settings.weather.on ? "checked" : ""}><span>Wetter für Zusammenhänge nutzen</span></label>
-      <p class="muted small" style="margin:8px 0 0">Holt einmal pro Tag Höchsttemperatur, Regen und Sonnenstunden für deinen Ort (Open-Meteo, kostenlos). Erscheint nur unter Trends als Faktor, z. B. „Laune an Tagen mit Regen“. Braucht „Orte“.</p>
-      ${settings.weather.on ? `<p class="small" style="margin:8px 0 0">Wetter für <strong>${Object.keys(state.weather || {}).length}</strong> Tage vorhanden.</p>
-        ${settings.weather.err ? `<p class="small" style="margin:6px 0 0;color:var(--danger)">Letzter Fehler: ${esc(settings.weather.err)}</p>` : ""}
-        <p class="muted small" style="margin:6px 0 0">Nur für Tage, an denen ein Standort erfasst wurde. Fehlende Tage der letzten 30 Tage werden beim Öffnen nachgeholt.</p>` : ""}
-    </section>
 
     <section class="panel">
       <h2>Excel-Tabelle</h2>
@@ -2963,16 +2956,10 @@ function renderData() {
   $("#reportopen").addEventListener("click", () => openReport());
   $("#placeson").addEventListener("change", async (e) => {
     settings.places.on = e.target.checked; settings.places.last = 0; saveSettings();
-    if (e.target.checked) await capturePlace(true); else toast("Orte werden nicht mehr erfasst");
+    if (e.target.checked) { await capturePlace(true); syncWeather(true); } else toast("Orte und Wetter werden nicht mehr erfasst");
     renderData();
   });
   $("#placenow")?.addEventListener("click", async () => { await capturePlace(true); renderData(); });
-  $("#weatheron").addEventListener("change", async (e) => {
-    settings.weather.on = e.target.checked; settings.weather.last = 0; saveSettings();
-    if (e.target.checked && !(settings.places && settings.places.on)) toast("Bitte auch „Orte“ einschalten");
-    if (e.target.checked) await syncWeather(true);
-    renderData();
-  });
   $("#exportopen").addEventListener("click", openExport);
   const weekSave = async () => {
     const day = Number($("#weekday").value), time = $("#weektime").value || "19:00";
