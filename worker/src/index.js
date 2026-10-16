@@ -133,7 +133,10 @@ async function readValues(request) {
       try {
         const j = JSON.parse(raw);
         for (const [k, v] of Object.entries(j)) {
-          if (Array.isArray(v)) lists[k.toLowerCase()] = v; else pairs[k.toLowerCase()] = String(v);
+          // Listen kommen als Array oder als Text mit einem Wert pro Zeile (Kurzbefehle setzen Listen so ein)
+          if (Array.isArray(v)) lists[k.toLowerCase()] = v;
+          else if (typeof v === "string" && /\n/.test(v.trim())) lists[k.toLowerCase()] = v.trim().split(/\r?\n/).map((x) => x.trim()).filter(Boolean);
+          else pairs[k.toLowerCase()] = String(v);
         }
       } catch (e) { /* kein JSON */ }
     } else {
