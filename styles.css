@@ -373,3 +373,4 @@ input.timein::-webkit-date-and-time-value { text-align: center; }
 .hval input.wide { width: 9ch; }
 .seg.seg4 { grid-template-columns: repeat(5, 1fr); }
 .seg.seg4 button { font-size: 14px; padding: 9px 0; white-space: nowrap; }
+.trow.num .tmark { background: var(--s1); }

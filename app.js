@@ -857,21 +857,122 @@ function relationInsights(days) {
     if (Math.abs(r) < MIN_R) continue;
     found.push({
       score: (2 * Math.abs(r)) / Math.sqrt(1 - Math.min(r * r, 0.99)), // in d umgerechnet, damit vergleichbar
-      html: `${qName(a)} und ${qName(b)}: <strong>${r > 0 ? "je mehr, desto mehr" : "je mehr, desto weniger"}</strong> (r = ${r.toLocaleString("de-DE", { minimumFractionDigits: 2, maximumFractionDigits: 2 })})`,
+      html: (() => {
+        // Uhrzeit zuerst nennen („Je später die Schlafenszeit …“), sonst Reihenfolge wie angelegt
+        const [x, y] = b.format === "clock" && a.format !== "clock" ? [b, a] : [a, b];
+        const up = (q) => (q.format === "clock" ? "später" : q.format === "duration" ? "länger" : "mehr");
+        const down = (q) => (q.format === "clock" ? "früher" : q.format === "duration" ? "kürzer" : "weniger");
+        return `<strong>Je ${up(x)} ${qName(x)}, desto ${r > 0 ? up(y) : down(y)} ${qName(y)}</strong> (r = ${r.toLocaleString("de-DE", { minimumFractionDigits: 2, maximumFractionDigits: 2 })})`;
+      })(),
       note: `${xs.length} Tage`
     });
   }
   return found.sort((a, b) => b.score - a.score).slice(0, 5);
 }
 
+// Trends für einzelne Zahlen (z. B. Schritte, Schlaf): Normalwert, Wochentage, Rekorde, Serien
+const WD_PLURAL = ["sonntags", "montags", "dienstags", "mittwochs", "donnerstags", "freitags", "samstags"];
+const MON_LONG = MON;
+const niceDate = (d) => { const x = parseIso(d); return `${x.getDate()}. ${MON_LONG[x.getMonth()]}`; };
+
+// Wert lesbar: Zeitformate wie gehabt, große Zahlen mit Tausenderpunkt
+function fmtNice(q, v) {
+  if (q.format) return fmtQ(q, v);
+  const s = Math.abs(v) >= 100 ? Math.round(v).toLocaleString("de-DE") : fmt1(v);
+  return s + (q.unit ? " " + q.unit : "");
+}
+// Unterschied lesbar: bei Zeiten in Minuten, sonst in Prozent
+function fmtDiff(q, d, base) {
+  if (q.format) {
+    const m = Math.round(Math.abs(d) * 60);
+    const word = q.format === "clock" ? (d > 0 ? "später" : "früher") : (d > 0 ? "mehr" : "weniger");
+    return `${m >= 60 ? `${Math.floor(m / 60)} h ${String(m % 60).padStart(2, "0")} min` : `${m} min`} ${word} als sonst`;
+  }
+  const p = Math.round((Math.abs(d) / Math.abs(base || 1)) * 100);
+  return `${p} % ${d > 0 ? "über" : "unter"} deinem Schnitt`;
+}
+// Wörter je nach Art der Zahl
+function words(q) {
+  if (q.format === "clock") return { hi: "am spätesten", lo: "am frühesten", top: "Späteste", bottom: "Früheste" };
+  if (q.format === "duration") return { hi: "am längsten", lo: "am kürzesten", top: "Längste", bottom: "Kürzeste" };
+  if (q.healthKey === "schritte") return { hi: "am meisten", lo: "am wenigsten", top: "Meiste", bottom: "Wenigste" };
+  return { hi: "am höchsten", lo: "am niedrigsten", top: "Höchster Wert", bottom: "Niedrigster Wert" };
+}
+
+function numberInsights() {
+  const out = [];
+  const t = todayIso();
+  for (const q of state.questions) {
+    if (q.archived || q.type !== "number") continue;
+    // Der heutige Health-Wert ist meist noch unvollständig (Schritte) → nicht mitzählen
+    const last = isHealthQ(q) ? addDays(t, -1) : t;
+    const series = Object.keys(state.answers).sort()
+      .filter((d) => d <= last && typeof (state.answers[d] || {})[q.id] === "number")
+      .map((d) => ({ d, v: state.answers[d][q.id] }));
+    if (series.length < 14) continue;
+    const name = q.healthKey === "schritte" ? "Schritte" : esc(q.text.replace(/\?$/, ""));
+    const w = words(q);
+    const all = series.map((x) => x.v);
+    const sdAll = sd(all) || 1;
+
+    // 1. Diese Woche im Vergleich zum Normalwert (letzte 365 Tage davor)
+    const weekStart = addDays(last, -6);
+    const week = series.filter((x) => x.d >= weekStart).map((x) => x.v);
+    const before = series.filter((x) => x.d < weekStart && x.d >= addDays(weekStart, -365)).map((x) => x.v);
+    if (week.length >= 4 && before.length >= 14) {
+      const mw = mean(week), mb = mean(before), diff = mw - mb;
+      const z = Math.abs(diff) / (sd(before) || 1);
+      if (z >= 0.4) out.push({ score: 1 + z, html: `<strong>${name} diese Woche Ø ${fmtNice(q, mw)}</strong>, ${fmtDiff(q, diff, mb)}` });
+    }
+
+    // 2. Wochentagsmuster (mind. 4 Werte je Wochentag)
+    const byWd = Array.from({ length: 7 }, () => []);
+    series.slice(-365).forEach((x) => byWd[parseIso(x.d).getDay()].push(x.v));
+    if (byWd.every((a) => a.length >= 4)) {
+      const means = byWd.map(mean);
+      const hi = means.indexOf(Math.max(...means)), lo = means.indexOf(Math.min(...means));
+      const spread = (means[hi] - means[lo]) / sdAll;
+      if (spread >= 0.5) out.push({ score: 0.8 + spread, html: `${name}: <strong>${WD_PLURAL[hi]} ${w.hi}</strong> (Ø ${fmtNice(q, means[hi])}), ${WD_PLURAL[lo]} ${w.lo} (Ø ${fmtNice(q, means[lo])})` });
+    }
+
+    // 3. Rekord: letzter Wert ist der höchste/niedrigste seit langem
+    const lastPt = series[series.length - 1];
+    if (lastPt.d >= addDays(t, -2)) {
+      for (const dir of [1, -1]) {
+        let i = series.length - 2;
+        while (i >= 0 && (dir > 0 ? series[i].v < lastPt.v : series[i].v > lastPt.v)) i--;
+        const spanDays = Math.round((parseIso(lastPt.d) - parseIso(i >= 0 ? series[i].d : series[0].d)) / 864e5);
+        if (spanDays < 21) continue;
+        const since = i >= 0 ? `seit ${niceDate(series[i].d)}` : "seit Beginn der Aufzeichnung";
+        const label = q.healthKey === "schritte" ? `${dir > 0 ? w.top : w.bottom} Schritte` : q.format ? `${dir > 0 ? w.top : w.bottom} ${name}` : `${dir > 0 ? w.top : w.bottom} bei „${name}“`;
+        out.push({ score: 1.5 + Math.min(spanDays / 60, 2), html: `<strong>${label} ${since}</strong>: ${fmtNice(q, lastPt.v)} am ${shortDate(lastPt.d)}` });
+      }
+    }
+
+    // 4. Serien über einer Schwelle (bis gestern bzw. heute)
+    let rule = null;
+    if (q.healthKey === "schritte") rule = { ok: (v) => v >= 10000, text: (n) => `${n} Tage in Folge über 10.000 Schritte` };
+    else if (q.format === "duration") rule = { ok: (v) => v >= 7, text: (n) => `${n} Nächte in Folge mindestens 7 h geschlafen` };
+    else if (q.format === "clock") rule = { ok: (v) => v < 24, text: (n) => `${n} Nächte in Folge vor Mitternacht eingeschlafen` };
+    else { const m = mean(all); rule = { ok: (v) => v > m, text: (n) => `${n} Tage in Folge „${name}“ über deinem Schnitt (Ø ${fmtNice(q, m)})` }; }
+    let n = 0, d = lastPt.d;
+    const val = Object.fromEntries(series.map((x) => [x.d, x.v]));
+    if (d >= addDays(t, -2)) while (val[d] !== undefined && rule.ok(val[d])) { n++; d = addDays(d, -1); }
+    if (n >= 3) out.push({ score: 1 + n / 3, html: `<strong>${rule.text(n)}</strong>` });
+  }
+  return out.sort((a, b) => b.score - a.score).slice(0, 5);
+}
+
 function trendsPanel(days) {
   const streaks = streakInsights();
   const rel = relationInsights(days);
+  const nums = numberInsights();
   const row = (x, kind) => `<li class="trow ${kind}"><span class="tmark" aria-hidden="true"></span><span>${x.html}${x.note ? ` <span class="muted small">· ${x.note}</span>` : ""}</span></li>`;
   return `<section class="panel trends">
     <h2 class="atitle">Trends</h2>
-    ${streaks.length || rel.length ? `
+    ${streaks.length || rel.length || nums.length ? `
       ${streaks.length ? `<ul class="tlist">${streaks.map((x) => row(x, "streak")).join("")}</ul>` : ""}
+      ${nums.length ? `<ul class="tlist" ${streaks.length ? 'style="margin-top:10px"' : ""}>${nums.map((x) => row(x, "num")).join("")}</ul>` : ""}
       ${rel.length ? `<p class="tsub small muted">Auffällige Zusammenhänge im gewählten Zeitraum</p><ul class="tlist">${rel.map((x) => row(x, "rel")).join("")}</ul>
         <p class="small muted tfoot">Zeigt nur deutliche Unterschiede ab ${MIN_GROUP} Tagen je Gruppe. Ein Zusammenhang heißt nicht, dass das eine das andere verursacht.</p>` : ""}`
       : `<p class="muted small" style="margin:0">Noch nichts Auffälliges. Serien erscheinen ab 3 Tagen am Stück, Zusammenhänge meist nach ein paar Wochen Daten.</p>`}
