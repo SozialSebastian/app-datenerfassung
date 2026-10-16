@@ -22,14 +22,10 @@ function renderData() {
       <label class="switch row" style="margin-top:0"><input type="checkbox" id="pushon" ${p.on ? "checked" : ""}><span>Tägliche Erinnerung</span></label>
       <div class="timerow"><span>Uhrzeit</span><input type="time" id="pushtime" value="${esc(p.time)}" class="timein"></div>
       <p class="muted small" style="margin:8px 0 0">Kommt nur, wenn an dem Tag noch Fragen offen sind. Tippen auf die Mitteilung startet direkt die Abfrage für diesen Tag.</p>
-      ${p.on ? `<button class="btn ghost block" id="pushtest" style="margin-top:12px">Test-Erinnerung senden</button>` : ""}
       <p class="small" id="pushmsg" style="margin:8px 0 0"></p>
       <div class="subsep"></div>
       <label class="switch row" style="margin-top:0"><input type="checkbox" id="goalpushon" ${settings.goalpush.on ? "checked" : ""}><span>Ziel-Erinnerung</span></label>
-      <div class="timerow"><span>Tag</span><select id="goalpushday" class="timein">${[1, 2, 3, 4, 5, 6, 0].map((i) => `<option value="${i}" ${settings.goalpush.day === i ? "selected" : ""}>${WD[i]}</option>`).join("")}</select></div>
-      <div class="timerow"><span>Uhrzeit</span><input type="time" id="goalpushtime" value="${esc(settings.goalpush.time)}" class="timein"></div>
-      <p class="muted small" style="margin:8px 0 0">Kommt nur, wenn ein Ziel, dessen Zeitraum diese Woche endet, noch offen ist, z. B. „Bouldern: noch 1× bis Sonntag“. Tippen öffnet die Ziele.</p>
-      ${settings.goalpush.on ? `<button class="btn ghost block" id="goalpushtest" style="margin-top:12px">Test-Mitteilung senden</button>` : ""}
+      <p class="muted small" style="margin:8px 0 0">Meldet sich einmal, sobald ein Ziel zu kippen droht, z. B. „Bouldern: ab heute an jedem Tag nötig (noch 2× bis Sonntag)“ oder wenn eine Höchstgrenze erreicht ist. Nur tagsüber. Tippen öffnet die Ziele.</p>
       <p class="small" id="goalpushmsg" style="margin:8px 0 0"></p>`;
 
   const w = settings.weekly;
@@ -40,7 +36,6 @@ function renderData() {
       <div class="timerow"><span>Tag</span><select id="weekday" class="timein">${[0, 1, 2, 3, 4, 5, 6].map((i) => `<option value="${i}" ${w.day === i ? "selected" : ""}>${WDN[i]}</option>`).join("")}</select></div>
       <div class="timerow"><span>Uhrzeit</span><input type="time" id="weektime" value="${esc(w.time)}" class="timein"></div>
       <p class="muted small" style="margin:8px 0 0">Tippen auf die Mitteilung öffnet den Bericht in der App.</p>
-      ${w.on ? `<button class="btn ghost block" id="weektest" style="margin-top:12px">Test-Mitteilung senden</button>` : ""}
       <p class="small" id="weekmsg" style="margin:8px 0 0"></p>`;
   else if (!connected) weeklyBody = `<p class="muted small" style="margin-top:10px">Für die wöchentliche Mitteilung zuerst unten unter „Verbindung“ den Schlüssel eintragen.</p>`;
 
@@ -187,10 +182,6 @@ function renderData() {
     if (!settings.push.on) return;
     try { await enablePush(t); toast(`Erinnerung täglich um ${t} Uhr`); } catch (err) { msg("pushmsg", err.message, true); }
   });
-  $("#pushtest")?.addEventListener("click", async () => {
-    try { await api("/test", { endpoint: settings.push.endpoint }); msg("pushmsg", "Test verschickt. Die Mitteilung kommt in wenigen Sekunden."); }
-    catch (e) { msg("pushmsg", e.message, true); }
-  });
   $("#copyhdr")?.addEventListener("click", async () => {
     try { await navigator.clipboard.writeText(`Bearer ${settings.token}`); toast("Header-Wert kopiert"); }
     catch (e) { toast("Kopieren nicht möglich"); }
@@ -198,25 +189,13 @@ function renderData() {
   $("#inboxnow")?.addEventListener("click", () => fetchInbox(true));
 
   $("#reportopen").addEventListener("click", () => openReport());
-  const goalSave = async () => {
-    const day = Number($("#goalpushday").value), time = $("#goalpushtime").value || "18:00";
-    settings.goalpush.day = day; settings.goalpush.time = time; saveSettings();
-    if (!settings.goalpush.on) return;
-    try { await enableGoalPush(day, time); toast(`Ziel-Erinnerung ${WD[day]} ${time} Uhr`); } catch (err) { msg("goalpushmsg", err.message, true); }
-  };
   $("#goalpushon")?.addEventListener("change", async (e) => {
     const on = e.target.checked;
     try {
-      if (on) { await enableGoalPush(Number($("#goalpushday").value), $("#goalpushtime").value || "18:00"); toast(`Ziel-Erinnerung ${WD[settings.goalpush.day]} ${settings.goalpush.time} Uhr`); }
+      if (on) { await enableGoalPush(); toast("Ziel-Erinnerung an"); }
       else { await disableGoalPush(); toast("Ziel-Erinnerung aus"); }
       renderData();
     } catch (err) { e.target.checked = !on; msg("goalpushmsg", err.message, true); }
-  });
-  $("#goalpushday")?.addEventListener("change", goalSave);
-  $("#goalpushtime")?.addEventListener("change", (e) => { if (/^\d{2}:\d{2}$/.test(e.target.value)) goalSave(); });
-  $("#goalpushtest")?.addEventListener("click", async () => {
-    try { reportStatus(); await new Promise((r) => setTimeout(r, 1800)); await api("/goals/test", { endpoint: settings.goalpush.endpoint }); msg("goalpushmsg", "Test verschickt. Die Mitteilung kommt in wenigen Sekunden."); }
-    catch (err) { msg("goalpushmsg", err.message, true); }
   });
   $("#placeson").addEventListener("change", async (e) => {
     settings.places.on = e.target.checked; settings.places.last = 0; saveSettings();
@@ -241,8 +220,4 @@ function renderData() {
   });
   $("#weekday")?.addEventListener("change", weekSave);
   $("#weektime")?.addEventListener("change", (e) => { if (/^\d{2}:\d{2}$/.test(e.target.value)) weekSave(); });
-  $("#weektest")?.addEventListener("click", async () => {
-    try { reportStatus(); await new Promise((r) => setTimeout(r, 1800)); await api("/weekly/test", { endpoint: settings.weekly.endpoint }); msg("weekmsg", "Test verschickt. Die Mitteilung kommt in wenigen Sekunden."); }
-    catch (err) { msg("weekmsg", err.message, true); }
-  });
 }

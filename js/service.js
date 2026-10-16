@@ -5,7 +5,7 @@
 /* ================= Mosaik-Dienst: Erinnerung und Eingang ================= */
 const SERVER = "https://mosaik-sync.sebastian-taglieber.workers.dev";
 const SETTINGS_KEY = "mosaik.settings";
-let settings = { token: "", push: { on: false, time: "23:00", endpoint: null }, weekly: { on: false, day: 0, time: "19:00" }, goalpush: { on: false, day: 5, time: "18:00" }, places: { on: false, last: 0 }, weather: { on: false, last: 0 }, lastInbox: null };
+let settings = { token: "", push: { on: false, time: "23:00", endpoint: null }, weekly: { on: false, day: 0, time: "19:00" }, goalpush: { on: false }, places: { on: false, last: 0 }, weather: { on: false, last: 0 }, lastInbox: null };
 try { const s = JSON.parse(localStorage.getItem(SETTINGS_KEY) || "{}"); settings = { ...settings, ...s, push: { ...settings.push, ...(s.push || {}) }, weekly: { ...settings.weekly, ...(s.weekly || {}) }, goalpush: { ...settings.goalpush, ...(s.goalpush || {}) }, places: { ...settings.places, ...(s.places || {}) }, weather: { ...settings.weather, ...(s.weather || {}) } }; } catch (e) { /* egal */ }
 const saveSettings = () => { try { localStorage.setItem(SETTINGS_KEY, JSON.stringify(settings)); } catch (e) { /* egal */ } };
 
@@ -79,10 +79,10 @@ async function disableWeekly() {
 }
 
 // Ziel-Erinnerung: Mitteilung zu einem festen Wochentag, wenn Ziele dieser Woche wackeln
-async function enableGoalPush(day, time) {
+async function enableGoalPush() {
   const sub = await pushSub();
-  await api("/goals", { on: true, subscription: sub.toJSON(), day, time, tz: Intl.DateTimeFormat().resolvedOptions().timeZone || "Europe/Berlin" });
-  settings.goalpush = { on: true, day, time, endpoint: sub.endpoint };
+  await api("/goals", { on: true, subscription: sub.toJSON(), day: 0, time: "09:00", tz: Intl.DateTimeFormat().resolvedOptions().timeZone || "Europe/Berlin" });
+  settings.goalpush = { on: true, endpoint: sub.endpoint };
   saveSettings();
   reportStatus();
 }
@@ -96,26 +96,33 @@ async function disableGoalPush() {
   saveSettings();
 }
 
-// Text der Ziel-Erinnerung: Ziele, deren Zeitraum diese Woche endet und die noch offen sind
-function goalAlertText() {
-  const t = todayIso(), sun = addDays(mondayOf(t), 6);
-  const parts = [];
+// Plan für die Ziel-Erinnerung: ab welchem Tag welches Ziel kippt (der Dienst meldet jeden Eintrag einmal)
+function goalAlertPlan() {
+  const t = todayIso(), plan = [];
   for (const g of goalItems()) {
     const per = goalCur(g);
-    if (per.end > sun) continue; // endet nicht in dieser Woche
     const e = evalGoal(g, per);
     if (e.status === "done" || e.status === "fail" || e.status === "none") continue;
     const name = e.q.text.replace(/\?$/, "");
-    const until = per.end === sun ? "Sonntag" : dm(per.end);
-    if (g.kind === "avg") { if (e.status === "behind") parts.push(`${name}: ${e.cur}, Ziel ${cmpWord(e.q, g.cmp)} ${valText(e.q, g.val)}`); continue; }
-    if (e.upper) { if (e.c >= e.target) parts.push(`${name}: Limit von ${e.target}× erreicht`); continue; }
-    const need = e.target - e.c;
-    if (need <= 0) continue;
-    if (g.kind === "sum") parts.push(`${name}: noch ${valText(e.q, Math.round(need * 100) / 100)} bis ${until}`);
-    else if (g.kind === "days") parts.push(`${name}: noch ${need} Tag${need === 1 ? "" : "e"} bis ${until}`);
-    else parts.push(`${name}: noch ${need}× bis ${until}`);
+    const until = per.end === addDays(mondayOf(t), 6) ? "Sonntag" : dm(per.end);
+    const id = `${g.id}|${per.key}`;
+    if (e.upper) { // höchstens-Ziel: Grenze erreicht
+      if (e.c >= e.target) plan.push({ id: id + "|limit", d: t, t: `${name}: Grenze von ${e.target}× erreicht – bis ${until} besser keins mehr` });
+      continue;
+    }
+    if (g.kind === "count" || g.kind === "days") {
+      const need = e.target - e.c;
+      if (need <= 0) continue;
+      // letzter Tag, ab dem jeder verbleibende Tag klappen muss
+      const last = addDays(per.end, -(need - 1));
+      plan.push({ id: id + "|last", d: last < t ? t : last, t: `${name}: ab heute an jedem Tag nötig (noch ${need}${g.kind === "days" ? ` Tag${need === 1 ? "" : "e"}` : "×"} bis ${until})` });
+      continue;
+    }
+    if (e.status === "behind" && e.vals >= 3) {
+      plan.push({ id: id + "|behind", d: t, t: g.kind === "avg" ? `${name}: ${e.cur}, Ziel ${cmpWord(e.q, g.cmp)} ${valText(e.q, g.val)}` : `${name}: hinter Plan, noch ${valText(e.q, Math.round((e.target - e.c) * 100) / 100)} bis ${until}` });
+    }
   }
-  return parts.slice(0, 4).join(" · ");
+  return plan;
 }
 
 // Dem Dienst mitteilen, wie viele Fragen heute noch offen sind (keine Antworten!)
@@ -125,7 +132,7 @@ function reportStatus() {
   clearTimeout(statusTimer);
   statusTimer = setTimeout(() => {
     // Kurztext für die Wochenbericht-Mitteilung
-    if (settings.goalpush.on && settings.goalpush.endpoint) api("/goals/teaser", { endpoint: settings.goalpush.endpoint, week: mondayOf(todayIso()), text: goalAlertText() }).catch(() => {});
+    if (settings.goalpush.on && settings.goalpush.endpoint) api("/goals/teaser", { endpoint: settings.goalpush.endpoint, week: "", text: JSON.stringify(goalAlertPlan()) }).catch(() => {});
     if (settings.weekly.on && settings.weekly.endpoint) api("/weekly/teaser", { endpoint: settings.weekly.endpoint, week: mondayOf(todayIso()), text: reportTeaser() }).catch(() => {});
     if (!settings.push.on || !settings.push.endpoint) return;
     const t = todayIso();

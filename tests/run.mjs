@@ -284,6 +284,22 @@ test("Grafik erstellen liefert ein PNG", async () => {
   await ctx.close();
 });
 
+test("Ziel-Erinnerung: Plan, ab wann ein Ziel kippt", async () => {
+  const { page, ctx } = await open({ data: yearData() });
+  const plan = await page.evaluate(() => {
+    G().items = [{ id: "w", qid: "b", kind: "count", key: "Ja", op: "min", n: 3, period: "week", repeat: true }];
+    // Woche ohne „Ja“ bisher: Plan muss den letzten möglichen Tag nennen
+    const per = periodOf("week", todayIso());
+    for (let d = per.start; d <= todayIso(); d = addDays(d, 1)) if (state.answers[d]) state.answers[d].b = "Nein";
+    return { plan: goalAlertPlan(), end: per.end };
+  });
+  assert.equal(plan.plan.length, 1);
+  const expected = await page.evaluate((end) => { const x = addDays(end, -2); return x < todayIso() ? todayIso() : x; }, plan.end);
+  assert.equal(plan.plan[0].d, expected);
+  assert.match(plan.plan[0].t, /Heute bouldern: ab heute an jedem Tag nötig \(noch 3× bis/);
+  await ctx.close();
+});
+
 test("Fragen per Gedrückthalten verschieben", async () => {
   const data = { version: 1, lastBackup: null, answers: {}, questions: ["A", "B", "C"].map((x) => yesNo(x.toLowerCase(), x + "?")) };
   const { page, ctx, errors } = await open({ data });

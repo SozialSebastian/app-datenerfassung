@@ -138,10 +138,18 @@ function weeklyMessage(sub, date) {
   };
 }
 
-// Ziel-Erinnerung: Text kommt von der App (nur gefährdete Ziele dieser Woche); ohne Text keine Mitteilung
-function goalsMessage(sub, date) {
-  const fresh = sub.teaser && sub.teaser_week === mondayOf(date);
-  return fresh ? { title: "Mosaik · Ziele", body: sub.teaser, open: "goals", url: `${APP_URL}?open=goals` } : null;
+// Ziel-Erinnerung: Die App schickt einen Plan, ab welchem Tag welches Ziel kippt
+// teaser = JSON [{ id, d: "JJJJ-MM-TT", t: "Text" }], last_sent = JSON-Liste schon gemeldeter ids
+const GOAL_WINDOW = ["09:00", "21:00"]; // nur tagsüber melden
+function dueGoalAlerts(sub, now) {
+  if (now.time < GOAL_WINDOW[0] || now.time > GOAL_WINDOW[1]) return null;
+  let plan = [], sent = [];
+  try { plan = JSON.parse(sub.teaser || "[]"); } catch (e) { plan = []; }
+  try { sent = JSON.parse(sub.last_sent || "[]"); } catch (e) { sent = []; }
+  if (!Array.isArray(plan) || !Array.isArray(sent)) return null;
+  const due = plan.filter((x) => x && x.id && x.d <= now.date && !sent.includes(x.id));
+  if (!due.length) return null;
+  return { due, sent: sent.concat(due.map((x) => x.id)).slice(-100) };
 }
 
 /* ---------- Eingang für Kurzbefehle ---------- */
@@ -317,12 +325,13 @@ async function handle(request, env) {
     const tz = b.tz || TZ_DEFAULT;
     // Ist der Termin heute schon vorbei, erst nächste Woche schicken
     const now = localNow(tz);
-    const last = now.wd === day && b.time <= now.time ? now.date : "";
+    const last = table === "goals" ? "[]" : now.wd === day && b.time <= now.time ? now.date : "";
     await env.DB.prepare(
       `INSERT INTO ${table} (endpoint, p256dh, auth, day, time, tz, last_sent, created)
        VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, datetime('now'))
        ON CONFLICT(endpoint) DO UPDATE SET p256dh = ?2, auth = ?3, day = ?4, time = ?5, tz = ?6,
          last_sent = CASE WHEN ${table}.day = ?4 AND ${table}.time = ?5 THEN ${table}.last_sent ELSE ?7 END`
+
     ).bind(s.endpoint, s.keys.p256dh, s.keys.auth, day, b.time, tz, last).run();
     return json({ ok: true });
   }
@@ -330,7 +339,7 @@ async function handle(request, env) {
   if (sched && sched[2] === "/teaser" && request.method === "POST") {
     const b = await request.json();
     await env.DB.prepare(`UPDATE ${table} SET teaser = ?, teaser_week = ? WHERE endpoint = ?`)
-      .bind(String(b.text || "").slice(0, 300), String(b.week || ""), b.endpoint || "").run();
+      .bind(String(b.text || "").slice(0, table === "goals" ? 4000 : 300), String(b.week || ""), b.endpoint || "").run();
     return json({ ok: true });
   }
 
@@ -339,7 +348,7 @@ async function handle(request, env) {
     const sub = await env.DB.prepare(`SELECT * FROM ${table} WHERE endpoint = ?`).bind(b.endpoint || "").first();
     if (!sub) return json({ error: `${table === "goals" ? "Ziel-Erinnerung" : "Wochenbericht"} ist für dieses Gerät nicht aktiviert` }, 404);
     const date = localNow(sub.tz).date;
-    const msg = table === "goals" ? (goalsMessage(sub, date) || { title: "Mosaik · Ziele", body: "Test: Gerade ist kein Ziel gefährdet. So sieht die Erinnerung aus.", open: "goals", url: `${APP_URL}?open=goals` }) : weeklyMessage(sub, date);
+    const msg = table === "goals" ? { title: "Mosaik · Ziele", body: "Test: So sieht die Ziel-Erinnerung aus.", open: "goals", url: `${APP_URL}?open=goals` } : weeklyMessage(sub, date);
     const status = await sendPush(env, sub, msg);
     return json({ ok: status < 300, status });
   }
@@ -408,11 +417,10 @@ async function scheduled(env) {
   }
   const goals = (await env.DB.prepare("SELECT * FROM goals").all()).results;
   for (const sub of goals) {
-    const now = localNow(sub.tz);
-    if (now.wd !== sub.day || now.time < sub.time || sub.last_sent === now.date) continue;
-    await env.DB.prepare("UPDATE goals SET last_sent = ? WHERE endpoint = ?").bind(now.date, sub.endpoint).run();
-    const msg = goalsMessage(sub, now.date);
-    if (!msg) continue; // nichts gefährdet → keine Mitteilung
+    const r = dueGoalAlerts(sub, localNow(sub.tz));
+    if (!r) continue;
+    await env.DB.prepare("UPDATE goals SET last_sent = ? WHERE endpoint = ?").bind(JSON.stringify(r.sent), sub.endpoint).run();
+    const msg = { title: "Mosaik · Ziel in Gefahr", body: r.due.map((x) => x.t).join(" · ").slice(0, 300), open: "goals", url: `${APP_URL}?open=goals` };
     try { await sendPush(env, sub, msg); } catch (e) { console.error("Ziel-Erinnerung fehlgeschlagen", e); }
   }
   await env.DB.prepare("DELETE FROM inbox WHERE created < datetime('now', '-30 days')").run();
