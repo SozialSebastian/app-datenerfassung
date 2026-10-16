@@ -33,7 +33,14 @@ function safeEqual(a, b) {
 function localNow(tz) {
   const parts = Object.fromEntries(new Intl.DateTimeFormat("en-CA", { timeZone: tz || TZ_DEFAULT, year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit", hourCycle: "h23" })
     .formatToParts(new Date()).map((p) => [p.type, p.value]));
-  return { date: `${parts.year}-${parts.month}-${parts.day}`, time: `${parts.hour}:${parts.minute}` };
+  const date = `${parts.year}-${parts.month}-${parts.day}`;
+  return { date, time: `${parts.hour}:${parts.minute}`, wd: new Date(date + "T12:00:00Z").getUTCDay() };
+}
+// Montag der Woche zu einem Datum (JJJJ-MM-TT)
+function mondayOf(date) {
+  const t = new Date(date + "T12:00:00Z");
+  t.setUTCDate(t.getUTCDate() - ((t.getUTCDay() + 6) % 7));
+  return t.toISOString().slice(0, 10);
 }
 
 /* ---------- VAPID-Schlüssel (einmalig erzeugt, in D1 abgelegt) ---------- */
@@ -100,7 +107,12 @@ async function sendPush(env, sub, message) {
     body
   });
   // 404/410 = Abo existiert nicht mehr (z. B. App gelöscht) → entfernen
-  if (res.status === 404 || res.status === 410) await env.DB.prepare("DELETE FROM subs WHERE endpoint = ?").bind(sub.endpoint).run();
+  if (res.status === 404 || res.status === 410) {
+    await env.DB.batch([
+      env.DB.prepare("DELETE FROM subs WHERE endpoint = ?").bind(sub.endpoint),
+      env.DB.prepare("DELETE FROM weekly WHERE endpoint = ?").bind(sub.endpoint)
+    ]);
+  }
   return res.status;
 }
 
@@ -111,6 +123,17 @@ function reminder(sub, date) {
     body: open ? `Noch ${open} Frage${open === 1 ? "" : "n"} für heute offen. Tippen startet die Abfrage.` : "Zeit für die Abfrage von heute. Tippen zum Starten.",
     date,
     url: `${APP_URL}?quiz=${date}`
+  };
+}
+
+// Wochenbericht: Kurztext kommt von der App (nur Zusammenfassung, keine Antworten)
+function weeklyMessage(sub, date) {
+  const teaser = sub.teaser && sub.teaser_week === mondayOf(date) ? sub.teaser : "";
+  return {
+    title: "Mosaik · Wochenbericht",
+    body: `${teaser ? teaser + " " : ""}Tippen öffnet deinen Wochenbericht.`,
+    report: "week",
+    url: `${APP_URL}?report=week`
   };
 }
 
@@ -270,6 +293,46 @@ async function handle(request, env) {
     return json({ ok: status < 300, status });
   }
 
+  if (path === "/weekly" && request.method === "POST") {
+    const b = await request.json();
+    const s = b.subscription;
+    if (!s || !s.endpoint) return json({ error: "Abo unvollständig" }, 400);
+    if (!b.on) {
+      await env.DB.prepare("DELETE FROM weekly WHERE endpoint = ?").bind(s.endpoint).run();
+      return json({ ok: true });
+    }
+    if (!s.keys || !s.keys.p256dh || !s.keys.auth) return json({ error: "Abo unvollständig" }, 400);
+    if (!/^\d{2}:\d{2}$/.test(b.time || "")) return json({ error: "Uhrzeit fehlt (HH:MM)" }, 400);
+    const day = Number(b.day);
+    if (!Number.isInteger(day) || day < 0 || day > 6) return json({ error: "Wochentag fehlt (0–6)" }, 400);
+    const tz = b.tz || TZ_DEFAULT;
+    // Ist der Termin heute schon vorbei, erst nächste Woche schicken
+    const now = localNow(tz);
+    const last = now.wd === day && b.time <= now.time ? now.date : "";
+    await env.DB.prepare(
+      `INSERT INTO weekly (endpoint, p256dh, auth, day, time, tz, last_sent, created)
+       VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, datetime('now'))
+       ON CONFLICT(endpoint) DO UPDATE SET p256dh = ?2, auth = ?3, day = ?4, time = ?5, tz = ?6,
+         last_sent = CASE WHEN weekly.day = ?4 AND weekly.time = ?5 THEN weekly.last_sent ELSE ?7 END`
+    ).bind(s.endpoint, s.keys.p256dh, s.keys.auth, day, b.time, tz, last).run();
+    return json({ ok: true });
+  }
+
+  if (path === "/weekly/teaser" && request.method === "POST") {
+    const b = await request.json();
+    await env.DB.prepare("UPDATE weekly SET teaser = ?, teaser_week = ? WHERE endpoint = ?")
+      .bind(String(b.text || "").slice(0, 160), String(b.week || ""), b.endpoint || "").run();
+    return json({ ok: true });
+  }
+
+  if (path === "/weekly/test" && request.method === "POST") {
+    const b = await request.json();
+    const sub = await env.DB.prepare("SELECT * FROM weekly WHERE endpoint = ?").bind(b.endpoint || "").first();
+    if (!sub) return json({ error: "Wochenbericht ist für dieses Gerät nicht aktiviert" }, 404);
+    const status = await sendPush(env, sub, weeklyMessage(sub, localNow(sub.tz).date));
+    return json({ ok: status < 300, status });
+  }
+
   if (path === "/in") {
     const { pairs, lists } = await readValues(request);
     let date = pairs.datum || pairs.date || localNow(TZ_DEFAULT).date;
@@ -324,6 +387,13 @@ async function scheduled(env) {
     await env.DB.prepare("UPDATE subs SET last_sent = ? WHERE endpoint = ?").bind(now.date, sub.endpoint).run();
     if (sub.status_date === now.date && sub.status_open === 0) continue; // heute schon alles beantwortet
     try { await sendPush(env, sub, reminder(sub, now.date)); } catch (e) { console.error("Push fehlgeschlagen", e); }
+  }
+  const weekly = (await env.DB.prepare("SELECT * FROM weekly").all()).results;
+  for (const sub of weekly) {
+    const now = localNow(sub.tz);
+    if (now.wd !== sub.day || now.time < sub.time || sub.last_sent === now.date) continue;
+    await env.DB.prepare("UPDATE weekly SET last_sent = ? WHERE endpoint = ?").bind(now.date, sub.endpoint).run();
+    try { await sendPush(env, sub, weeklyMessage(sub, now.date)); } catch (e) { console.error("Wochenbericht fehlgeschlagen", e); }
   }
   await env.DB.prepare("DELETE FROM inbox WHERE created < datetime('now', '-30 days')").run();
 }

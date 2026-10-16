@@ -849,7 +849,7 @@ function relationInsights(days) {
         const unit = b.unit ? " " + esc(b.unit) : "";
         found.push({
           score: Math.abs(bestCase.dEff),
-          html: `${qName(b)} ${bestCase.lag ? "am Tag nach" : "an Tagen mit"} ${g.label}: <strong>Ø ${b.format ? fmtQ(b, bestCase.m1) : fmt1(bestCase.m1) + unit}</strong> statt Ø ${b.format ? fmtQ(b, bestCase.m0) : fmt1(bestCase.m0) + unit}`,
+          html: `${qName(b)} ${bestCase.lag ? "am Tag nach" : "an Tagen mit"} ${g.label}: <strong>Ø ${b.type === "number" ? fmtNice(b, bestCase.m1) : fmt1(bestCase.m1) + unit}</strong> statt Ø ${b.type === "number" ? fmtNice(b, bestCase.m0) : fmt1(bestCase.m0) + unit}`,
           note: `${bestCase.n1} vs. ${bestCase.n0} Tage`
         });
       }
@@ -1372,6 +1372,141 @@ function goalValid(g, q) {
   return typeof g.val === "number" && Number.isFinite(g.val);
 }
 
+/* ================= Wochenbericht ================= */
+// Standard: sonntags die laufende Woche, sonst die letzte abgeschlossene Woche
+const reportDefaultWeek = () => { const t = todayIso(); const m = mondayOf(t); return parseIso(t).getDay() === 0 ? m : addDays(m, -7); };
+const kw = (s) => { // ISO-Kalenderwoche
+  const d = parseIso(s); d.setDate(d.getDate() + 3 - ((d.getDay() + 6) % 7));
+  const y1 = new Date(d.getFullYear(), 0, 4);
+  return 1 + Math.round(((d - y1) / 864e5 - 3 + ((y1.getDay() + 6) % 7)) / 7);
+};
+
+// Kennzahl einer Frage für eine Woche, verglichen mit den 8 Wochen davor
+function weekStat(q, mon) {
+  const t = todayIso();
+  const lastOk = isHealthQ(q) ? addDays(t, -1) : t;
+  const daysOf = (m) => Array.from({ length: 7 }, (_, i) => addDays(m, i)).filter((d) => d <= lastOk);
+  const valsOf = (m) => daysOf(m).map((d) => (state.answers[d] || {})[q.id]).filter(isAnswered);
+  const now = valsOf(mon);
+  const prevWeeks = Array.from({ length: 8 }, (_, i) => valsOf(addDays(mon, -7 * (i + 1)))).filter((v) => v.length);
+  if (!now.length) return null;
+  if (q.type === "choice") {
+    const s = qset(q);
+    const key = q.options.includes(s.countKey) ? s.countKey : q.options.includes("Ja") ? "Ja" : q.options[0];
+    const c = now.filter((v) => has(v, key)).length;
+    const prev = prevWeeks.length ? mean(prevWeeks.map((w) => w.filter((v) => has(v, key)).length)) : null;
+    return { val: `${c}× „${esc(key)}“`, cmp: prev === null ? "" : `sonst Ø ${fmt1(prev)}×`, dir: prev === null ? 0 : Math.sign(Math.round((c - prev) * 10)) };
+  }
+  const nums = now.filter((v) => typeof v === "number");
+  if (!nums.length) return null;
+  const m = mean(nums);
+  const prevAll = prevWeeks.flat().filter((v) => typeof v === "number");
+  const pm = prevAll.length ? mean(prevAll) : null;
+  const f = (v) => (q.type === "scale" ? fmt1(v) : fmtNice(q, v));
+  const big = pm !== null && Math.abs(m - pm) > (sd(prevAll) || 1) * 0.25;
+  return { val: `Ø ${f(m)}`, cmp: pm === null ? "" : `sonst Ø ${f(pm)}`, dir: big ? Math.sign(m - pm) : 0 };
+}
+
+function reportHtml(mon) {
+  const t = todayIso();
+  const sun = addDays(mon, 6);
+  const days = Array.from({ length: 7 }, (_, i) => addDays(mon, i)).filter((d) => d <= t);
+  const asked = (d) => askQuestions(d);
+  const tracked = days.filter((d) => asked(d).some((q) => isAnswered((state.answers[d] || {})[q.id]))).length;
+  const full = days.filter((d) => asked(d).length && dayProgress(d) === 1).length;
+  const running = sun >= t;
+  const range = `${dm(mon)}–${dm(sun)}${sun.slice(0, 4)}`;
+
+  // Ziele: bei Wochenzielen genau diese Woche, sonst Stand des Monats/Jahres am Wochenende
+  const gs = G();
+  const items = goalItems();
+  let goalsHtml = "";
+  if (items.length) {
+    const per = periodOf(gs.period, sun <= t ? sun : t);
+    const ev = items.map((g) => evalGoal(g, per)).sort((a, b) => STATUS_ORDER[a.status] - STATUS_ORDER[b.status]);
+    const done = ev.filter((e) => e.status === "done").length;
+    const okn = ev.filter((e) => e.status === "ok").length;
+    goalsHtml = `<section class="sq">
+      <div class="ghead"><h3 class="rh">Ziele</h3><span class="small muted">${esc(per.name)}${per.end >= t ? " · Stand heute" : ""}</span></div>
+      <p class="gsum small">${done} erreicht · ${okn} auf Kurs · ${ev.length - done - okn} offen oder verfehlt</p>
+      <ul class="glist">${ev.map(goalRow).join("")}</ul>
+    </section>`;
+  }
+
+  // Fragen der Woche
+  const qs = ordered().map((o) => o.q).filter((q) => !q.archived);
+  const rows = qs.map((q) => ({ q, s: weekStat(q, mon) })).filter((x) => x.s);
+  const qHtml = rows.length ? `<section class="sq">
+      <h3 class="rh">Deine Woche</h3>
+      <ul class="wlist">${rows.map(({ q, s }) => `<li>
+        <span class="wq">${esc(q.text)}</span>
+        <span class="wv">${s.val}${s.dir ? `<span class="wdir ${s.dir > 0 ? "up" : "down"}" aria-label="${s.dir > 0 ? "mehr" : "weniger"} als sonst">${s.dir > 0 ? "▲" : "▼"}</span>` : ""}</span>
+        ${s.cmp ? `<span class="wc small muted">${s.cmp}</span>` : ""}
+      </li>`).join("")}</ul>
+      <p class="small muted" style="margin:10px 0 0">„sonst“ = Schnitt der 8 Wochen davor.</p>
+    </section>` : "";
+
+  // Trends (immer der aktuelle Stand)
+  const last30 = Array.from({ length: 30 }, (_, i) => addDays(t, i - 29));
+  const tr = [...streakInsights().map((x) => ({ ...x, k: "streak" })), ...numberInsights().map((x) => ({ ...x, k: "num" })), ...relationInsights(last30).map((x) => ({ ...x, k: "rel" }))];
+  const trHtml = tr.length ? `<section class="sq">
+      <div class="ghead"><h3 class="rh">Trends</h3><span class="small muted">aktueller Stand</span></div>
+      <ul class="tlist">${tr.slice(0, 8).map((x) => `<li class="trow ${x.k}"><span class="tmark" aria-hidden="true"></span><span>${x.html}</span></li>`).join("")}</ul>
+    </section>` : "";
+
+  return `
+    <section class="sq rtop">
+      <p class="rkw">KW ${kw(mon)} · ${range}${running ? " · läuft noch" : ""}</p>
+      <div class="rstats">
+        <div><strong>${tracked}</strong><span>von ${days.length} Tagen erfasst</span></div>
+        <div><strong>${full}</strong><span>Tage vollständig</span></div>
+        ${items.length ? `<div><strong>${items.map((g) => evalGoal(g, periodOf(gs.period, sun <= t ? sun : t))).filter((e) => e.status === "done" || e.status === "ok").length}/${items.length}</strong><span>Ziele erreicht oder auf Kurs</span></div>` : ""}
+      </div>
+    </section>
+    ${goalsHtml}${qHtml}${trHtml}
+    ${!rows.length && !items.length ? `<p class="muted">In dieser Woche gibt es noch keine Antworten.</p>` : ""}`;
+}
+
+function openReport(mon) {
+  if (quiz) { quiz = null; render(); }
+  let week = mon || reportDefaultWeek();
+  const dlg = $("#sheet");
+  const first = Object.keys(state.answers).sort()[0];
+  const draw = () => {
+    const cur = mondayOf(todayIso());
+    dlg.innerHTML = `<div class="sheet-inner report">
+      <div class="sheet-head"><span></span><h2>Wochenbericht</h2><button type="button" class="linkbtn" id="rdone">Fertig</button></div>
+      <div class="rnav">
+        <button type="button" class="iconbtn" id="rprev" aria-label="Woche davor" ${first && week <= mondayOf(first) ? "disabled" : ""}>‹</button>
+        <span>${week === cur ? "Diese Woche" : week === addDays(cur, -7) ? "Letzte Woche" : `KW ${kw(week)}`}</span>
+        <button type="button" class="iconbtn" id="rnext" aria-label="Woche danach" ${week >= cur ? "disabled" : ""}>›</button>
+      </div>
+      ${reportHtml(week)}
+    </div>`;
+    $("#rdone", dlg).addEventListener("click", () => dlg.close());
+    $("#rprev", dlg).addEventListener("click", () => { week = addDays(week, -7); draw(); dlg.querySelector(".sheet-inner").scrollTop = 0; });
+    $("#rnext", dlg).addEventListener("click", () => { week = addDays(week, 7); draw(); dlg.querySelector(".sheet-inner").scrollTop = 0; });
+  };
+  draw();
+  if (!dlg.open) dlg.showModal();
+  document.activeElement?.blur();
+}
+
+// Kurztext für die Push-Mitteilung (nur Zusammenfassung, keine Antworten)
+function reportTeaser() {
+  const t = todayIso(), mon = mondayOf(t);
+  const days = Array.from({ length: 7 }, (_, i) => addDays(mon, i)).filter((d) => d <= t);
+  const tracked = days.filter((d) => askQuestions(d).some((q) => isAnswered((state.answers[d] || {})[q.id]))).length;
+  let s = `${tracked} von 7 Tagen erfasst.`;
+  const items = goalItems();
+  if (items.length) {
+    const ev = items.map((g) => evalGoal(g, periodOf(G().period, t)));
+    const done = ev.filter((e) => e.status === "done").length, ok = ev.filter((e) => e.status === "ok").length;
+    s += ` Ziele: ${done} erreicht${ok ? `, ${ok} auf Kurs` : ""}.`;
+  }
+  return s;
+}
+
 /* ================= Fragen verwalten ================= */
 // Fragen verwalten – als Feld in den Einstellungen; zeigt erst einige, aufklappbar
 const Q_PREVIEW = 3;
@@ -1621,8 +1756,8 @@ function openEditor(id) {
 /* ================= Mosaik-Dienst: Erinnerung und Eingang ================= */
 const SERVER = "https://mosaik-sync.sebastian-taglieber.workers.dev";
 const SETTINGS_KEY = "mosaik.settings";
-let settings = { token: "", push: { on: false, time: "23:00", endpoint: null }, lastInbox: null };
-try { const s = JSON.parse(localStorage.getItem(SETTINGS_KEY) || "{}"); settings = { ...settings, ...s, push: { ...settings.push, ...(s.push || {}) } }; } catch (e) { /* egal */ }
+let settings = { token: "", push: { on: false, time: "23:00", endpoint: null }, weekly: { on: false, day: 0, time: "19:00" }, lastInbox: null };
+try { const s = JSON.parse(localStorage.getItem(SETTINGS_KEY) || "{}"); settings = { ...settings, ...s, push: { ...settings.push, ...(s.push || {}) }, weekly: { ...settings.weekly, ...(s.weekly || {}) } }; } catch (e) { /* egal */ }
 const saveSettings = () => { try { localStorage.setItem(SETTINGS_KEY, JSON.stringify(settings)); } catch (e) { /* egal */ } };
 
 async function api(path, body) {
@@ -1643,7 +1778,8 @@ async function api(path, body) {
 
 const b64ToBytes = (s) => { s = s.replace(/-/g, "+").replace(/_/g, "/"); while (s.length % 4) s += "="; return Uint8Array.from(atob(s), (c) => c.charCodeAt(0)); };
 
-async function enablePush(time) {
+// Push-Abo dieses Geräts holen oder anlegen (gemeinsam für Erinnerung und Wochenbericht)
+async function pushSub() {
   // Erlaubnis zuerst anfragen: iOS verlangt das direkt nach dem Tippen
   const perm = await Notification.requestPermission();
   if (perm !== "granted") throw new Error("Mitteilungen sind nicht erlaubt. iPhone-Einstellungen → Mitteilungen → Mosaik → Mitteilungen erlauben.");
@@ -1653,6 +1789,11 @@ async function enablePush(time) {
     const { key } = await api("/vapid");
     sub = await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: b64ToBytes(key) });
   }
+  return sub;
+}
+
+async function enablePush(time) {
+  const sub = await pushSub();
   await api("/subscribe", { subscription: sub.toJSON(), time, tz: Intl.DateTimeFormat().resolvedOptions().timeZone || "Europe/Berlin" });
   settings.push = { on: true, time, endpoint: sub.endpoint };
   saveSettings();
@@ -1664,17 +1805,38 @@ async function disablePush() {
   const sub = await reg.pushManager.getSubscription();
   const endpoint = (sub && sub.endpoint) || settings.push.endpoint;
   if (endpoint) await api("/unsubscribe", { endpoint }).catch(() => {});
-  if (sub) await sub.unsubscribe().catch(() => {});
-  settings.push = { ...settings.push, on: false, endpoint: null };
+  if (sub && !settings.weekly.on) await sub.unsubscribe().catch(() => {}); // Abo bleibt für den Wochenbericht
+  settings.push = { ...settings.push, on: false, endpoint: settings.weekly.on ? settings.push.endpoint : null };
+  saveSettings();
+}
+
+async function enableWeekly(day, time) {
+  const sub = await pushSub();
+  await api("/weekly", { on: true, subscription: sub.toJSON(), day, time, tz: Intl.DateTimeFormat().resolvedOptions().timeZone || "Europe/Berlin" });
+  settings.weekly = { on: true, day, time, endpoint: sub.endpoint };
+  saveSettings();
+  reportStatus();
+}
+
+async function disableWeekly() {
+  const reg = await navigator.serviceWorker.ready;
+  const sub = await reg.pushManager.getSubscription();
+  const endpoint = (sub && sub.endpoint) || settings.weekly.endpoint;
+  if (endpoint) await api("/weekly", { on: false, subscription: { endpoint } }).catch(() => {});
+  settings.weekly = { ...settings.weekly, on: false };
+  if (sub && !settings.push.on) await sub.unsubscribe().catch(() => {});
   saveSettings();
 }
 
 // Dem Dienst mitteilen, wie viele Fragen heute noch offen sind (keine Antworten!)
 let statusTimer;
 function reportStatus() {
-  if (!settings.token || !settings.push.on || !settings.push.endpoint) return;
+  if (!settings.token) return;
   clearTimeout(statusTimer);
   statusTimer = setTimeout(() => {
+    // Kurztext für die Wochenbericht-Mitteilung
+    if (settings.weekly.on && settings.weekly.endpoint) api("/weekly/teaser", { endpoint: settings.weekly.endpoint, week: mondayOf(todayIso()), text: reportTeaser() }).catch(() => {});
+    if (!settings.push.on || !settings.push.endpoint) return;
     const t = todayIso();
     const a = state.answers[t] || {};
     const open = askQuestions(t).filter((q) => !isAnswered(a[q.id])).length;
@@ -1757,6 +1919,18 @@ function renderData() {
       ${p.on ? `<button class="btn ghost block" id="pushtest" style="margin-top:12px">Test-Erinnerung senden</button>` : ""}
       <p class="small" id="pushmsg" style="margin:8px 0 0"></p>`;
 
+  const w = settings.weekly;
+  const WDN = ["Sonntag", "Montag", "Dienstag", "Mittwoch", "Donnerstag", "Freitag", "Samstag"];
+  let weeklyBody = "";
+  if (connected && pushSupport && standalone) weeklyBody = `
+      <label class="switch row"><input type="checkbox" id="weekon" ${w.on ? "checked" : ""}><span>Jede Woche als Mitteilung</span></label>
+      <div class="timerow"><span>Tag</span><select id="weekday" class="timein">${[0, 1, 2, 3, 4, 5, 6].map((i) => `<option value="${i}" ${w.day === i ? "selected" : ""}>${WDN[i]}</option>`).join("")}</select></div>
+      <div class="timerow"><span>Uhrzeit</span><input type="time" id="weektime" value="${esc(w.time)}" class="timein"></div>
+      <p class="muted small" style="margin:8px 0 0">Tippen auf die Mitteilung öffnet den Bericht in der App.</p>
+      ${w.on ? `<button class="btn ghost block" id="weektest" style="margin-top:12px">Test-Mitteilung senden</button>` : ""}
+      <p class="small" id="weekmsg" style="margin:8px 0 0"></p>`;
+  else if (!connected) weeklyBody = `<p class="muted small" style="margin-top:10px">Für die wöchentliche Mitteilung zuerst unten unter „Verbindung“ den Schlüssel eintragen.</p>`;
+
   view.innerHTML = `
     <div class="dayhead"><h1>Einstellungen</h1></div>
 
@@ -1765,6 +1939,13 @@ function renderData() {
     <section class="panel">
       <h2>Erinnerung</h2>
       ${pushBody}
+    </section>
+
+    <section class="panel">
+      <h2>Wochenbericht</h2>
+      <p class="muted small">Fasst deine Woche zusammen: erfasste Tage, Ziele, Trends und deine Fragen im Vergleich zu sonst.</p>
+      <button class="btn block hold-btn" id="reportopen">Wochenbericht anzeigen</button>
+      ${weeklyBody}
     </section>
 
     <section class="panel">
@@ -1886,6 +2067,28 @@ function renderData() {
     catch (e) { toast("Kopieren nicht möglich"); }
   });
   $("#inboxnow")?.addEventListener("click", () => fetchInbox(true));
+
+  $("#reportopen").addEventListener("click", () => openReport());
+  const weekSave = async () => {
+    const day = Number($("#weekday").value), time = $("#weektime").value || "19:00";
+    settings.weekly.day = day; settings.weekly.time = time; saveSettings();
+    if (!settings.weekly.on) return;
+    try { await enableWeekly(day, time); toast(`Wochenbericht jeden ${WDN[day]} um ${time} Uhr`); } catch (err) { msg("weekmsg", err.message, true); }
+  };
+  $("#weekon")?.addEventListener("change", async (e) => {
+    const on = e.target.checked;
+    try {
+      if (on) { await enableWeekly(Number($("#weekday").value), $("#weektime").value || "19:00"); toast(`Wochenbericht jeden ${WDN[settings.weekly.day]} um ${settings.weekly.time} Uhr`); }
+      else { await disableWeekly(); toast("Wochenbericht-Mitteilung aus"); }
+      renderData();
+    } catch (err) { e.target.checked = !on; msg("weekmsg", err.message, true); }
+  });
+  $("#weekday")?.addEventListener("change", weekSave);
+  $("#weektime")?.addEventListener("change", (e) => { if (/^\d{2}:\d{2}$/.test(e.target.value)) weekSave(); });
+  $("#weektest")?.addEventListener("click", async () => {
+    try { reportStatus(); await new Promise((r) => setTimeout(r, 1800)); await api("/weekly/test", { endpoint: settings.weekly.endpoint }); msg("weekmsg", "Test verschickt. Die Mitteilung kommt in wenigen Sekunden."); }
+    catch (err) { msg("weekmsg", err.message, true); }
+  });
 }
 
 async function shareOrDownload(blob, filename) {
@@ -2070,11 +2273,16 @@ function openQuizFromLink(date) {
   startQuiz(date);
 }
 {
-  const qd = new URLSearchParams(location.search).get("quiz");
+  const sp = new URLSearchParams(location.search);
+  const qd = sp.get("quiz");
   if (qd) { history.replaceState(null, "", location.pathname); openQuizFromLink(qd); }
+  if (sp.get("report")) { history.replaceState(null, "", location.pathname); openReport(); }
 }
 if ("serviceWorker" in navigator) {
-  navigator.serviceWorker.addEventListener("message", (e) => { if (e.data && e.data.type === "quiz") openQuizFromLink(e.data.date); });
+  navigator.serviceWorker.addEventListener("message", (e) => {
+    if (e.data && e.data.type === "quiz") openQuizFromLink(e.data.date);
+    if (e.data && e.data.type === "report") { const d = $("#sheet"); if (d.open) d.close(); openReport(); }
+  });
 }
 fetchInbox(false);
 reportStatus();

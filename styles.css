@@ -373,7 +373,7 @@ input.timein::-webkit-date-and-time-value { text-align: center; }
 .hval input.wide { width: 9ch; }
 .seg.seg4 { grid-template-columns: repeat(5, 1fr); }
 .seg.seg4 button { font-size: 14px; padding: 9px 0; white-space: nowrap; }
-.trow.num .tmark { background: var(--s1); }
+.trow.num .tmark { background: var(--s3); }
 
 /* ---------- Ziele ---------- */
 .headbtns { display: flex; align-items: center; gap: 8px; align-self: center; }
@@ -388,11 +388,11 @@ input.timein::-webkit-date-and-time-value { text-align: center; }
 .gdot { width: 10px; height: 10px; border-radius: 50%; background: var(--line); }
 .gdesc { margin: 0; }
 .gbar { display: block; height: 8px; border-radius: 4px; background: var(--bg); overflow: hidden; margin: 4px 0 2px; }
-.gbar span { display: block; height: 100%; border-radius: 4px; background: var(--s1); min-width: 2px; }
+.gbar span { display: block; height: 100%; border-radius: 4px; background: var(--s3); min-width: 2px; }
 .gcur { color: var(--ink-2); }
 .gcur strong { color: var(--ink); font-variant-numeric: tabular-nums; }
-.st-done .gdot, .st-done .gbar span { background: var(--s3); }
-.st-ok .gdot { background: var(--s1); }
+.st-done .gdot, .st-done .gbar span { background: var(--s6); }
+.st-ok .gdot { background: var(--s3); }
 .st-behind .gdot, .st-behind .gbar span { background: var(--s4); }
 .st-fail .gdot, .st-fail .gbar span { background: var(--hold); }
 .st-fail .gst { color: var(--hold); }
@@ -401,7 +401,7 @@ input.timein::-webkit-date-and-time-value { text-align: center; }
 .hlist { list-style: none; padding: 0; margin: 8px 0 0; display: grid; gap: 8px; }
 .hlist li { display: grid; grid-template-columns: 1fr auto; gap: 2px 12px; font-size: 15px; }
 .hlist .hv { font-weight: 700; font-variant-numeric: tabular-nums; }
-.hlist .hv.all { color: var(--s3); }
+.hlist .hv.all { color: var(--s6); }
 .hlist .hm { grid-column: 1 / -1; }
 .gform { display: grid; gap: 4px; }
 .gform .field { margin-bottom: 6px; }
@@ -413,3 +413,24 @@ input.gin.wide { width: 9ch; }
 .gbtns { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 6px; }
 .gedit { border: 0; background: none; padding: 6px 0 0; text-align: left; font-size: 15px; color: var(--ink); }
 .gbig { margin: 0 0 12px; font-size: 16px; }
+
+/* ---------- Wochenbericht ---------- */
+.rnav { display: flex; align-items: center; justify-content: space-between; margin: -6px 0 10px; font-weight: 700; font-size: 16px; }
+.rnav .iconbtn { font-size: 26px; color: var(--ink); }
+.rnav .iconbtn:disabled { opacity: .25; }
+.rkw { margin: 0 0 12px; color: var(--ink-2); font-size: 15px; font-weight: 600; }
+.rstats { display: grid; grid-template-columns: repeat(auto-fit, minmax(80px, 1fr)); gap: 10px; }
+.rstats div { display: grid; gap: 2px; }
+.rstats strong { font-size: 28px; line-height: 1.1; font-variant-numeric: tabular-nums; }
+.rstats span { font-size: 13px; color: var(--ink-2); }
+.rh { margin: 0 0 10px; font-size: 18px; }
+.report .ghead .rh { margin-bottom: 4px; }
+.wlist { list-style: none; padding: 0; margin: 0; display: grid; }
+.wlist li { display: grid; grid-template-columns: 1fr auto; gap: 0 12px; padding: 9px 0; border-top: 1px solid var(--line); }
+.wlist li:first-child { border-top: 0; padding-top: 0; }
+.wq { font-size: 15px; min-width: 0; }
+.wv { font-weight: 700; font-variant-numeric: tabular-nums; text-align: right; white-space: nowrap; }
+.wc { grid-column: 1 / -1; text-align: right; }
+.wdir { margin-left: 6px; font-size: 11px; }
+.wdir.up, .wdir.down { color: var(--ink-2); }
+select.timein { width: 160px; max-width: 60%; font-size: 16px; }

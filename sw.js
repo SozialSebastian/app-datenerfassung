@@ -1,5 +1,5 @@
 // Offline-Cache für die App. Bei jeder Änderung an den Dateien VERSION erhöhen.
-const VERSION = "mosaik-v20";
+const VERSION = "mosaik-v21";
 const FILES = [
   "./",
   "./index.html",
@@ -47,21 +47,24 @@ self.addEventListener("push", (e) => {
     body: d.body || "Zeit für die Abfrage von heute.",
     icon: "icons/icon-192.png",
     badge: "icons/icon-192.png",
-    tag: "mosaik-taeglich",
-    data: { date: d.date || null }
+    tag: d.report ? "mosaik-woche" : "mosaik-taeglich",
+    data: { date: d.date || null, report: d.report || null }
   }));
 });
 
 // Tippen auf die Mitteilung: App öffnen und Abfrage für den Tag starten
 self.addEventListener("notificationclick", (e) => {
   e.notification.close();
-  const date = e.notification.data && e.notification.data.date;
-  const url = new URL(date ? `./?quiz=${date}` : "./", self.registration.scope).href;
+  const data = e.notification.data || {};
+  const date = data.date;
+  // Wochenbericht öffnen bzw. Abfrage für den Tag starten
+  const msg = data.report ? { type: "report" } : { type: "quiz", date };
+  const url = new URL(data.report ? "./?report=week" : date ? `./?quiz=${date}` : "./", self.registration.scope).href;
   e.waitUntil((async () => {
     const wins = await self.clients.matchAll({ type: "window", includeUncontrolled: true });
     for (const c of wins) {
       if (!c.url.startsWith(self.registration.scope)) continue;
-      try { await c.focus(); c.postMessage({ type: "quiz", date }); return; } catch (err) { /* weiter mit neuem Fenster */ }
+      try { await c.focus(); c.postMessage(msg); return; } catch (err) { /* weiter mit neuem Fenster */ }
     }
     await self.clients.openWindow(url);
   })());
