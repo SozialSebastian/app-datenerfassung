@@ -1743,11 +1743,23 @@ async function cityFor(lat, lon) {
   let cache = {};
   try { cache = JSON.parse(localStorage.getItem(GEO_CACHE_KEY) || "{}"); } catch (e) { /* leer */ }
   if (cache[key]) return cache[key];
-  const res = await fetch(`https://api.bigdatacloud.net/data/reverse-geocode-client?latitude=${lat.toFixed(2)}&longitude=${lon.toFixed(2)}&localityLanguage=de`);
-  if (!res.ok) throw new Error("Ort nicht gefunden");
-  const j = await res.json();
-  const city = (j.city || j.locality || j.principalSubdivision || "").trim();
-  if (!city) throw new Error("Ort nicht gefunden");
+  // 1. BigDataCloud, 2. OpenStreetMap (Nominatim) als Ersatz
+  let city = "", why = "";
+  try {
+    const res = await fetch(`https://api.bigdatacloud.net/data/reverse-geocode-client?latitude=${lat.toFixed(2)}&longitude=${lon.toFixed(2)}&localityLanguage=de`);
+    if (!res.ok) throw new Error(`BigDataCloud ${res.status}`);
+    const j = await res.json();
+    city = (j.city || j.locality || "").trim();
+  } catch (e) { why = e.message || "BigDataCloud"; }
+  if (!city) {
+    try {
+      const res = await fetch(`https://nominatim.openstreetmap.org/reverse?format=jsonv2&zoom=10&accept-language=de&lat=${lat.toFixed(2)}&lon=${lon.toFixed(2)}`);
+      if (!res.ok) throw new Error(`OpenStreetMap ${res.status}`);
+      const a = (await res.json()).address || {};
+      city = (a.city || a.town || a.village || a.municipality || a.county || "").trim();
+    } catch (e) { why += (why ? ", " : "") + (e.message || "OpenStreetMap"); }
+  }
+  if (!city) { const err = new Error("Ortsname nicht abrufbar" + (why ? ` (${why})` : "")); err.geo = true; throw err; }
   cache[key] = city;
   const keys = Object.keys(cache);
   if (keys.length > 300) keys.slice(0, keys.length - 300).forEach((k) => delete cache[k]);
@@ -1762,15 +1774,24 @@ async function capturePlace(manual) {
   if (!manual && settings.places.last && Date.now() - settings.places.last < PLACE_MIN_GAP) return;
   placeBusy = true;
   try {
-    const pos = await new Promise((res, rej) => navigator.geolocation.getCurrentPosition(res, rej, { enableHighAccuracy: false, timeout: 15000, maximumAge: manual ? 0 : 10 * 60 * 1000 }));
+    const get = (high) => new Promise((res, rej) => navigator.geolocation.getCurrentPosition(res, rej, { enableHighAccuracy: high, timeout: high ? 30000 : 15000, maximumAge: manual ? 0 : 10 * 60 * 1000 }));
+    // grob zuerst (schnell, sparsam); klappt das nicht, einmal mit GPS
+    let pos;
+    try { pos = await get(false); } catch (e) { if (e && e.code === 1) throw e; pos = await get(true); }
     const city = await cityFor(pos.coords.latitude, pos.coords.longitude);
     const now = new Date();
-    settings.places.last = now.getTime(); saveSettings();
+    settings.places.last = now.getTime(); settings.places.err = ""; saveSettings();
     const changed = addPlace(iso(now), city, `${pad(now.getHours())}:${pad(now.getMinutes())}`);
     if (changed) { save(); if (tab === "day" && !quiz && current === iso(now)) renderDay(); }
     if (manual) toast(`Ort: ${city}`);
   } catch (e) {
-    if (manual) toast(e && e.code === 1 ? "Standort nicht erlaubt – iPhone-Einstellungen → Datenschutz → Ortungsdienste" : "Ort konnte nicht ermittelt werden");
+    const msg = e && e.code === 1 ? "Standort nicht erlaubt. iPhone-Einstellungen → Datenschutz & Sicherheit → Ortungsdienste → Safari-Websites → „Beim Verwenden“."
+      : e && e.code === 2 ? "Standort gerade nicht verfügbar (kein GPS/WLAN-Signal?)."
+      : e && e.code === 3 ? "Standort hat zu lange gedauert."
+      : e && e.geo ? e.message + "."
+      : "Ort konnte nicht ermittelt werden" + (e && e.message ? ` (${e.message})` : "") + ".";
+    settings.places.err = `${new Date().toLocaleTimeString("de-DE", { hour: "2-digit", minute: "2-digit" })}: ${msg}`; saveSettings();
+    if (manual) { toast(msg.length > 60 ? msg.slice(0, 58) + "…" : msg); if (tab === "data") renderData(); }
   } finally { placeBusy = false; }
 }
 
@@ -2686,7 +2707,9 @@ function renderData() {
     <section class="panel">
       <h2>Orte</h2>
       <label class="switch row" style="margin-top:0"><input type="checkbox" id="placeson" ${settings.places.on ? "checked" : ""}><span>Stadt beim Öffnen erfassen</span></label>
-      <p class="muted small" style="margin:8px 0 0">Mosaik merkt sich beim Öffnen die Stadt, höchstens alle 20 Minuten, z. B. „Wedel → Hamburg → Wedel“. Gespeichert wird nur der Ortsname, auf dem iPhone. Für den Namen werden die auf ca. 1 km gerundeten Koordinaten an BigDataCloud geschickt. Orte lassen sich unter „Tag“ antippen und von Hand ergänzen.</p>
+      <p class="muted small" style="margin:8px 0 0">Mosaik merkt sich beim Öffnen die Stadt, höchstens alle 20 Minuten, z. B. „Wedel → Hamburg → Wedel“. Gespeichert wird nur der Ortsname, auf dem iPhone. Für den Namen werden die auf ca. 1 km gerundeten Koordinaten an BigDataCloud geschickt, ersatzweise an OpenStreetMap. Orte lassen sich unter „Tag“ antippen und von Hand ergänzen.</p>
+      ${settings.places.on && settings.places.err ? `<p class="small" style="margin:8px 0 0;color:var(--danger)">Letzter Fehler ${esc(settings.places.err)}</p>` : ""}
+      ${settings.places.on ? `<button class="btn ghost block" id="placenow" style="margin-top:12px">Standort jetzt erfassen</button>` : ""}
     </section>
 
     <section class="panel">
@@ -2813,7 +2836,9 @@ function renderData() {
   $("#placeson").addEventListener("change", async (e) => {
     settings.places.on = e.target.checked; settings.places.last = 0; saveSettings();
     if (e.target.checked) await capturePlace(true); else toast("Orte werden nicht mehr erfasst");
+    renderData();
   });
+  $("#placenow")?.addEventListener("click", async () => { await capturePlace(true); renderData(); });
   $("#exportopen").addEventListener("click", openExport);
   const weekSave = async () => {
     const day = Number($("#weekday").value), time = $("#weektime").value || "19:00";
