@@ -17,6 +17,11 @@ function load() {
   }
 }
 let state = load();
+// Health-Zeitfelder richtig formatieren (auch bei schon vorhandenen Fragen)
+for (const q of state.questions) {
+  if (!q.format && q.healthKey === "schlaf") { q.format = "duration"; if (q.unit === "Stunden") q.unit = ""; }
+  if (!q.format && q.healthKey === "schlafenszeit") q.format = "clock";
+}
 function save() {
   localStorage.setItem(KEY, JSON.stringify(state));
 }
@@ -136,6 +141,29 @@ function condText(q) {
   return p ? `wenn „${p.text}“ = ${q.cond.values.join(" oder ")}` : "";
 }
 const fmtVal = (v) => (Array.isArray(v) ? v.join(", ") : typeof v === "number" ? fmtNum(v) : v);
+// Zeitwerte werden als Stunden gespeichert: Dauer 7,3833 = 7 h 23 min; Uhrzeit 23,5 = 23:30, 24,75 = 00:45
+const fmtDur = (h) => { const m = Math.round(h * 60); return `${Math.floor(m / 60)} h ${String(m % 60).padStart(2, "0")} min`; };
+const fmtClock = (h) => { let m = Math.round(h * 60) % 1440; if (m < 0) m += 1440; return `${pad(Math.floor(m / 60))}:${pad(m % 60)}`; };
+// Wert einer Frage lesbar machen (mit Einheit)
+function fmtQ(q, v) {
+  if (v === null || v === undefined || v === "") return "";
+  if (typeof v === "number" && q.format === "duration") return fmtDur(v);
+  if (typeof v === "number" && q.format === "clock") return fmtClock(v);
+  return fmtVal(v) + (q.unit && typeof v === "number" ? " " + q.unit : "");
+}
+// Eingabe zurückverwandeln: „7:23“, „7 h 23“, „7,4“ bzw. „23:10“, „0:40“
+function parseQ(q, text) {
+  const t = String(text || "").trim();
+  if (t === "") return null;
+  if (q.format === "duration" || q.format === "clock") {
+    const m = t.match(/^(\d{1,2})\s*(?:[:.h]|\s)\s*(\d{1,2})(?:\s*min)?$/i);
+    let h = m ? Number(m[1]) + Number(m[2]) / 60 : parseNum(t);
+    if (Number.isNaN(h)) return NaN;
+    if (q.format === "clock" && h < 12) h += 24; // nach Mitternacht → 24+ (für Durchschnitt und Grafik)
+    return Math.round(h * 10000) / 10000;
+  }
+  return parseNum(t);
+}
 
 /* ================= Navigation ================= */
 let tab = "day";
@@ -247,7 +275,7 @@ function renderDay() {
   const hq = healthQuestions();
   const healthHtml = hq.length ? `<section class="q healthcard">
       <p class="q-title">Apple Health</p>
-      ${hq.map((q) => `<label class="hrow" data-hq="${q.id}"><span>${esc(q.text)}</span><span class="hval"><input type="text" inputmode="decimal" autocomplete="off" value="${esc(fmtNum(a[q.id]))}" placeholder="–" aria-label="${esc(q.text)}">${q.unit ? `<span class="unit">${esc(q.unit)}</span>` : ""}</span></label>`).join("")}
+      ${hq.map((q) => `<label class="hrow" data-hq="${q.id}"><span>${esc(q.text)}</span><span class="hval"><input type="text" inputmode="${q.format ? "text" : "decimal"}" autocomplete="off" value="${esc(q.format ? fmtQ(q, a[q.id]) : fmtNum(a[q.id]))}" placeholder="${q.format === "clock" ? "hh:mm" : q.format === "duration" ? "h:mm" : "–"}" aria-label="${esc(q.text)}" class="${q.format ? "wide" : ""}">${q.unit && !q.format ? `<span class="unit">${esc(q.unit)}</span>` : ""}</span></label>`).join("")}
     </section>` : "";
 
   let body;
@@ -291,9 +319,11 @@ function renderDay() {
   view.querySelectorAll("[data-hq]").forEach((row) => {
     const inp = row.querySelector("input");
     inp.addEventListener("change", () => {
-      const n = parseNum(inp.value);
-      if (Number.isNaN(n)) { toast("Bitte eine Zahl eingeben"); inp.value = fmtNum((state.answers[current] || {})[row.dataset.hq]); return; }
+      const hqq = qById(row.dataset.hq);
+      const n = parseQ(hqq, inp.value);
+      if (Number.isNaN(n)) { toast(hqq.format ? "Bitte so eingeben: 7:23" : "Bitte eine Zahl eingeben"); inp.value = hqq.format ? fmtQ(hqq, (state.answers[current] || {})[row.dataset.hq]) : fmtNum((state.answers[current] || {})[row.dataset.hq]); return; }
       setAnswer(current, row.dataset.hq, n);
+      if (hqq.format) inp.value = fmtQ(hqq, n);
     });
     inp.addEventListener("keydown", (e) => { if (e.key === "Enter") inp.blur(); });
   });
@@ -333,7 +363,7 @@ function renderQuiz() {
         <div class="hold big" style="--p:${dayProgress(date)}"></div>
         <h1>${open.length ? "Fast geschafft" : "Fertig"}</h1>
         <p class="muted">${open.length ? `${open.length} Frage${open.length > 1 ? "n" : ""} übersprungen.` : `Alle ${qs.length} Fragen für den ${longDate(date)} beantwortet.`}</p>
-        <ul class="summary">${qs.map((q) => `<li><span>${esc(q.text)}</span><strong>${isAnswered(a[q.id]) ? esc(fmtVal(a[q.id])) + (q.unit ? " " + esc(q.unit) : "") : "–"}</strong></li>`).join("")}</ul>
+        <ul class="summary">${qs.map((q) => `<li><span>${esc(q.text)}</span><strong>${isAnswered(a[q.id]) ? esc(fmtQ(q, a[q.id])) : "–"}</strong></li>`).join("")}</ul>
         <div class="stack">
           ${open.length ? `<button class="btn hold-btn" id="qopen">Übersprungene beantworten</button>` : ""}
           <button class="btn ${open.length ? "ghost" : ""}" id="qfinish">Zur Tagesübersicht</button>
@@ -465,7 +495,7 @@ function renderAnalysis() {
         for (const p of pts) if (Math.abs(p.x - x) < Math.abs(best.x - x)) best = p;
         mark.setAttribute("cx", best.x); mark.setAttribute("cy", best.y); mark.style.display = "";
         const v = (state.answers[best.d] || {})[q.id];
-        cap.textContent = `${shortDate(best.d)}: ${fmtVal(v)}${q.unit ? " " + q.unit : ""}`;
+        cap.textContent = `${shortDate(best.d)}: ${fmtQ(q, v)}`;
       };
       svg.addEventListener("pointerdown", pick);
       svg.addEventListener("pointermove", (e) => { if (e.buttons || e.pointerType === "mouse") pick(e); });
@@ -566,7 +596,15 @@ function analysisCard(q, days) {
   } else {
     const nums = vals.map((x) => x.v);
     const avg = nums.reduce((s, x) => s + x, 0) / n;
-    body = `
+    if (q.format) {
+      // Dauer bzw. Uhrzeit: Durchschnitt, Spanne und Streuung (Standardabweichung) in Minuten
+      const sdMin = n > 1 ? Math.round(Math.sqrt(nums.reduce((s, x) => s + (x - avg) ** 2, 0) / (n - 1)) * 60) : 0;
+      const lo = q.format === "clock" ? "früheste" : "kürzeste", hi = q.format === "clock" ? "späteste" : "längste";
+      body = `
+      <p class="hero"><span class="big">Ø ${fmtQ(q, avg)}</span>${q.format === "clock" ? `<span class="muted">Uhr</span>` : ""}</p>
+      <p class="stats small"><span>${lo} ${fmtQ(q, Math.min(...nums))}</span><span>${hi} ${fmtQ(q, Math.max(...nums))}</span><span>Streuung ± ${sdMin} min</span></p>
+      ${set.trend && n >= 2 ? lineChart(q, days, vals, avg) : ""}`;
+    } else body = `
       <p class="hero"><span class="big">Ø ${fmt1(avg)}</span><span class="muted">${q.unit ? esc(q.unit) : ""}</span></p>
       <p class="stats small"><span>Min ${fmt1(Math.min(...nums))}</span><span>Max ${fmt1(Math.max(...nums))}</span><span>Summe ${fmt1(nums.reduce((s, x) => s + x, 0))}</span></p>
       ${set.trend && n >= 2 ? lineChart(q, days, vals, avg) : ""}`;
@@ -645,7 +683,7 @@ function lineChart(q, days, vals, avg) {
   });
   const dots = pts.length <= 40 ? pts.map((p) => `<circle cx="${p.x}" cy="${p.y}" r="3" class="dot"/>`).join("") : "";
   return `<div class="chart">
-    <div class="yax small muted"><span>${fmt1(hi)}</span><span>${fmt1(lo)}</span></div>
+    <div class="yax small muted"><span>${q.format ? fmtQ(q, hi) : fmt1(hi)}</span><span>${q.format ? fmtQ(q, lo) : fmt1(lo)}</span></div>
     <svg class="line" viewBox="0 0 ${W} ${H}" data-pts='${JSON.stringify(pts)}' role="img" aria-label="Verlauf von ${esc(q.text)}">
       <line x1="0" x2="${W}" y1="${yi(avg)}" y2="${yi(avg)}" class="avg"/>
       <path d="${path}" class="ln"/>
@@ -797,7 +835,7 @@ function relationInsights(days) {
         const unit = b.unit ? " " + esc(b.unit) : "";
         found.push({
           score: Math.abs(bestCase.dEff),
-          html: `${qName(b)} ${bestCase.lag ? "am Tag nach" : "an Tagen mit"} ${g.label}: <strong>Ø ${fmt1(bestCase.m1)}${unit}</strong> statt Ø ${fmt1(bestCase.m0)}${unit}`,
+          html: `${qName(b)} ${bestCase.lag ? "am Tag nach" : "an Tagen mit"} ${g.label}: <strong>Ø ${b.format ? fmtQ(b, bestCase.m1) : fmt1(bestCase.m1) + unit}</strong> statt Ø ${b.format ? fmtQ(b, bestCase.m0) : fmt1(bestCase.m0) + unit}`,
           note: `${bestCase.n1} vs. ${bestCase.n0} Tage`
         });
       }
@@ -1150,7 +1188,7 @@ function reportStatus() {
 
 // Bekannte Kürzel bekommen einen schönen Namen
 const HEALTH_NAMES = {
-  schlaf: ["Schlafdauer", "Stunden"], schritte: ["Schritte", ""], ruhepuls: ["Ruhepuls", "bpm"], puls: ["Puls", "bpm"],
+  schlaf: ["Schlafdauer", "", "duration"], schlafenszeit: ["Schlafenszeit", "", "clock"], schritte: ["Schritte", ""], ruhepuls: ["Ruhepuls", "bpm"], puls: ["Puls", "bpm"],
   hrv: ["Herzfrequenzvariabilität", "ms"], kalorien: ["Aktivkalorien", "kcal"], aktivkalorien: ["Aktivkalorien", "kcal"],
   training: ["Trainingsminuten", "min"], stehen: ["Stehstunden", "h"], distanz: ["Distanz", "km"], gewicht: ["Gewicht", "kg"],
   achtsamkeit: ["Achtsamkeitsminuten", "min"], stockwerke: ["Stockwerke", ""]
@@ -1162,8 +1200,8 @@ function ensureHealthQuestion(key, created) {
     if (q.type === "number" && !q.source) { q.source = "health"; save(); }
     return q;
   }
-  const [text, unit] = HEALTH_NAMES[key] || [key.charAt(0).toUpperCase() + key.slice(1).replace(/_/g, " "), ""];
-  q = { id: uid(), text, type: "number", options: [], multi: false, min: 1, max: 5, minLabel: "", maxLabel: "", unit, healthKey: key, source: "health", archived: false, cond: null };
+  const [text, unit, format] = HEALTH_NAMES[key] || [key.charAt(0).toUpperCase() + key.slice(1).replace(/_/g, " "), ""];
+  q = { id: uid(), text, format: format || null, type: "number", options: [], multi: false, min: 1, max: 5, minLabel: "", maxLabel: "", unit, healthKey: key, source: "health", archived: false, cond: null };
   state.questions.push(q);
   created.push(q);
   return q;
@@ -1389,6 +1427,13 @@ function buildWorkbook() {
   for (let r = 1; r < rows.length; r++) {
     const c = ws[XLSX.utils.encode_cell({ r, c: 0 })];
     if (c) { c.t = "n"; c.z = "dd.mm.yyyy"; }
+    qs.forEach((q, i) => {
+      if (!q.format) return;
+      const cell = ws[XLSX.utils.encode_cell({ r, c: i + 2 })];
+      if (!cell || typeof cell.v !== "number") return;
+      if (q.format === "duration") { cell.v = cell.v / 24; cell.z = "[h]:mm"; }
+      else { cell.v = (((cell.v % 24) + 24) % 24) / 24; cell.z = "hh:mm"; }
+    });
   }
   ws["!cols"] = [{ wch: 12 }, { wch: 11 }, ...qs.map((q) => ({ wch: Math.min(Math.max(q.text.length + 2, 10), 40) }))];
   ws["!freeze"] = { xSplit: 1, ySplit: 1 };

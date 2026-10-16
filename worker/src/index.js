@@ -152,6 +152,11 @@ const num = (v) => {
   const m = String(v).replace(/[ \u00a0]/g, "").replace(/\.(?=\d{3}(\D|$))/g, "").match(/-?\d+(?:[.,]\d+)?/);
   return m ? Number(m[0].replace(",", ".")) : NaN;
 };
+// Uhrzeit in Berlin als Stunden (23:30 → 23,5)
+const berlinClock = (ms) => {
+  const p = Object.fromEntries(new Intl.DateTimeFormat("en-GB", { timeZone: TZ_DEFAULT, hour: "2-digit", minute: "2-digit", hourCycle: "h23" }).formatToParts(new Date(ms)).map((x) => [x.type, x.value]));
+  return Number(p.hour) + Number(p.minute) / 60;
+};
 const berlinDate = (ms) => new Intl.DateTimeFormat("en-CA", { timeZone: TZ_DEFAULT, year: "numeric", month: "2-digit", day: "2-digit" }).format(new Date(ms));
 // Datum aus Kurzbefehlen lesen: ISO 8601 (empfohlen) oder deutsch „16.10.2026, 07:12“
 function parseWhen(v) {
@@ -160,10 +165,10 @@ function parseWhen(v) {
   if (m) {
     const y = m[3].length === 2 ? 2000 + Number(m[3]) : Number(m[3]);
     const local = `${y}-${m[2].padStart(2, "0")}-${m[1].padStart(2, "0")}`;
-    return { ms: Date.UTC(y, Number(m[2]) - 1, Number(m[1]), Number(m[4] || 12), Number(m[5] || 0)), local };
+    return { ms: Date.UTC(y, Number(m[2]) - 1, Number(m[1]), Number(m[4] || 12), Number(m[5] || 0)), local, clock: Number(m[4] || 12) + Number(m[5] || 0) / 60 };
   }
   const ms = Date.parse(s);
-  if (!Number.isNaN(ms)) return { ms, local: /^\d{4}-\d{2}-\d{2}$/.test(s) ? s : berlinDate(ms) };
+  if (!Number.isNaN(ms)) return { ms, local: /^\d{4}-\d{2}-\d{2}$/.test(s) ? s : berlinDate(ms), clock: berlinClock(ms) };
   return null;
 }
 const minusDays = (d, n) => { const t = new Date(d + "T12:00:00Z"); t.setUTCDate(t.getUTCDate() - n); return t.toISOString().slice(0, 10); };
@@ -185,13 +190,20 @@ function listEntries(lists, today) {
     const start = lists[base + "_start"], end = lists[base + "_ende"], dates = lists[base + "_datum"], vals = lists[base];
     if (Array.isArray(start) && Array.isArray(end)) {
       done.add(base);
-      const perDay = {};
+      const perDay = {}, firstStart = {};
       for (let i = 0; i < Math.min(start.length, end.length, 20000); i++) {
         const a = parseWhen(start[i]), b = parseWhen(end[i]);
         if (!a || !b || b.ms <= a.ms) continue;
         perDay[b.local] = (perDay[b.local] || 0) + (b.ms - a.ms) / 3600000;
+        if (!firstStart[b.local] || a.ms < firstStart[b.local].ms) firstStart[b.local] = a;
       }
-      for (const [d, h] of Object.entries(perDay)) out.push([base, String(Math.round(h * 10) / 10), d]);
+      // Dauer minutengenau (in Stunden), dazu die Uhrzeit des Einschlafens (nach Mitternacht → 24+)
+      const startKey = base === "schlaf" ? "schlafenszeit" : base + "_beginn";
+      for (const [d, h] of Object.entries(perDay)) {
+        out.push([base, String(Math.round(h * 60) / 60), d]);
+        const c = firstStart[d].clock;
+        out.push([startKey, String(Math.round((c < 12 ? c + 24 : c) * 10000) / 10000), d]);
+      }
     } else if (Array.isArray(vals)) {
       done.add(base);
       vals.slice(0, 400).forEach((v, i) => {
@@ -275,7 +287,9 @@ async function handle(request, env) {
     if (!entries.length) return text("Keine Werte erkannt. Beispiel: mosaik;schlaf=7,4", 400);
     await env.DB.batch(entries.map(([k, v, d]) => env.DB.prepare("INSERT INTO inbox (created, date, key, value) VALUES (datetime('now'), ?, ?, ?)").bind(d, k, v)));
     const byKey = {};
-    for (const [k, v, d] of entries) (byKey[k] = byKey[k] || []).push(`${d.slice(8, 10)}.${d.slice(5, 7)}.: ${v}`);
+    const hm = (h, wrap) => { let m = Math.round(Number(h) * 60); if (wrap) m = ((m % 1440) + 1440) % 1440; return `${Math.floor(m / 60)}:${String(m % 60).padStart(2, "0")}`; };
+    const show = (k, v) => (k === "schlaf" ? hm(v) : k === "schlafenszeit" || k.endsWith("_beginn") ? hm(v, true) : v);
+    for (const [k, v, d] of entries) (byKey[k] = byKey[k] || []).push(`${d.slice(8, 10)}.${d.slice(5, 7)}.: ${show(k, v)}`);
     return text(`Gespeichert – ${Object.entries(byKey).map(([k, xs]) => `${k}: ${xs.join(", ")}`).join(" | ")}. Mosaik übernimmt das beim nächsten Öffnen.`);
   }
 
