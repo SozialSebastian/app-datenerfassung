@@ -516,3 +516,12 @@ input.flabel { flex: 1; padding: 8px 10px; border-radius: var(--r-sm); border: 1
 .wdir.good { color: var(--s6); }
 .wdir.bad { color: var(--hold); }
 .unitchips .chip { padding: 8px 14px; font-size: 15px; }
+
+/* ---------- Orte ---------- */
+.placeline { display: flex; align-items: center; gap: 6px; border: 0; background: none; padding: 0; margin: -6px 0 12px; color: var(--ink); font-size: 15px; font-weight: 600; text-align: left; }
+.placeline svg { width: 18px; height: 18px; flex: none; fill: none; stroke: var(--hold); stroke-width: 2; stroke-linejoin: round; }
+.plist { list-style: none; margin: 0; padding: 0; }
+.plist li { display: grid; grid-template-columns: 52px 1fr auto; align-items: center; gap: 8px; border-top: 1px solid var(--line); padding: 4px 0; }
+.plist li:first-child { border-top: 0; }
+.plist .pc { font-weight: 600; }
+.rplaces { margin: -4px 0 12px; }

@@ -319,6 +319,7 @@ function renderDay() {
         <button class="gear" id="goalsbtn" aria-label="Ziele festlegen">${GEAR}</button>
       </div>
     </div>
+    ${placeLine(current)}
     <div class="week">${week}</div>
     ${body}`;
 
@@ -327,6 +328,7 @@ function renderDay() {
   $("#gotoday")?.addEventListener("click", () => { current = todayIso(); renderDay(); });
   $("#firstq")?.addEventListener("click", () => openEditor(null));
   $("#goalsbtn").addEventListener("click", openGoals);
+  $("#placeedit")?.addEventListener("click", () => openPlaces(current));
   view.querySelectorAll("[data-hq]").forEach((row) => {
     const inp = row.querySelector("input");
     inp.addEventListener("change", () => {
@@ -352,6 +354,7 @@ function renderDay() {
 
 /* ================= Abfrage: eine Frage nach der anderen ================= */
 function startQuiz(date) {
+  if (date === todayIso()) capturePlace(false);
   const qs = askQuestions(date);
   const a = state.answers[date] || {};
   const first = qs.findIndex((q) => !isAnswered(a[q.id]));
@@ -776,7 +779,7 @@ const MIN_D = 0.5;     // ab mittlerem Effekt (Cohen's d) gilt ein Unterschied a
 const MIN_R = 0.4;     // ab dieser Korrelation gilt ein Zusammenhang als auffällig
 const MIN_PAIRS = 8;
 
-const ansOn = (d, q) => (state.answers[d] || {})[q.id];
+const ansOn = (d, q) => (q.id === "__place" ? (placeCities(d).length ? placeCities(d) : undefined) : (state.answers[d] || {})[q.id]);
 const has = (v, opt) => (Array.isArray(v) ? v.includes(opt) : v === opt);
 const mean = (a) => a.reduce((s, x) => s + x, 0) / a.length;
 const sd = (a) => { const m = mean(a); return Math.sqrt(a.reduce((s, x) => s + (x - m) ** 2, 0) / Math.max(a.length - 1, 1)); };
@@ -834,7 +837,7 @@ function relationInsights(days) {
   const found = [];
 
   // Mittelwertvergleich: Zahl/Skala an Tagen mit vs. ohne eine bestimmte Antwort (gleicher Tag und Tag danach)
-  for (const g of groupings(qs)) {
+  for (const g of [...groupings(qs), ...placeGroupings(days)]) {
     for (const b of nums) {
       if (b.cond && b.cond.qid === g.q.id) continue; // Folgefrage der Gruppe → trivial
       let bestCase = null;
@@ -1532,6 +1535,7 @@ function reportHtml(mon) {
   return `
     <section class="sq rtop">
       <p class="rkw">KW ${kw(mon)} · ${range}${running ? " · läuft noch" : ""}</p>
+      ${weekPlaces(mon).length ? `<p class="rplaces small">📍 ${weekPlaces(mon).map(([c, n]) => `${esc(c)} <span class="muted">${n} Tag${n === 1 ? "" : "e"}</span>`).join(" · ")}</p>` : ""}
       <div class="rstats">
         <div><strong>${tracked}</strong><span>von ${days.length} Tagen erfasst</span></div>
         <div><strong>${full}</strong><span>Tage vollständig</span></div>
@@ -1714,6 +1718,128 @@ async function makeImages(list) {
   $("#xshare", inner).addEventListener("click", () => share(out));
   inner.querySelectorAll("[data-xone]").forEach((b) => b.addEventListener("click", () => share([out[+b.dataset.xone]])));
   inner.scrollTop = 0;
+}
+
+/* ================= Orte (Standort beim Öffnen) ================= */
+// Gespeichert in state.places: { "2026-10-16": [{ c: "Wedel", t: "08:12" }, { c: "Hamburg", t: "12:40" }] }
+// Aufeinanderfolgende gleiche Orte werden zusammengefasst. Koordinaten werden nicht gespeichert.
+const PLACE_MIN_GAP = 20 * 60 * 1000; // höchstens alle 20 Minuten abfragen
+const P = () => { if (!state.places || typeof state.places !== "object") state.places = {}; return state.places; };
+const placesOn = (d) => (P()[d] || []).map((x) => x.c);
+const placeCities = (d) => Array.from(new Set(placesOn(d))); // ohne Wiederholungen
+
+function addPlace(date, city, time) {
+  const list = P()[date] || (P()[date] = []);
+  const last = list[list.length - 1];
+  if (last && last.c === city) return false;
+  list.push({ c: city, t: time });
+  return true;
+}
+
+// Ortsname über Koordinaten: kostenloser Dienst, Koordinaten auf ca. 1 km gerundet, Ergebnis wird zwischengespeichert
+const GEO_CACHE_KEY = "mosaik.geocache";
+async function cityFor(lat, lon) {
+  const key = `${lat.toFixed(2)},${lon.toFixed(2)}`;
+  let cache = {};
+  try { cache = JSON.parse(localStorage.getItem(GEO_CACHE_KEY) || "{}"); } catch (e) { /* leer */ }
+  if (cache[key]) return cache[key];
+  const res = await fetch(`https://api.bigdatacloud.net/data/reverse-geocode-client?latitude=${lat.toFixed(2)}&longitude=${lon.toFixed(2)}&localityLanguage=de`);
+  if (!res.ok) throw new Error("Ort nicht gefunden");
+  const j = await res.json();
+  const city = (j.city || j.locality || j.principalSubdivision || "").trim();
+  if (!city) throw new Error("Ort nicht gefunden");
+  cache[key] = city;
+  const keys = Object.keys(cache);
+  if (keys.length > 300) keys.slice(0, keys.length - 300).forEach((k) => delete cache[k]);
+  try { localStorage.setItem(GEO_CACHE_KEY, JSON.stringify(cache)); } catch (e) { /* egal */ }
+  return city;
+}
+
+let placeBusy = false;
+async function capturePlace(manual) {
+  if (!settings.places || !settings.places.on || !("geolocation" in navigator)) return;
+  if (placeBusy) return;
+  if (!manual && settings.places.last && Date.now() - settings.places.last < PLACE_MIN_GAP) return;
+  placeBusy = true;
+  try {
+    const pos = await new Promise((res, rej) => navigator.geolocation.getCurrentPosition(res, rej, { enableHighAccuracy: false, timeout: 15000, maximumAge: manual ? 0 : 10 * 60 * 1000 }));
+    const city = await cityFor(pos.coords.latitude, pos.coords.longitude);
+    const now = new Date();
+    settings.places.last = now.getTime(); saveSettings();
+    const changed = addPlace(iso(now), city, `${pad(now.getHours())}:${pad(now.getMinutes())}`);
+    if (changed) { save(); if (tab === "day" && !quiz && current === iso(now)) renderDay(); }
+    if (manual) toast(`Ort: ${city}`);
+  } catch (e) {
+    if (manual) toast(e && e.code === 1 ? "Standort nicht erlaubt – iPhone-Einstellungen → Datenschutz → Ortungsdienste" : "Ort konnte nicht ermittelt werden");
+  } finally { placeBusy = false; }
+}
+
+// Zeile unter dem Datum auf „Tag“
+function placeLine(date) {
+  const list = P()[date] || [];
+  if (!list.length && !(settings.places && settings.places.on)) return "";
+  return `<button class="placeline" id="placeedit" aria-label="Orte des Tages bearbeiten">
+    <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 21s-6.5-6.2-6.5-11.2a6.5 6.5 0 0 1 13 0C18.5 14.8 12 21 12 21z"/><circle cx="12" cy="9.8" r="2.3"/></svg>
+    <span>${list.length ? list.map((x) => esc(x.c)).join(" → ") : `<span class="muted">Noch kein Ort</span>`}</span>
+  </button>`;
+}
+
+// Orte eines Tages ansehen, löschen, von Hand ergänzen
+function openPlaces(date) {
+  const dlg = $("#sheet");
+  const draw = () => {
+    const list = P()[date] || [];
+    const known = Array.from(new Set(Object.values(P()).flat().map((x) => x.c))).filter((c) => !list.length || list[list.length - 1].c !== c).slice(0, 8);
+    dlg.innerHTML = `<div class="sheet-inner">
+      <div class="sheet-head"><span></span><h2>Orte · ${longDate(date)}</h2><button type="button" class="linkbtn" id="pdone">Fertig</button></div>
+      <section class="sq">
+        ${list.length ? `<ul class="plist">${list.map((x, i) => `<li><span class="pt muted">${esc(x.t || "")}</span><span class="pc">${esc(x.c)}</span><button type="button" class="iconbtn" data-pdel="${i}" aria-label="Entfernen">✕</button></li>`).join("")}</ul>`
+          : `<p class="muted small" style="margin:0">Für diesen Tag ist noch kein Ort gespeichert.</p>`}
+      </section>
+      <section class="sq">
+        <strong>Ort hinzufügen</strong>
+        ${known.length ? `<div class="chips" style="margin-top:10px">${known.map((c) => `<button type="button" class="chip" data-padd="${esc(c)}">${esc(c)}</button>`).join("")}</div>` : ""}
+        <div class="gline"><input id="pnew" class="flabel" placeholder="z. B. Hamburg" autocomplete="off"><button type="button" class="btn" id="paddbtn">Hinzufügen</button></div>
+        ${date === todayIso() && settings.places && settings.places.on ? `<button type="button" class="btn ghost block" id="pnow" style="margin-top:12px">Aktuellen Standort jetzt erfassen</button>` : ""}
+      </section>
+    </div>`;
+    $("#pdone", dlg).addEventListener("click", () => dlg.close());
+    const add = (c) => {
+      c = c.trim(); if (!c) return;
+      const now = new Date();
+      addPlace(date, c, date === todayIso() ? `${pad(now.getHours())}:${pad(now.getMinutes())}` : "");
+      save(); draw(); render();
+    };
+    dlg.querySelectorAll("[data-pdel]").forEach((b) => b.addEventListener("click", () => {
+      const l = P()[date]; l.splice(+b.dataset.pdel, 1); if (!l.length) delete P()[date];
+      save(); draw(); render();
+    }));
+    dlg.querySelectorAll("[data-padd]").forEach((b) => b.addEventListener("click", () => add(b.dataset.padd)));
+    $("#paddbtn", dlg).addEventListener("click", () => add($("#pnew", dlg).value));
+    $("#pnew", dlg).addEventListener("keydown", (e) => { if (e.key === "Enter") add(e.target.value); });
+    $("#pnow", dlg)?.addEventListener("click", async () => { await capturePlace(true); draw(); });
+  };
+  draw();
+  dlg.showModal();
+  document.activeElement?.blur();
+}
+
+// Für Trends: Orte wie eine Auswahlfrage behandeln („an Tagen in Hamburg“)
+function placeGroupings(days) {
+  const counts = {};
+  let withPlace = 0;
+  for (const d of days) { const cs = placeCities(d); if (cs.length) withPlace++; cs.forEach((c) => (counts[c] = (counts[c] || 0) + 1)); }
+  const PQ = { id: "__place", text: "Ort", type: "choice", options: Object.keys(counts) };
+  return Object.entries(counts)
+    .filter(([, n]) => n >= MIN_GROUP && withPlace - n >= MIN_GROUP) // nur Orte, die nicht an (fast) allen Tagen vorkommen
+    .map(([c]) => ({ q: PQ, opt: c, label: `Aufenthalt in „${esc(c)}“` }));
+}
+
+// Wochenbericht: Orte der Woche
+function weekPlaces(mon) {
+  const counts = {};
+  for (let i = 0; i < 7; i++) placeCities(addDays(mon, i)).forEach((c) => (counts[c] = (counts[c] || 0) + 1));
+  return Object.entries(counts).sort((a, b) => b[1] - a[1]);
 }
 
 /* ================= Fragen verwalten ================= */
@@ -2359,8 +2485,8 @@ function openEditor(id) {
 /* ================= Mosaik-Dienst: Erinnerung und Eingang ================= */
 const SERVER = "https://mosaik-sync.sebastian-taglieber.workers.dev";
 const SETTINGS_KEY = "mosaik.settings";
-let settings = { token: "", push: { on: false, time: "23:00", endpoint: null }, weekly: { on: false, day: 0, time: "19:00" }, lastInbox: null };
-try { const s = JSON.parse(localStorage.getItem(SETTINGS_KEY) || "{}"); settings = { ...settings, ...s, push: { ...settings.push, ...(s.push || {}) }, weekly: { ...settings.weekly, ...(s.weekly || {}) } }; } catch (e) { /* egal */ }
+let settings = { token: "", push: { on: false, time: "23:00", endpoint: null }, weekly: { on: false, day: 0, time: "19:00" }, places: { on: false, last: 0 }, lastInbox: null };
+try { const s = JSON.parse(localStorage.getItem(SETTINGS_KEY) || "{}"); settings = { ...settings, ...s, push: { ...settings.push, ...(s.push || {}) }, weekly: { ...settings.weekly, ...(s.weekly || {}) }, places: { ...settings.places, ...(s.places || {}) } }; } catch (e) { /* egal */ }
 const saveSettings = () => { try { localStorage.setItem(SETTINGS_KEY, JSON.stringify(settings)); } catch (e) { /* egal */ } };
 
 async function api(path, body) {
@@ -2558,6 +2684,12 @@ function renderData() {
     </section>
 
     <section class="panel">
+      <h2>Orte</h2>
+      <label class="switch row" style="margin-top:0"><input type="checkbox" id="placeson" ${settings.places.on ? "checked" : ""}><span>Stadt beim Öffnen erfassen</span></label>
+      <p class="muted small" style="margin:8px 0 0">Mosaik merkt sich beim Öffnen die Stadt, höchstens alle 20 Minuten, z. B. „Wedel → Hamburg → Wedel“. Gespeichert wird nur der Ortsname, auf dem iPhone. Für den Namen werden die auf ca. 1 km gerundeten Koordinaten an BigDataCloud geschickt. Orte lassen sich unter „Tag“ antippen und von Hand ergänzen.</p>
+    </section>
+
+    <section class="panel">
       <h2>Excel-Tabelle</h2>
       <p class="muted">Enthält immer alle bisher erfassten Tage, eine Spalte pro Frage. In der App wird dabei nichts gelöscht.</p>
       <p class="stat">${days.length} Tage · ${nAnswers} Antworten${days.length ? ` · seit ${longDate(days[0])} ${days[0].slice(0, 4)}` : ""}</p>
@@ -2678,6 +2810,10 @@ function renderData() {
   $("#inboxnow")?.addEventListener("click", () => fetchInbox(true));
 
   $("#reportopen").addEventListener("click", () => openReport());
+  $("#placeson").addEventListener("change", async (e) => {
+    settings.places.on = e.target.checked; settings.places.last = 0; saveSettings();
+    if (e.target.checked) await capturePlace(true); else toast("Orte werden nicht mehr erfasst");
+  });
   $("#exportopen").addEventListener("click", openExport);
   const weekSave = async () => {
     const day = Number($("#weekday").value), time = $("#weektime").value || "19:00";
@@ -2717,8 +2853,8 @@ async function shareOrDownload(blob, filename) {
 
 function buildWorkbook() {
   const qs = ordered().map((o) => o.q); // alle, auch ausgeblendete; Folgefragen hinter ihrer Ausgangsfrage
-  const days = Object.keys(state.answers).sort();
-  const header = ["Datum", "Wochentag", ...qs.map((q) => q.text + (q.type === "number" && q.unit ? ` (${q.unit})` : ""))];
+  const days = Array.from(new Set([...Object.keys(state.answers), ...Object.keys(state.places || {})])).sort();
+  const header = ["Datum", "Wochentag", ...qs.map((q) => q.text + (q.type === "number" && q.unit ? ` (${q.unit})` : "")), "Orte"];
   const rows = [header];
   // Jeder Kalendertag vom ersten bis zum letzten Eintrag – unbeantwortete Tage bleiben leer
   if (days.length) {
@@ -2728,7 +2864,8 @@ function buildWorkbook() {
       rows.push([
         (Date.UTC(dt.getFullYear(), dt.getMonth(), dt.getDate()) - Date.UTC(1899, 11, 30)) / 864e5, // Excel-Datumszahl
         WD[dt.getDay()],
-        ...qs.map((q) => (isAnswered(a[q.id]) ? (Array.isArray(a[q.id]) ? a[q.id].join(", ") : a[q.id]) : null))
+        ...qs.map((q) => (isAnswered(a[q.id]) ? (Array.isArray(a[q.id]) ? a[q.id].join(", ") : a[q.id]) : null)),
+        placesOn(d).length ? placesOn(d).join(" → ") : null
       ]);
     }
   }
@@ -2744,7 +2881,7 @@ function buildWorkbook() {
       else { cell.v = (((cell.v % 24) + 24) % 24) / 24; cell.z = "hh:mm"; }
     });
   }
-  ws["!cols"] = [{ wch: 12 }, { wch: 11 }, ...qs.map((q) => ({ wch: Math.min(Math.max(q.text.length + 2, 10), 40) }))];
+  ws["!cols"] = [{ wch: 12 }, { wch: 11 }, ...qs.map((q) => ({ wch: Math.min(Math.max(q.text.length + 2, 10), 40) })), { wch: 28 }];
   ws["!freeze"] = { xSplit: 1, ySplit: 1 };
   ws["!autofilter"] = { ref: XLSX.utils.encode_range({ s: { r: 0, c: 0 }, e: { r: rows.length - 1, c: header.length - 1 } }) };
 
@@ -2898,7 +3035,8 @@ if ("serviceWorker" in navigator) {
 fetchInbox(false);
 reportStatus();
 setTimeout(goalNotices, 600);
-document.addEventListener("visibilitychange", () => { if (document.visibilityState === "visible") { fetchInbox(false); reportStatus(); setTimeout(goalNotices, 600); } });
+capturePlace(false);
+document.addEventListener("visibilitychange", () => { if (document.visibilityState === "visible") { fetchInbox(false); reportStatus(); setTimeout(goalNotices, 600); capturePlace(false); } });
 
 if ("serviceWorker" in navigator && location.protocol !== "file:") {
   const hadController = !!navigator.serviceWorker.controller;
