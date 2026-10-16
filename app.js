@@ -1188,7 +1188,7 @@ async function fetchInbox(manual) {
       if (q && !r.set.length && created.includes(q)) { /* leeres neues Feld behalten */ }
     }
     if (created.length) save();
-    if (done.length) await api("/inbox/ack", { ids: done });
+    for (let i = 0; i < done.length; i += 500) await api("/inbox/ack", { ids: done.slice(i, i + 500) });
     if (items.length) { settings.shortcutDone = true; }
     settings.lastInbox = new Date().toISOString(); saveSettings();
     if (setCount) { toast(`${setCount} Wert${setCount > 1 ? "e" : ""} aus Kurzbefehlen übernommen`); render(); }

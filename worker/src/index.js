@@ -287,7 +287,13 @@ async function handle(request, env) {
   if (path === "/inbox/ack" && request.method === "POST") {
     const b = await request.json();
     const ids = (b.ids || []).map(Number).filter(Number.isInteger).slice(0, 2000);
-    if (ids.length) await env.DB.prepare(`DELETE FROM inbox WHERE id IN (${ids.map(() => "?").join(",")})`).bind(...ids).run();
+    // D1 erlaubt höchstens 100 Platzhalter pro Abfrage → in Blöcken löschen
+    const stmts = [];
+    for (let i = 0; i < ids.length; i += 90) {
+      const part = ids.slice(i, i + 90);
+      stmts.push(env.DB.prepare(`DELETE FROM inbox WHERE id IN (${part.map(() => "?").join(",")})`).bind(...part));
+    }
+    if (stmts.length) await env.DB.batch(stmts);
     return json({ ok: true, deleted: ids.length });
   }
 
