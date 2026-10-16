@@ -1,4 +1,5 @@
 // Mosaik-Dienst auf Cloudflare: tägliche Push-Erinnerung und Eingang für Kurzbefehle.
+// Schlüssel (SYNC_TOKEN) kommt aus dem GitHub-Secret MOSAIK_TOKEN.
 // Es werden KEINE Antworten dauerhaft gespeichert. Werte von Kurzbefehlen liegen nur im
 // Eingang, bis die App sie abholt (danach gelöscht, spätestens nach 30 Tagen).
 
