@@ -1583,11 +1583,11 @@ const FCATS = [["best", "Beste Freunde"], ["good", "Gute Freunde"], ["friend", "
 const FTAGS = [
   { k: "veg", icon: "🌱", label: "Vegetarier" },
   { k: "rel", icon: "💍", label: "In Beziehung" },
-  { k: "fem", icon: "♀", label: "Frauen", cls: "fem" },
+  { k: "fem", icon: `<svg viewBox="0 0 16 16" aria-hidden="true"><circle cx="8" cy="6" r="4"/><path d="M8 10v5M5.5 12.8h5"/></svg>`, label: "Frauen", cls: "fem" },
   { k: "smoke", icon: "🚬", label: "Raucher" },
   { k: "acad", icon: "🎓", label: "Akademiker (voraussichtlich)" }
 ];
-const NEW_BADGE = `<span class="fnew">NEU</span>`;
+const NEW_BADGE = `<svg class="fnew" viewBox="0 0 24 24" role="img" aria-label="Neu"><polygon points="23.0,12.0 20.9,14.4 21.5,17.5 18.5,18.5 17.5,21.5 14.4,20.9 12.0,23.0 9.6,20.9 6.5,21.5 5.5,18.5 2.5,17.5 3.1,14.4 1.0,12.0 3.1,9.6 2.5,6.5 5.5,5.5 6.5,2.5 9.6,3.1 12.0,1.0 14.4,3.1 17.5,2.5 18.5,5.5 21.5,6.5 20.9,9.6"/><text x="12" y="14.6" text-anchor="middle">NEW</text></svg>`;
 
 function F() {
   if (!state.friends || typeof state.friends !== "object") state.friends = {};

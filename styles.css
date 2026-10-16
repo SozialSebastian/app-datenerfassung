@@ -449,9 +449,11 @@ select.timein { width: 160px; max-width: 60%; font-size: 16px; }
 .ftable td.fi { width: 44px; text-align: center; }
 .ftable td.num { text-align: right; font-variant-numeric: tabular-nums; font-weight: 700; width: 64px; }
 .ftable td.num + td.num { color: var(--ink-2); }
-.ftag { font-size: 16px; line-height: 1; display: inline-block; }
-.ftag.fem { color: var(--s5); font-weight: 800; font-size: 18px; }
-.fnew { display: inline-block; background: var(--s4); color: #1A1200; font-size: 10px; font-weight: 800; letter-spacing: .04em; border-radius: 999px; padding: 3px 6px; line-height: 1; vertical-align: middle; transform: rotate(-6deg); }
+.ftag { font-size: 16px; line-height: 1; display: inline-flex; align-items: center; justify-content: center; height: 20px; min-width: 20px; }
+.ftag.fem svg { width: 15px; height: 15px; fill: none; stroke: var(--s5); stroke-width: 1.8; stroke-linecap: round; }
+.fnew { width: 24px; height: 24px; flex: none; vertical-align: middle; transform: rotate(-8deg); }
+.fnew polygon { fill: var(--s4); }
+.fnew text { fill: #fff; font: 800 6.4px/1 var(--font); letter-spacing: .02em; }
 .fcat .panel-head { margin-bottom: 6px; }
 .flist { list-style: none; margin: 0; padding: 0; }
 .flist li + li { border-top: 1px solid var(--line); }
@@ -461,3 +463,9 @@ select.timein { width: 160px; max-width: 60%; font-size: 16px; }
 .ftags .chip { display: inline-flex; align-items: center; gap: 6px; }
 input.timein.wide { width: 170px; font-size: 16px; }
 input.flabel { flex: 1; padding: 8px 10px; border-radius: var(--r-sm); border: 1.5px solid var(--line); background: var(--bg); color: var(--ink); font-size: 16px; min-width: 0; }
+
+/* Kopfzeile in Fenstern: Titel kleiner, damit nichts gequetscht wird */
+.sheet-head { gap: 8px; }
+.sheet-head h2 { font-size: 17px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.sheet-head .linkbtn { font-size: 16px; white-space: nowrap; }
+.chip[aria-pressed="true"] .ftag.fem svg { stroke: currentColor; }
