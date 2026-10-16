@@ -1690,7 +1690,7 @@ function openFriend(id) {
         <button type="submit" class="linkbtn">Sichern</button>
       </div>
       ${bulk ? `<label class="field">Namen, einer pro Zeile<textarea id="fnames" rows="6" placeholder="Bryan&#10;Sabrina&#10;Annika">${esc(bulkText)}</textarea></label>
-        <p class="muted small" style="margin-top:-8px">Labels kannst du danach pro Person setzen.</p>`
+        <p class="muted small" style="margin-top:-8px">Labels kannst du danach pro Person setzen. Oder ganze Liste einfügen: Zeilen wie „# Beste Freunde“ wählen die Kategorie, Symbole 🌱 💍 ♀ 🚬 🎓 und „NEU“ hinter dem Namen setzen die Labels.</p>`
         : `<label class="field">Name<input id="fname" value="${esc(draft.name)}" autocomplete="off" placeholder="z. B. Bryan"></label>`}
       ${!existing ? `<button type="button" class="linkbtn" id="fbulk" style="margin:-6px 0 14px">${bulk ? "Nur einen Namen eintragen" : "Mehrere auf einmal eintragen"}</button>` : ""}
       <div class="seg seg-3" role="group" aria-label="Kategorie">${FCATS.map(([c, l]) => `<button type="button" data-fcat="${c}" aria-pressed="${draft.cat === c}">${l.replace(" Freunde", "")}</button>`).join("")}</div>
@@ -1716,6 +1716,12 @@ function openFriend(id) {
     dlg.querySelector("form").addEventListener("submit", (e) => {
       e.preventDefault();
       const taken = (name, self) => f.list.some((x) => x.id !== self && x.name.toLowerCase() === name.toLowerCase());
+      if (bulk && /^\s*(#|stichtag)/im.test($("#fnames", dlg).value)) {
+        // Liste mit Überschriften und Symbolen, z. B. „# Beste Freunde“ / „Sabrina 🌱 ♀ 🎓 NEU“
+        const res = importFriendList($("#fnames", dlg).value);
+        dlg.close(); friendsChanged(); toast(`${res.added} hinzugefügt${res.updated ? `, ${res.updated} aktualisiert` : ""}`);
+        return;
+      }
       if (bulk) {
         const names = Array.from(new Set($("#fnames", dlg).value.split("\n").map((s) => s.trim()).filter(Boolean)));
         const add = names.filter((nm) => !taken(nm, null));
@@ -1739,6 +1745,33 @@ function openFriend(id) {
   dlg.showModal();
   document.activeElement?.blur();
   if (!existing) setTimeout(() => $("#fname", dlg)?.focus(), 50);
+}
+
+// Import einer ganzen Liste: Überschriften wählen die Kategorie, Symbole setzen die Labels
+function importFriendList(text) {
+  const f = F();
+  const SYM = { "🌱": "veg", "💍": "rel", "♀": "fem", "🚬": "smoke", "🎓": "acad" };
+  let cat = "friend", added = 0, updated = 0;
+  for (let line of text.split("\n")) {
+    line = line.trim();
+    if (!line) continue;
+    const st = line.match(/^stichtag\s*:?\s*(\d{1,2})\.(\d{1,2})\.(\d{4})/i);
+    if (st) { f.stichtag = `${st[3]}-${pad(st[2])}-${pad(st[1])}`; continue; }
+    if (line.startsWith("#")) {
+      const h = line.toLowerCase();
+      cat = h.includes("beste") ? "best" : h.includes("gute") ? "good" : "friend";
+      continue;
+    }
+    const tags = {};
+    for (const [sym, k] of Object.entries(SYM)) if (line.includes(sym)) tags[k] = true;
+    const isNew = /\bNEU\b/i.test(line);
+    const name = line.replace(/\bNEU\b/gi, "").replace(/[🌱💍♀🚬🎓\uFE0F\u200D]/gu, "").replace(/^[-•·*]\s*/, "").replace(/\s+/g, " ").trim();
+    if (!name) continue;
+    const ex = f.list.find((x) => x.name.toLowerCase() === name.toLowerCase());
+    if (ex) { Object.assign(ex, { cat, tags, isNew }); updated++; }
+    else { f.list.push({ id: uid(), name, cat, tags, isNew }); added++; }
+  }
+  return { added, updated };
 }
 
 // Umbenennen: gespeicherte Antworten der verknüpften Fragen mitziehen
