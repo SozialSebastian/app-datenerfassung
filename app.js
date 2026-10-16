@@ -1943,14 +1943,6 @@ function storeDaily(j) {
   return n;
 }
 
-// Häufigster Standort (für ältere Tage ohne eigenen Standort)
-function homeLoc() {
-  const c = {};
-  Object.values(WL()).forEach((l) => { const k = l.join(","); c[k] = (c[k] || 0) + 1; });
-  const best = Object.entries(c).sort((a, b) => b[1] - a[1])[0];
-  return best ? best[0].split(",").map(Number) : null;
-}
-
 let weatherBusy = false;
 // Fehlende abgeschlossene Tage mit bekanntem Standort nachladen (max. 1× pro Stunde)
 async function syncWeather(force) {
@@ -1983,33 +1975,10 @@ async function syncWeather(force) {
   } finally { weatherBusy = false; }
 }
 
-// Einmalig: ältere Tage (seit erster Antwort, max. 3 Jahre) mit dem häufigsten Standort füllen
-async function backfillWeather() {
-  const home = homeLoc();
-  if (!home) throw new Error("Noch kein Standort erfasst – erst „Orte“ einschalten und einmal erfassen");
-  const t = todayIso();
-  const days = Object.keys(state.answers).sort();
-  let start = days[0] || addDays(t, -30);
-  if (start < addDays(t, -3 * 365)) start = addDays(t, -3 * 365);
-  const lat = home[0].toFixed(2), lon = home[1].toFixed(2);
+// Wetter nur für Tage mit tatsächlich erfasstem Standort behalten (entfernt früher pauschal nachgeladene Tage)
+function pruneWeather() {
   let n = 0;
-  const archiveEnd = addDays(t, -6);
-  if (start <= archiveEnd) {
-    const res = await fetch(`https://archive-api.open-meteo.com/v1/archive?latitude=${lat}&longitude=${lon}&daily=${WDAILY}&timezone=Europe%2FBerlin&start_date=${start}&end_date=${archiveEnd}`);
-    if (!res.ok) throw new Error(`Open-Meteo-Archiv ${res.status}`);
-    const j = await res.json();
-    // vorhandene (ortsgenaue) Werte nicht überschreiben
-    const keep = j.daily.time.map((d, i) => (W()[d] ? -1 : i)).filter((i) => i >= 0);
-    n += storeDaily({ daily: { time: keep.map((i) => j.daily.time[i]), temperature_2m_max: keep.map((i) => j.daily.temperature_2m_max[i]), precipitation_sum: keep.map((i) => j.daily.precipitation_sum[i]), sunshine_duration: keep.map((i) => j.daily.sunshine_duration[i]) } });
-  }
-  const recentStart = start > archiveEnd ? start : addDays(archiveEnd, 1);
-  const res2 = await fetch(`https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}&daily=${WDAILY}&timezone=Europe%2FBerlin&start_date=${recentStart}&end_date=${addDays(t, -1)}`);
-  if (res2.ok) {
-    const j = await res2.json();
-    const keep = j.daily.time.map((d, i) => (W()[d] ? -1 : i)).filter((i) => i >= 0);
-    n += storeDaily({ daily: { time: keep.map((i) => j.daily.time[i]), temperature_2m_max: keep.map((i) => j.daily.temperature_2m_max[i]), precipitation_sum: keep.map((i) => j.daily.precipitation_sum[i]), sunshine_duration: keep.map((i) => j.daily.sunshine_duration[i]) } });
-  }
-  save();
+  for (const d of Object.keys(W())) if (!WL()[d]) { delete W()[d]; n++; }
   return n;
 }
 
@@ -2868,8 +2837,7 @@ function renderData() {
       <p class="muted small" style="margin:8px 0 0">Holt einmal pro Tag Höchsttemperatur, Regen und Sonnenstunden für deinen Ort (Open-Meteo, kostenlos). Erscheint nur unter Trends als Faktor, z. B. „Laune an Tagen mit Regen“. Braucht „Orte“.</p>
       ${settings.weather.on ? `<p class="small" style="margin:8px 0 0">Wetter für <strong>${Object.keys(state.weather || {}).length}</strong> Tage vorhanden.</p>
         ${settings.weather.err ? `<p class="small" style="margin:6px 0 0;color:var(--danger)">Letzter Fehler: ${esc(settings.weather.err)}</p>` : ""}
-        <button class="btn ghost block" id="weatherback" style="margin-top:12px">Ältere Tage nachladen</button>
-        <p class="muted small" style="margin:6px 0 0">Füllt alle Tage seit deiner ersten Antwort mit dem Wetter deines häufigsten Orts. Gut für Health-Daten von früher.</p>` : ""}
+        <p class="muted small" style="margin:6px 0 0">Nur für Tage, an denen ein Standort erfasst wurde. Fehlende Tage der letzten 30 Tage werden beim Öffnen nachgeholt.</p>` : ""}
     </section>
 
     <section class="panel">
@@ -3003,12 +2971,6 @@ function renderData() {
     settings.weather.on = e.target.checked; settings.weather.last = 0; saveSettings();
     if (e.target.checked && !(settings.places && settings.places.on)) toast("Bitte auch „Orte“ einschalten");
     if (e.target.checked) await syncWeather(true);
-    renderData();
-  });
-  $("#weatherback")?.addEventListener("click", async (e) => {
-    e.target.disabled = true; e.target.textContent = "Lade …";
-    try { const n = await backfillWeather(); toast(`Wetter für ${n} Tage geladen`); settings.weather.err = ""; saveSettings(); }
-    catch (err) { settings.weather.err = err.message; saveSettings(); toast(err.message.length > 60 ? err.message.slice(0, 58) + "…" : err.message); }
     renderData();
   });
   $("#exportopen").addEventListener("click", openExport);
@@ -3208,6 +3170,7 @@ document.addEventListener("visibilitychange", () => {
 });
 
 if (syncFriendQuestions()) save();
+if (state.weather && pruneWeather()) save();
 render();
 checkHash();
 
