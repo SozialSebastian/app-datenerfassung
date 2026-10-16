@@ -1975,13 +1975,6 @@ async function syncWeather(force) {
   } finally { weatherBusy = false; }
 }
 
-// Wetter nur für Tage mit tatsächlich erfasstem Standort behalten (entfernt früher pauschal nachgeladene Tage)
-function pruneWeather() {
-  let n = 0;
-  for (const d of Object.keys(W())) if (!WL()[d]) { delete W()[d]; n++; }
-  return n;
-}
-
 /* ================= Fragen verwalten ================= */
 // Fragen verwalten – als Feld in den Einstellungen; zeigt erst einige, aufklappbar
 const Q_PREVIEW = 3;
@@ -3157,7 +3150,6 @@ document.addEventListener("visibilitychange", () => {
 });
 
 if (syncFriendQuestions()) save();
-if (state.weather && pruneWeather()) save();
 render();
 checkHash();
 
