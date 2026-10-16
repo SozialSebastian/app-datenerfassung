@@ -149,7 +149,7 @@ async function readValues(request) {
 /* ---------- Listen aus Kurzbefehlen (mehrere Tage auf einmal) ---------- */
 const num = (v) => {
   if (typeof v === "number") return v;
-  const m = String(v).replace(/\s|\u00a0/g, "").replace(/\.(?=\d{3}(\D|$))/g, "").match(/-?\d+(?:[.,]\d+)?/);
+  const m = String(v).replace(/[ \u00a0]/g, "").replace(/\.(?=\d{3}(\D|$))/g, "").match(/-?\d+(?:[.,]\d+)?/);
   return m ? Number(m[0].replace(",", ".")) : NaN;
 };
 const berlinDate = (ms) => new Intl.DateTimeFormat("en-CA", { timeZone: TZ_DEFAULT, year: "numeric", month: "2-digit", day: "2-digit" }).format(new Date(ms));
@@ -174,6 +174,10 @@ const minusDays = (d, n) => { const t = new Date(d + "T12:00:00Z"); t.setUTCDate
 //  schritte allein             → neuester zuerst: heute, gestern, vorgestern …
 function listEntries(lists, today) {
   const out = [];
+  // Kurzbefehle packen eine Liste oft als EINEN Text mit einem Wert pro Zeile → aufteilen
+  for (const k of Object.keys(lists)) {
+    lists[k] = lists[k].flatMap((x) => (typeof x === "string" ? x.split(/\r?\n/) : [x])).map((x) => (typeof x === "string" ? x.trim() : x)).filter((x) => x !== "" && x !== null && x !== undefined);
+  }
   const done = new Set();
   for (const key of Object.keys(lists)) {
     const base = key.replace(/_(start|ende|datum)$/, "");
