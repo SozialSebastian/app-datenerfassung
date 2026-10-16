@@ -553,3 +553,11 @@ body.no-scroll { overflow: hidden; touch-action: none; }
 .mmonth p { margin: 0; font-size: 15px; line-height: 1.4; }
 .mmonth strong { font-size: 18px; }
 .subsep { height: 1px; background: var(--line); margin: 16px 0 14px; }
+
+/* Ziele: Zeilen dürfen nicht über den Rand wachsen */
+.glist { grid-template-columns: minmax(0, 1fr); }
+.grow, .gtop { min-width: 0; }
+.gq { flex: 1 1 auto; }
+.gq { white-space: normal; overflow: visible; }
+.gtop { align-items: flex-start; }
+.gst { padding-top: 2px; }

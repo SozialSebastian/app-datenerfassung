@@ -107,7 +107,8 @@ function goalAlertPlan() {
     const until = per.end === addDays(mondayOf(t), 6) ? "Sonntag" : dm(per.end);
     const id = `${g.id}|${per.key}`;
     if (e.upper) { // höchstens-Ziel: Grenze erreicht
-      if (e.c >= e.target) plan.push({ id: id + "|limit", d: t, t: `${name}: Grenze von ${e.target}× erreicht – bis ${until} besser keins mehr` });
+      // nicht bei „nie“-Zielen (Grenze 0) – da gibt es nichts vorzuwarnen
+      if (e.target > 0 && e.c >= e.target) plan.push({ id: id + "|limit", d: t, t: `${name}: Grenze von ${e.target}× erreicht – bis ${until} besser keins mehr` });
       continue;
     }
     if (g.kind === "count" || g.kind === "days") {

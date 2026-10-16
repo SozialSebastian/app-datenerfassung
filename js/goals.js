@@ -57,6 +57,7 @@ const cmpOk = (cmp, v, x) => (cmp === "le" ? v <= x : v >= x);
 const valText = (q, v) => (q.type === "scale" ? String(v) : fmtNice(q, v));
 
 function goalText(g, q) {
+  if (g.kind === "count" && g.op === "max" && g.n === 0) return `nie „${esc(g.key)}“`;
   if (g.kind === "count") return `${g.op === "max" ? "höchstens" : "mindestens"} ${g.n}× „${esc(g.key)}“`;
   if (g.kind === "days") return `an mindestens ${g.n} Tagen ${cmpWord(q, g.cmp)} ${valText(q, g.val)}`;
   if (g.kind === "sum") return `insgesamt ${cmpWord(q, g.cmp)} ${valText(q, g.val)}`;
@@ -102,6 +103,11 @@ function evalGoal(g, per) {
   const curTxt = upper && g.kind !== "sum" ? `${c}× · erlaubt ${target}×` : g.kind === "sum" ? `${valText(q, Math.round(c * 100) / 100)} von ${valText(q, target)}` : `${c} von ${target}${g.kind === "count" ? "×" : " Tagen"}`;
   const frac = target > 0 ? Math.min(c / target, 1) : 1;
 
+  // „nie“-Ziel (höchstens 0×): kein Balken, nur eingehalten oder nicht
+  if (upper && g.kind === "count" && target === 0) {
+    if (c > 0) return { ...r, status: "fail", over: true, never: true, cur: `${c}× „${esc(g.key)}“`, frac: null, c, target };
+    return { ...r, status: ended ? "done" : "ok", never: true, upper: true, cur: vals.length ? `an ${vals.length} Tag${vals.length === 1 ? "" : "en"} eingehalten` : "noch keine Antworten", frac: null, c, target };
+  }
   if (upper) {
     if (c > target) return { ...r, status: "fail", over: true, cur: curTxt, frac: 1, c, target };
     return { ...r, status: ended ? "done" : "ok", cur: curTxt, frac, c, target, upper: true,
@@ -122,7 +128,8 @@ const STATUS = {
   behind: "Hinterher",
   none: "Noch offen"
 };
-const statusLabel = (e) => (e.status === "fail" ? (e.over ? "Überschritten" : e.impossible ? "Nicht mehr erreichbar" : "Verfehlt") : STATUS[e.status]);
+const statusLabel = (e) => (e.never ? (e.status === "fail" ? "Nicht eingehalten" : e.status === "done" ? "Eingehalten" : "Bisher eingehalten")
+  : e.status === "fail" ? (e.over ? "Überschritten" : e.impossible ? "Nicht mehr erreichbar" : "Verfehlt") : STATUS[e.status]);
 const STATUS_ORDER = { fail: 0, behind: 1, none: 2, ok: 3, done: 4 };
 
 function goalRow(e) {
@@ -270,8 +277,8 @@ function openGoals() {
       <div class="sq-row"><span>Wiederholen</span>${seg2("grep", [["yes", EVERY_WORD[edit.period]], ["no", `Nur ${THIS_WORD[edit.period]}`]], edit.repeat === false ? "no" : "yes")}</div>`;
     if (q.type === "choice") {
       f += `<div class="sq-row"><span>Antwort</span><select id="gkey">${q.options.map((o) => `<option ${o === edit.key ? "selected" : ""}>${esc(o)}</option>`).join("")}</select></div>
-        <div class="sq-row"><span>Wie oft</span>${seg2("gop", [["min", "mindestens"], ["max", "höchstens"]], edit.op)}</div>
-        <div class="gline"><input id="gn" class="gin" type="text" inputmode="numeric" value="${esc(edit.n ?? "")}"><span>× ${per}</span></div>`;
+        <div class="sq-row"><span>Wie oft</span><div class="seg seg-3" role="group">${[["min", "mindestens"], ["max", "höchstens"], ["never", "nie"]].map(([v, l]) => `<button type="button" data-gop="${v}" aria-pressed="${(edit.op === "max" && edit.n === 0 ? "never" : edit.op) === v}">${l}</button>`).join("")}</div></div>
+        ${edit.op === "max" && edit.n === 0 ? "" : `<div class="gline"><input id="gn" class="gin" type="text" inputmode="numeric" value="${esc(edit.n ?? "")}"><span>× ${per}</span></div>`}`;
     } else {
       f += `<div class="sq-row"><span>Art</span>${kindSeg(q, edit.kind)}</div>`;
       if (edit.kind === "days") f += `<div class="gline"><span>an mindestens</span><input id="gn" class="gin" type="text" inputmode="numeric" value="${esc(edit.n ?? "")}"><span>Tagen ${per}</span></div>`;
@@ -355,7 +362,12 @@ function openGoals() {
       edit.period = b.dataset.gper; draw();
     }));
     dlg.querySelectorAll("[data-grep]").forEach((b) => b.addEventListener("click", () => { sync(); edit.repeat = b.dataset.grep === "yes"; draw(); }));
-    dlg.querySelectorAll("[data-gop]").forEach((b) => b.addEventListener("click", () => { sync(); edit.op = b.dataset.gop; draw(); }));
+    dlg.querySelectorAll("[data-gop]").forEach((b) => b.addEventListener("click", () => {
+      sync();
+      if (b.dataset.gop === "never") { edit.op = "max"; edit.n = 0; }
+      else { if (edit.op === "max" && edit.n === 0) edit.n = b.dataset.gop === "min" ? 3 : 1; edit.op = b.dataset.gop; }
+      draw();
+    }));
     dlg.querySelectorAll("[data-gcmp]").forEach((b) => b.addEventListener("click", () => { sync(); edit.cmp = b.dataset.gcmp; draw(); }));
     dlg.querySelectorAll("[data-gk]").forEach((b) => b.addEventListener("click", () => {
       sync(); edit.kind = b.dataset.gk;

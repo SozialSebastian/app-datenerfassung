@@ -300,6 +300,28 @@ test("Ziel-Erinnerung: Plan, ab wann ein Ziel kippt", async () => {
   await ctx.close();
 });
 
+test("Ziel „nie“: eigene Darstellung, keine Warnung, kein Überlaufen", async () => {
+  const data = yearData();
+  data.questions.push(yesNo("al", "Hast du heute Alkohol getrunken oder Süßigkeiten gegessen?"));
+  data.goals = { period: "month", seen: { week: "x", month: "x" }, seenFails: [], items: [
+    { id: "n", qid: "al", kind: "count", key: "Ja", op: "max", n: 0, period: "month", repeat: true },
+    { id: "w", qid: "b", kind: "count", key: "Ja", op: "min", n: 2, period: "week", repeat: true }] };
+  const { page, ctx, errors } = await open({ data });
+  await page.waitForTimeout(800);
+  await page.evaluate(() => { const d = document.querySelector("#sheet"); if (d.open) d.close(); });
+  await page.click('[data-tab="analysis"]');
+  const txt = await page.locator(".goals").innerText();
+  assert.match(txt, /nie „Ja“ im Monat/);
+  assert.match(txt, /Bisher eingehalten/);
+  assert.equal(await page.evaluate(() => goalAlertPlan().filter((x) => x.id.startsWith("n|")).length), 0);
+  // nichts ragt über den rechten Rand des Feldes hinaus
+  const over = await page.evaluate(() => { const p = document.querySelector(".goals").getBoundingClientRect(); return [...document.querySelectorAll(".goals .gst, .goals .gbar")].some((el) => el.getBoundingClientRect().right > p.right - 8); });
+  assert.equal(over, false);
+  await page.locator(".goals").screenshot({ path: path.join(shots, "ziele-nie.png") });
+  assert.deepEqual(errors, []);
+  await ctx.close();
+});
+
 test("Fragen per Gedrückthalten verschieben", async () => {
   const data = { version: 1, lastBackup: null, answers: {}, questions: ["A", "B", "C"].map((x) => yesNo(x.toLowerCase(), x + "?")) };
   const { page, ctx, errors } = await open({ data });
