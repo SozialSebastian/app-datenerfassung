@@ -130,6 +130,12 @@ function toast(msg) {
 }
 
 const typeLabel = { choice: "Auswahl", scale: "Skala", number: "Zahl" };
+// Welche Richtung ist gut? "high" | "low" | null (neutral). Health-Felder haben sinnvolle Vorgaben.
+function betterDir(q) {
+  if (q.better === "high" || q.better === "low") return q.better;
+  if (q.better === "none") return null;
+  return { schritte: "high", schlaf: "high", schlafenszeit: "low" }[q.healthKey] || null;
+}
 function describe(q) {
   if (q.type === "choice") return q.options.join(" / ") + (q.multi ? " (mehrere)" : "");
   if (q.type === "scale") return `Skala ${q.min}–${q.max}`;
@@ -203,8 +209,8 @@ function answerInput(q, val) {
     return s;
   }
   return `<div class="numrow">
-      <input type="text" inputmode="decimal" autocomplete="off" value="${esc(fmtNum(val))}" aria-label="${esc(q.text)}" placeholder="–">
-      ${q.unit ? `<span class="unit">${esc(q.unit)}</span>` : ""}
+      <input type="text" inputmode="${q.format ? "text" : "decimal"}" autocomplete="off" value="${esc(q.format ? fmtQ(q, val) : fmtNum(val))}" aria-label="${esc(q.text)}" placeholder="${q.format === "clock" ? "23:30" : q.format === "duration" ? "7:30" : "–"}">
+      ${q.unit && !q.format ? `<span class="unit">${esc(q.unit)}</span>` : ""}
       ${isAnswered(val) ? `<button class="clear" data-clear>Leeren</button>` : ""}
     </div>`;
 }
@@ -233,8 +239,9 @@ function wireInput(root, q, date, after) {
   const inp = root.querySelector("input");
   if (inp) {
     const commit = () => {
-      const n = parseNum(inp.value);
-      if (Number.isNaN(n)) { toast("Bitte eine Zahl eingeben, z. B. 7,5"); inp.value = fmtNum(cur()); return false; }
+      const n = q.format ? parseQ(q, inp.value) : parseNum(inp.value);
+      if (Number.isNaN(n)) { toast(q.format ? "Bitte so eingeben: 7:30" : "Bitte eine Zahl eingeben, z. B. 7,5"); inp.value = q.format ? fmtQ(q, cur()) : fmtNum(cur()); return false; }
+      if (q.format && n !== null) inp.value = fmtQ(q, n);
       if (n === (cur() ?? null)) return true;
       setAnswer(date, q.id, n);
       return true;
@@ -991,7 +998,8 @@ function numberInsights() {
       const z = Math.abs(diff) / (sd(before) || 1);
       let txt = fmtDiff(q, diff, mb);
       if (seasonal) txt = txt.replace("deinem Schnitt", "deinem Schnitt um diese Jahreszeit").replace("als sonst", "als sonst um diese Jahreszeit");
-      if (z >= 0.4) out.push({ score: 1 + z, html: `<strong>${name} diese Woche Ø ${fmtNice(q, mw)}</strong>, ${txt}` });
+      const b = betterDir(q), tone = b ? ((diff > 0) === (b === "high") ? " good" : " bad") : "";
+      if (z >= 0.4) out.push({ score: 1 + z, tone, html: `<strong>${name} diese Woche Ø ${fmtNice(q, mw)}</strong>, ${txt}` });
     }
 
     // 2. Wochentagsmuster (mind. 4 Werte je Wochentag)
@@ -1023,8 +1031,12 @@ function numberInsights() {
     if (q.healthKey === "schritte") rule = { ok: (v) => v >= 10000, text: (n) => `${n} Tage in Folge über 10.000 Schritte` };
     else if (q.format === "duration") rule = { ok: (v) => v >= 7, text: (n) => `${n} Nächte in Folge mindestens 7 h geschlafen` };
     else if (q.format === "clock") rule = { ok: (v) => v < 24, text: (n) => `${n} Nächte in Folge vor Mitternacht eingeschlafen` };
-    else { const m = mean(all); rule = { ok: (v) => v > m, text: (n) => `${n} Tage in Folge „${name}“ über deinem Schnitt (Ø ${fmtNice(q, m)})` }; }
+    else if (betterDir(q)) {
+      const m = mean(all), lowGood = betterDir(q) === "low";
+      rule = { ok: (v) => (lowGood ? v < m : v > m), text: (n) => `${n} Tage in Folge „${name}“ ${lowGood ? "unter" : "über"} deinem Schnitt (Ø ${fmtNice(q, m)})` };
+    }
     let n = 0, d = lastPt.d;
+    if (!rule) continue;
     const val = Object.fromEntries(series.map((x) => [x.d, x.v]));
     if (d >= addDays(t, -2)) while (val[d] !== undefined && rule.ok(val[d])) { n++; d = addDays(d, -1); }
     if (n >= 3) out.push({ score: 1 + n / 3, html: `<strong>${rule.text(n)}</strong>` });
@@ -1040,7 +1052,7 @@ function trendsPanel(days) {
   const lim = (k) => (showAllTrends ? all[k] : all[k].slice(0, T_PREVIEW[k]));
   const streaks = lim("streak"), nums = lim("num"), seasons = lim("season"), rel = lim("rel");
   const hidden = Object.keys(all).reduce((n, k) => n + Math.max(all[k].length - T_PREVIEW[k], 0), 0);
-  const row = (x, kind) => `<li class="trow ${kind}"><span class="tmark" aria-hidden="true"></span><span>${x.html}${x.note ? ` <span class="muted small">· ${x.note}</span>` : ""}</span></li>`;
+  const row = (x, kind) => `<li class="trow ${kind}${x.tone || ""}"><span class="tmark" aria-hidden="true"></span><span>${x.html}${x.note ? ` <span class="muted small">· ${x.note}</span>` : ""}</span></li>`;
   return `<section class="panel trends">
     <h2 class="atitle">Trends</h2>
     ${streaks.length || rel.length || nums.length || seasons.length ? `
@@ -1269,7 +1281,7 @@ function goalDraft(q, period) {
   if (q.type === "scale") val = Math.round(val);
   else if (q.format) val = Math.round(val * 4) / 4;
   else val = Math.round(val);
-  return { kind: "avg", cmp: q.format === "clock" ? "le" : "ge", val, n: period === "week" ? 5 : period === "month" ? 20 : 250 };
+  return { kind: "avg", cmp: betterDir(q) === "low" ? "le" : "ge", val, n: period === "week" ? 5 : period === "month" ? 20 : 250 };
 }
 
 // Zahnrad auf „Tag“: Zeitraum wählen, Ziele anlegen, ändern, löschen
@@ -1457,7 +1469,7 @@ function weekStat(q, mon) {
     const key = q.options.includes(s.countKey) ? s.countKey : q.options.includes("Ja") ? "Ja" : q.options[0];
     const c = now.filter((v) => has(v, key)).length;
     const prev = prevWeeks.length ? mean(prevWeeks.map((w) => w.filter((v) => has(v, key)).length)) : null;
-    return { val: `${c}× „${esc(key)}“`, cmp: prev === null ? "" : `sonst Ø ${fmt1(prev)}×`, dir: prev === null ? 0 : Math.sign(Math.round((c - prev) * 10)) };
+    return { val: `${c}× „${esc(key)}“`, cmp: prev === null ? "" : `sonst Ø ${fmt1(prev)}×`, dir: prev === null ? 0 : Math.sign(Math.round((c - prev) * 10)), good: null };
   }
   const nums = now.filter((v) => typeof v === "number");
   if (!nums.length) return null;
@@ -1466,7 +1478,8 @@ function weekStat(q, mon) {
   const pm = prevAll.length ? mean(prevAll) : null;
   const f = (v) => (q.type === "scale" ? fmt1(v) : fmtNice(q, v));
   const big = pm !== null && Math.abs(m - pm) > (sd(prevAll) || 1) * 0.25;
-  return { val: `Ø ${f(m)}`, cmp: pm === null ? "" : `sonst Ø ${f(pm)}`, dir: big ? Math.sign(m - pm) : 0 };
+  const dir = big ? Math.sign(m - pm) : 0, b = betterDir(q);
+  return { val: `Ø ${f(m)}`, cmp: pm === null ? "" : `sonst Ø ${f(pm)}`, dir, good: dir && b ? (dir > 0) === (b === "high") : null };
 }
 
 function reportHtml(mon) {
@@ -1502,7 +1515,7 @@ function reportHtml(mon) {
       <h3 class="rh">Deine Woche</h3>
       <ul class="wlist">${rows.map(({ q, s }) => `<li>
         <span class="wq">${esc(q.text)}</span>
-        <span class="wv">${s.val}${s.dir ? `<span class="wdir ${s.dir > 0 ? "up" : "down"}" aria-label="${s.dir > 0 ? "mehr" : "weniger"} als sonst">${s.dir > 0 ? "▲" : "▼"}</span>` : ""}</span>
+        <span class="wv">${s.val}${s.dir ? `<span class="wdir ${s.dir > 0 ? "up" : "down"} ${s.good === true ? "good" : s.good === false ? "bad" : ""}" aria-label="${s.dir > 0 ? "mehr" : "weniger"} als sonst">${s.dir > 0 ? "▲" : "▼"}</span>` : ""}</span>
         ${s.cmp ? `<span class="wc small muted">${s.cmp}</span>` : ""}
       </li>`).join("")}</ul>
       <p class="small muted" style="margin:10px 0 0">„sonst“ = Schnitt der 8 Wochen davor.</p>
@@ -2147,6 +2160,10 @@ function openEditor(id) {
 
   const draw = () => {
     const typeLocked = used > 0;
+    const curBetter = draft.better || (betterDir(draft) || "none");
+    const betterSeg = (opts) => `<div class="field" style="margin:4px 0 8px;font-weight:600;font-size:15px">Was ist besser?</div>
+      <div class="seg seg-3" role="group" aria-label="Richtung">${opts.map(([v, l]) => `<button type="button" data-better="${v}" aria-pressed="${curBetter === v}">${esc(l)}</button>`).join("")}</div>
+      <p class="muted small" style="margin-top:-8px">Hilft bei Zielen, Trends und im Wochenbericht: Was in die gute Richtung geht, wird grün markiert.</p>`;
     // mögliche Ausgangsfragen: Auswahl oder Skala, aktiv, nicht sie selbst und keine eigene Folgefrage
     const blocked = existing ? descendants(existing.id) : new Set();
     const parents = ordered().map((o) => o.q).filter((p) => p.id !== draft.id && !p.archived && !blocked.has(p.id) && (p.type === "choice" || p.type === "scale"));
@@ -2176,9 +2193,19 @@ function openEditor(id) {
         <div class="row2">
           <label class="field">Text links <input id="sminl" value="${esc(draft.minLabel)}" placeholder="z. B. schlecht"></label>
           <label class="field">Text rechts <input id="smaxl" value="${esc(draft.maxLabel)}" placeholder="z. B. super"></label>
-        </div>`;
+        </div>
+        ${betterSeg([["high", `${draft.max} ist gut`], ["low", `${draft.min} ist gut`], ["none", "Neutral"]])}`;
     } else {
-      typeFields = `<label class="field">Einheit (optional)<input id="unit" value="${esc(draft.unit)}" placeholder="z. B. Stunden"></label>`;
+      const UNITS = ["Stunden", "Minuten", "km", "kg", "€", "Liter", "Gläser", "Seiten", "Mal"];
+      typeFields = `<div class="field" style="margin-bottom:8px;font-weight:600;font-size:15px">Einheit</div>
+        <div class="chips unitchips">
+          <button type="button" class="chip" data-fmt="duration" aria-pressed="${draft.format === "duration"}">Dauer h:mm</button>
+          <button type="button" class="chip" data-fmt="clock" aria-pressed="${draft.format === "clock"}">Uhrzeit</button>
+          ${UNITS.map((u) => `<button type="button" class="chip" data-unit="${esc(u)}" aria-pressed="${!draft.format && draft.unit === u}">${esc(u)}</button>`).join("")}
+        </div>
+        <label class="field" style="margin-top:10px">Eigene Einheit (optional)<input id="unit" value="${esc(draft.format ? "" : draft.unit)}" placeholder="${draft.format ? (draft.format === "clock" ? "Eingabe als 23:30" : "Eingabe als 7:30") : "z. B. Tassen"}" autocomplete="off"></label>
+        ${draft.format ? `<p class="muted small" style="margin-top:-10px">${draft.format === "clock" ? "Eingabe als Uhrzeit, z. B. 23:30 oder 0:45. Zeiten nach Mitternacht zählen als später." : "Eingabe als Stunden:Minuten, z. B. 7:30. Excel zeigt sie als Dauer."}</p>` : ""}
+        ${betterSeg(draft.format === "clock" ? [["low", "Früher ist gut"], ["high", "Später ist gut"], ["none", "Neutral"]] : [["high", "Mehr ist gut"], ["low", "Weniger ist gut"], ["none", "Neutral"]])}`;
     }
 
     const condBlock = `<details class="adv" ${draft.cond ? "open" : ""}>
@@ -2207,14 +2234,14 @@ function openEditor(id) {
       ${typeLocked ? `<p class="muted small" style="margin-top:-8px">Der Antworttyp ist fest, weil es schon ${used} Antworten gibt.</p>` : ""}
       ${typeFields}
       ${condBlock}
-      <details class="adv" ${draft.healthKey ? "open" : ""}>
-        <summary>Apple Health (optional)</summary>
+      ${existing && existing.healthKey ? `<details class="adv">
+        <summary>Apple Health</summary>
         <label class="field" style="margin-top:8px">Health-Kürzel
           <input id="hkey" value="${esc(draft.healthKey)}" placeholder="z. B. schlaf" autocapitalize="off" autocomplete="off">
         </label>
         <p class="muted small">Schickt der Kurzbefehl einen Wert mit diesem Kürzel, wird er hier eingetragen. Anleitung unter Einstellungen → Schnittstelle Apple Health.</p>
         ${draft.type === "number" ? `<label class="check" style="margin-top:4px"><input type="checkbox" id="hsrc" ${draft.source === "health" ? "checked" : ""}> Nur aus Apple Health füllen (unter „Tag“ als Health-Feld, wird nicht abgefragt)</label>` : ""}
-      </details>
+      </details>` : ""}
       ${existing ? `<div class="stack">
         <button type="button" class="btn ghost" id="archive">${existing.archived ? "Wieder einblenden" : "Ausblenden (Daten bleiben)"}</button>
         <button type="button" class="btn danger" id="delete">Frage und ${used} Antworten löschen</button>
@@ -2227,13 +2254,19 @@ function openEditor(id) {
       dlg.querySelectorAll("[data-opt]").forEach((inp) => (draft.options[+inp.dataset.opt] = inp.value));
       if ($("#multi", dlg)) draft.multi = $("#multi", dlg).checked;
       if ($("#smin", dlg)) { draft.min = parseInt($("#smin", dlg).value, 10); draft.max = parseInt($("#smax", dlg).value, 10); draft.minLabel = $("#sminl", dlg).value; draft.maxLabel = $("#smaxl", dlg).value; }
-      if ($("#unit", dlg)) draft.unit = $("#unit", dlg).value;
-      draft.healthKey = $("#hkey", dlg).value.trim().toLowerCase().replace(/[^a-z0-9_äöüß-]/g, "");
+      if ($("#unit", dlg)) {
+        const u = $("#unit", dlg).value.trim();
+        if (u) { draft.unit = u; draft.format = null; } else if (!draft.format && !$(".unitchips [aria-pressed=true]", dlg)) draft.unit = "";
+      }
+      if ($("#hkey", dlg)) draft.healthKey = $("#hkey", dlg).value.trim().toLowerCase().replace(/[^a-z0-9_äöüß-]/g, "");
       if ($("#hsrc", dlg)) draft.source = $("#hsrc", dlg).checked ? "health" : null;
       if (draft.type !== "number" || !draft.healthKey) draft.source = null;
     };
 
     dlg.querySelectorAll("[data-type]").forEach((b) => b.addEventListener("click", () => { sync(); draft.type = b.dataset.type; draw(); }));
+    dlg.querySelectorAll("[data-fmt]").forEach((b) => b.addEventListener("click", () => { sync(); draft.format = draft.format === b.dataset.fmt ? null : b.dataset.fmt; draft.unit = ""; if (!draft.better || draft.better === "none") draft.better = draft.format === "clock" ? "none" : draft.better; draw(); }));
+    dlg.querySelectorAll("[data-unit]").forEach((b) => b.addEventListener("click", () => { sync(); const u = b.dataset.unit; draft.unit = draft.unit === u && !draft.format ? "" : u; draft.format = null; draw(); }));
+    dlg.querySelectorAll("[data-better]").forEach((b) => b.addEventListener("click", () => { sync(); draft.better = b.dataset.better; draw(); }));
     $("#fsync", dlg)?.addEventListener("change", (e) => {
       sync();
       const all = F().list.map((x) => x.name);
@@ -2301,6 +2334,8 @@ function openEditor(id) {
         if (draft.options.length < 2) return toast("Mindestens zwei Antworten nötig");
         if (new Set(draft.options).size !== draft.options.length) return toast("Antworten müssen unterschiedlich sein");
       } else { draft.multi = false; draft.friends = null; }
+      if (draft.type !== "number") draft.format = null;
+      if (draft.type === "choice") delete draft.better;
       if (draft.type === "scale") {
         if (!Number.isInteger(draft.min) || !Number.isInteger(draft.max) || draft.max <= draft.min) return toast("Skala: „Bis“ muss größer als „Von“ sein");
         if (draft.max - draft.min > 10) return toast("Skala: höchstens 11 Stufen");

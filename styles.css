@@ -512,3 +512,7 @@ input.flabel { flex: 1; padding: 8px 10px; border-radius: var(--r-sm); border: 1
 .export-card .barrow[aria-pressed="true"], .export-card .lrow[aria-pressed="true"] { background: transparent; }
 .export-card .barrow[aria-pressed="true"] .bt { background: var(--bg); }
 .trow.season .tmark { background: var(--s4); }
+.trow.num.bad .tmark { background: var(--hold); }
+.wdir.good { color: var(--s6); }
+.wdir.bad { color: var(--hold); }
+.unitchips .chip { padding: 8px 14px; font-size: 15px; }
