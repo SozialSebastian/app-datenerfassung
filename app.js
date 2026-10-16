@@ -329,6 +329,7 @@ function renderDay() {
   $("#firstq")?.addEventListener("click", () => openEditor(null));
   $("#goalsbtn").addEventListener("click", openGoals);
   $("#placeedit")?.addEventListener("click", () => openPlaces(current));
+  if (isToday) refreshNowWeather();
   view.querySelectorAll("[data-hq]").forEach((row) => {
     const inp = row.querySelector("input");
     inp.addEventListener("change", () => {
@@ -1794,6 +1795,7 @@ async function capturePlace(manual) {
     const city = await cityFor(pos.coords.latitude, pos.coords.longitude);
     const now = new Date();
     if (!WL()[iso(now)]) { WL()[iso(now)] = [+pos.coords.latitude.toFixed(2), +pos.coords.longitude.toFixed(2)]; save(); }
+    settings.places.loc = [+pos.coords.latitude.toFixed(2), +pos.coords.longitude.toFixed(2)];
     settings.places.last = now.getTime(); settings.places.err = ""; saveSettings();
     const changed = addPlace(iso(now), city, `${pad(now.getHours())}:${pad(now.getMinutes())}`);
     if (changed) { save(); if (tab === "day" && !quiz && current === iso(now)) renderDay(); }
@@ -1808,15 +1810,45 @@ async function capturePlace(manual) {
     if (manual) { toast(msg.length > 60 ? msg.slice(0, 58) + "…" : msg); if (tab === "data") renderData(); }
   } finally { placeBusy = false; }
   syncWeather(false);
+  refreshNowWeather();
+}
+
+// Aktuelles Wetter am letzten Standort (für die Anzeige auf „Tag“, 30 Min. zwischengespeichert)
+const WCODE = [
+  [[0], "☀️", "Sonnig"], [[1], "🌤️", "Überwiegend sonnig"], [[2], "⛅", "Teils bewölkt"], [[3], "☁️", "Bewölkt"],
+  [[45, 48], "🌫️", "Nebel"], [[51, 53, 55, 56, 57], "🌦️", "Nieselregen"], [[61, 63, 65, 66, 67, 80, 81, 82], "🌧️", "Regen"],
+  [[71, 73, 75, 77, 85, 86], "🌨️", "Schnee"], [[95, 96, 99], "⛈️", "Gewitter"]
+];
+const wcode = (c, day) => { const m = WCODE.find(([cs]) => cs.includes(c)) || [[], "🌡️", ""]; return { icon: !day && c <= 2 ? "🌙" : m[1], text: m[2] }; };
+let nowWeather = null, nowWeatherBusy = false;
+async function refreshNowWeather() {
+  const loc = settings.places && settings.places.on && settings.places.loc;
+  if (!loc || nowWeatherBusy) return;
+  if (nowWeather && nowWeather.key === loc.join(",") && Date.now() - nowWeather.at < 30 * 60e3) return;
+  nowWeatherBusy = true;
+  try {
+    const res = await fetch(`https://api.open-meteo.com/v1/forecast?latitude=${loc[0]}&longitude=${loc[1]}&current=temperature_2m,weather_code,is_day&timezone=Europe%2FBerlin`);
+    if (!res.ok) throw new Error();
+    const c = (await res.json()).current;
+    nowWeather = { key: loc.join(","), at: Date.now(), temp: Math.round(c.temperature_2m), ...wcode(c.weather_code, c.is_day) };
+    if (tab === "day" && !quiz && current === todayIso()) { const el = $("#placeedit"); if (el) el.outerHTML = placeLine(current); $("#placeedit")?.addEventListener("click", () => openPlaces(current)); }
+  } catch (e) { /* ohne Wetter weiter */ } finally { nowWeatherBusy = false; }
 }
 
 // Zeile unter dem Datum auf „Tag“
 function placeLine(date) {
   const list = P()[date] || [];
   if (!list.length && !(settings.places && settings.places.on)) return "";
+  // heute: aktuelles Wetter; frühere Tage: Höchsttemperatur des Tages
+  let wx = "";
+  if (date === todayIso() && nowWeather) wx = `<span class="pwx" title="${esc(nowWeather.text)}">${nowWeather.icon} ${nowWeather.temp} °C</span>`;
+  else if (date !== todayIso() && state.weather && state.weather[date]) {
+    const w = state.weather[date];
+    wx = `<span class="pwx" title="Höchsttemperatur">${w.r >= 1 ? "🌧️" : w.s >= 6 ? "☀️" : "⛅"} max ${Math.round(w.t)} °C</span>`;
+  }
   return `<button class="placeline" id="placeedit" aria-label="Orte des Tages bearbeiten">
     <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 21s-6.5-6.2-6.5-11.2a6.5 6.5 0 0 1 13 0C18.5 14.8 12 21 12 21z"/><circle cx="12" cy="9.8" r="2.3"/></svg>
-    <span>${list.length ? list.map((x) => esc(x.c)).join(" → ") : `<span class="muted">Noch kein Ort</span>`}</span>
+    <span>${list.length ? list.map((x) => esc(x.c)).join(" → ") : `<span class="muted">Noch kein Ort</span>`}</span>${wx}
   </button>`;
 }
 
