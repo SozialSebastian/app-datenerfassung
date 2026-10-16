@@ -1648,6 +1648,7 @@ function exportItems() {
   if (f.list.length) {
     items.push({ id: "fsum", group: "Freunde", label: `Übersicht und Quoten (${f.list.length} Freunde)`, file: "Freunde_Uebersicht", html: () => friendsSummaryHtml() });
     if (f.history.length) items.push({ id: "fchg", group: "Freunde", label: "Veränderung zum vorigen Stichtag", file: "Freunde_Veraenderung", html: () => withAllOpen(friendChangesPanel) });
+    if (meetStats()) items.push({ id: "fmeet", group: "Freunde", label: "Treffen (wen wann zuletzt)", file: "Freunde_Treffen", html: () => { const k = showAllMeets; showAllMeets = true; try { return meetsPanel(); } finally { showAllMeets = k; } } });
     items.push({ id: "flist", group: "Freunde", label: "Liste nach Kategorien", file: "Freunde_Liste", html: () => friendsListHtml() });
   }
   if (state.questions.length) {
@@ -2219,6 +2220,80 @@ function syncFriendQuestions() {
   return changed;
 }
 
+// Treffen: aus Fragen mit Vorlage „Freunde“ (z. B. „Mit wem getroffen?“) – je Freund Anzahl Tage und letztes Treffen
+function meetStats() {
+  const qs = state.questions.filter((q) => q.friends && q.type === "choice");
+  const out = {};
+  if (!qs.length) return null;
+  const t = todayIso(), from90 = addDays(t, -89);
+  for (const [d, a] of Object.entries(state.answers)) {
+    const names = new Set();
+    qs.forEach((q) => { const v = a[q.id]; (Array.isArray(v) ? v : v ? [v] : []).forEach((n) => names.add(n)); });
+    names.forEach((n) => {
+      const o = out[n] || (out[n] = { n: 0, n90: 0, last: null });
+      o.n++; if (d >= from90) o.n90++;
+      if (!o.last || d > o.last) o.last = d;
+    });
+  }
+  return out;
+}
+function agoText(d) {
+  if (!d) return "noch nie";
+  const days = dayCount(d, todayIso()) - 1;
+  if (days === 0) return "heute";
+  if (days === 1) return "gestern";
+  if (days < 14) return `vor ${days} Tagen`;
+  if (days < 63) return `vor ${Math.round(days / 7)} Wochen`;
+  if (days < 365) return `vor ${Math.round(days / 30.4)} Monaten`;
+  return "vor über einem Jahr";
+}
+// Treffen-Tage in einem Zeitraum: Tage mit mind. einem Freund, davon je Kategorie
+function meetDays(from, to) {
+  const qs = state.questions.filter((q) => q.friends && q.type === "choice");
+  const catOf = Object.fromEntries(F().list.map((f) => [f.name, f.cat]));
+  const r = { all: 0, best: 0, good: 0, friend: 0 };
+  for (const [d, a] of Object.entries(state.answers)) {
+    if (d < from || d > to) continue;
+    const cats = new Set();
+    qs.forEach((q) => { const v = a[q.id]; (Array.isArray(v) ? v : v ? [v] : []).forEach((n) => { if (catOf[n]) cats.add(catOf[n]); }); });
+    if (!cats.size) continue;
+    r.all++; cats.forEach((c) => r[c]++);
+  }
+  return r;
+}
+const MEET_PREVIEW = 5;
+let showAllMeets = false;
+function meetsPanel() {
+  const st = meetStats();
+  if (!st) return `<section class="panel"><h2 class="atitle">Treffen</h2>
+    <p class="muted small" style="margin:0">Leg eine Frage mit Vorlage „Freunde“ an, z. B. „Mit wem getroffen?“. Dann siehst du hier, wen du wie oft und wann zuletzt gesehen hast.</p></section>`;
+  const rank = { best: 0, good: 1, friend: 2 };
+  // am längsten nicht gesehen zuerst (nie gesehen ganz oben), bei Gleichstand engere Freunde zuerst
+  const rows = F().list.map((f) => ({ f, s: st[f.name] || { n: 0, n90: 0, last: null } }))
+    .sort((a, b) => (a.s.last || "") < (b.s.last || "") ? -1 : (a.s.last || "") > (b.s.last || "") ? 1 : rank[a.f.cat] - rank[b.f.cat]);
+  const shown = showAllMeets ? rows : rows.slice(0, MEET_PREVIEW);
+  const catShort = Object.fromEntries(FCATS.map(([c, l]) => [c, l.replace(" Freunde", "")]));
+  const t = todayIso(), m0 = t.slice(0, 7) + "-01";
+  const pm = periodOf("month", addDays(m0, -1));
+  const cur = meetDays(m0, t), prev = meetDays(pm.start, pm.end);
+  const line = (r) => `<strong>${r.all}</strong> Treffen${r.all ? `, davon ${r.best} mit besten, ${r.good} mit guten, ${r.friend} mit weiteren Freunden` : ""}`;
+  return `<section class="panel meets">
+    <h2 class="atitle">Treffen</h2>
+    <div class="mmonth">
+      <p><span class="muted small">Diesen Monat</span><br>${line(cur)}</p>
+      <p><span class="muted small">${esc(pm.name)}</span><br>${line(prev)}</p>
+    </div>
+    <p class="small muted" style="margin:12px 0 2px">Am längsten nicht gesehen zuerst</p>
+    <ul class="mlist">${shown.map(({ f, s: x }) => `<li>
+      <span class="mn">${esc(f.name)} <span class="mcat">${catShort[f.cat]}</span></span>
+      <span class="ml ${x.last ? "" : "never"}">${agoText(x.last)}</span>
+      <span class="mc small muted">${x.n ? `${x.n}× gesamt · ${x.n90}× in 90 Tagen` : "noch kein Treffen erfasst"}</span>
+    </li>`).join("")}</ul>
+    ${rows.length > MEET_PREVIEW ? `<button class="btn ghost block" id="mmore" style="margin-top:10px">${showAllMeets ? "Weniger anzeigen" : `Alle anzeigen (${rows.length - MEET_PREVIEW} weitere)`}</button>` : ""}
+    <p class="small muted" style="margin:10px 0 0">Ein Treffen ist ein Tag, an dem bei einer Frage mit Vorlage „Freunde“ jemand angekreuzt ist. Mehrere Freunde am selben Tag zählen als ein Treffen, aber in jeder ihrer Kategorien.</p>
+  </section>`;
+}
+
 // Übersicht mit Gesamtzahl und Quoten (auch für „Grafik erstellen“)
 function friendsSummaryHtml() {
   const f = F();
@@ -2247,11 +2322,12 @@ function friendsSummaryHtml() {
 
 function friendsListHtml() {
   const list = F().list;
+  const st = meetStats();
   return FCATS.map(([c, l]) => {
     const xs = list.filter((x) => x.cat === c);
     return `<section class="panel fcat">
         <div class="panel-head"><h2>${l}</h2><span class="muted">${xs.length}</span></div>
-        ${xs.length ? `<ul class="flist">${xs.map((x) => `<li><button class="frow" data-fid="${x.id}"><span class="fname">${esc(x.name)}</span><span class="ficons">${friendIcons(x)}</span></button></li>`).join("")}</ul>`
+        ${xs.length ? `<ul class="flist">${xs.map((x) => `<li><button class="frow" data-fid="${x.id}"><span class="fname">${esc(x.name)}</span><span class="ficons">${friendIcons(x)}</span>${st ? `<span class="flast">${agoText((st[x.name] || {}).last)}</span>` : ""}</button></li>`).join("")}</ul>`
           : `<p class="muted small" style="margin:0">Noch niemand.</p>`}
       </section>`;
   }).join("");
@@ -2267,7 +2343,7 @@ function renderFriends() {
         <button class="addbtn big" id="fadd" aria-label="Freund hinzufügen">+</button>
       </div>
     </div>
-    ${n ? `${friendsSummaryHtml()}${friendChangesPanel()}${friendsListHtml()}`
+    ${n ? `${friendsSummaryHtml()}${meetsPanel()}${friendChangesPanel()}${friendsListHtml()}`
     : `<div class="empty-state">
         <h2>Noch keine Freunde</h2>
         <p class="muted">Tippe oben rechts auf +, um Freunde hinzuzufügen. Du kannst auch mehrere Namen auf einmal eintragen.</p>
@@ -2278,6 +2354,7 @@ function renderFriends() {
   $("#ffirst")?.addEventListener("click", () => openFriend(null));
   $("#fsettings").addEventListener("click", openFriendSettings);
   $("#fchmore")?.addEventListener("click", () => { showAllFriendChanges = !showAllFriendChanges; renderFriends(); });
+  $("#mmore")?.addEventListener("click", () => { showAllMeets = !showAllMeets; renderFriends(); });
   document.querySelectorAll("[data-fid]").forEach((b) => b.addEventListener("click", () => openFriend(b.dataset.fid)));
 }
 
