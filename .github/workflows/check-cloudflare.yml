@@ -1,0 +1,25 @@
+# Prüft nur, ob die Cloudflare-Zugangsdaten funktionieren. Legt nichts an, zeigt keine Geheimnisse.
+name: Cloudflare-Zugang prüfen
+on:
+  push:
+    paths: [".github/workflows/check-cloudflare.yml"]
+  workflow_dispatch:
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Prüfen
+        env:
+          TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          ACC: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: |
+          ok=1
+          [ -n "$TOKEN" ] && echo "Secret CLOUDFLARE_API_TOKEN: vorhanden" || { echo "Secret CLOUDFLARE_API_TOKEN: FEHLT"; ok=0; }
+          [ -n "$ACC" ] && echo "Secret CLOUDFLARE_ACCOUNT_ID: vorhanden (Länge ${#ACC})" || { echo "Secret CLOUDFLARE_ACCOUNT_ID: FEHLT"; ok=0; }
+          api() { curl -s -H "Authorization: Bearer $TOKEN" "https://api.cloudflare.com/client/v4$1"; }
+          echo "Token gültig:      $(api /user/tokens/verify | jq -r '.success, .result.status' | paste -sd' ')"
+          echo "Konto erreichbar:  $(api /accounts/$ACC | jq -r '.success, (.errors[0].message // "")' | paste -sd' ')"
+          echo "Workers-Recht:     $(api /accounts/$ACC/workers/scripts | jq -r '.success, (.errors[0].message // "")' | paste -sd' ')"
+          echo "D1-Recht:          $(api /accounts/$ACC/d1/database | jq -r '.success, (.errors[0].message // "")' | paste -sd' ')"
+          echo "workers.dev-Name:  $(api /accounts/$ACC/workers/subdomain | jq -r '.result.subdomain // ("nicht gesetzt " + (.errors[0].message // ""))')"
+          [ $ok = 1 ]
