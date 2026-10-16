@@ -1522,7 +1522,7 @@ function questionsPanel() {
     return `<li class="qrow ${q.archived ? "archived" : ""}" style="margin-left:${q.archived ? 0 : depth * 18}px">
       <button class="qmain" data-edit="${q.id}">
         <span class="qtext">${q.cond && !q.archived ? "↳ " : ""}${esc(q.text)}</span>
-        <span class="qmeta">${esc(describe(q))}${q.healthKey ? " · Health: " + esc(q.healthKey) : ""}</span>
+        <span class="qmeta">${q.friends ? "Vorlage Freunde · " : ""}${esc(describe(q))}${q.healthKey ? " · Health: " + esc(q.healthKey) : ""}</span>
         ${q.cond ? `<span class="qmeta">${esc(condText(q))}</span>` : ""}
       </button>
       ${q.archived ? "" : `
@@ -1576,13 +1576,240 @@ function refreshQuestions() {
   wireQuestions(fresh);
 }
 
-/* ================= Freunde (folgt) ================= */
+/* ================= Freunde ================= */
+// Gespeichert in state.friends (mit in der Sicherung):
+// { stichtag, list: [{ id, name, cat, tags: {veg, rel, fem, smoke, acad}, isNew }], history: [{ date, list }], labels: {} }
+const FCATS = [["best", "Beste Freunde"], ["good", "Gute Freunde"], ["friend", "Freunde"]];
+const FTAGS = [
+  { k: "veg", icon: "🌱", label: "Vegetarier" },
+  { k: "rel", icon: "💍", label: "In Beziehung" },
+  { k: "fem", icon: "♀", label: "Frauen", cls: "fem" },
+  { k: "smoke", icon: "🚬", label: "Raucher" },
+  { k: "acad", icon: "🎓", label: "Akademiker (voraussichtlich)" }
+];
+const NEW_BADGE = `<span class="fnew">NEU</span>`;
+
+function F() {
+  if (!state.friends || typeof state.friends !== "object") state.friends = {};
+  const f = state.friends;
+  if (!Array.isArray(f.list)) f.list = [];
+  if (!Array.isArray(f.history)) f.history = [];
+  if (!f.labels || typeof f.labels !== "object") f.labels = {};
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(f.stichtag || "")) f.stichtag = todayIso();
+  return f;
+}
+const tagLabel = (t) => F().labels[t.k] || t.label;
+const tagIcon = (t) => `<span class="ftag ${t.cls || ""}" title="${esc(tagLabel(t))}" aria-label="${esc(tagLabel(t))}">${t.icon}</span>`;
+const friendIcons = (fr) => FTAGS.filter((t) => fr.tags && fr.tags[t.k]).map(tagIcon).join("") + (fr.isNew ? NEW_BADGE : "");
+const fdate = (s) => { const d = parseIso(s); return `${pad(d.getDate())}.${pad(d.getMonth() + 1)}.${d.getFullYear()}`; };
+// Reihenfolge wie in der Übersicht: Beste, Gute, Freunde – innerhalb in Eingabereihenfolge
+const friendsOrdered = (cats) => FCATS.flatMap(([c]) => F().list.filter((x) => x.cat === c && (!cats || cats.includes(c))));
+
+// Fragen mit Vorlage „Freunde“ bekommen die aktuellen Namen als Antworten
+function syncFriendQuestions() {
+  let changed = false;
+  for (const q of state.questions) {
+    if (!q.friends || q.type !== "choice") continue;
+    const names = friendsOrdered(q.friends.cats).map((x) => x.name);
+    const opts = Array.from(new Set([...names, ...(q.extra || [])]));
+    if (JSON.stringify(opts) !== JSON.stringify(q.options)) { q.options = opts; changed = true; }
+  }
+  return changed;
+}
+
 function renderFriends() {
+  const f = F();
+  const list = f.list;
+  const n = list.length;
+  const prev = f.history[f.history.length - 1];
+  const delta = prev ? n - prev.list.length : null;
+  const cnt = (fn) => list.filter(fn).length;
+  const pc = (c) => (n ? `${Math.round((c / n) * 100)} %` : "–");
+  const rows = [
+    { icon: NEW_BADGE, label: "Neue Freunde", c: cnt((x) => x.isNew) },
+    ...FTAGS.map((t) => ({ icon: tagIcon(t), label: esc(tagLabel(t)), c: cnt((x) => x.tags && x.tags[t.k]) }))
+  ];
+
   $("#view").innerHTML = `
-    <div class="dayhead"><h1>Freunde</h1></div>
-    <div class="empty-state">
-      <p class="muted">Dieser Bereich ist noch leer. Hier kommt bald etwas Neues hin.</p>
+    <div class="dayhead">
+      <h1>Freunde</h1>
+      <div class="headbtns">
+        <button class="gear" id="fsettings" aria-label="Stichtag und Labels">${GEAR}</button>
+        <button class="addbtn big" id="fadd" aria-label="Freund hinzufügen">+</button>
+      </div>
+    </div>
+    ${n ? `<section class="panel fsum">
+      <div class="ftop">
+        <div><span class="fbig">${n}</span><span class="muted">Freunde insgesamt</span></div>
+        <div class="fdelta">${delta === null ? "" : `<strong>${delta > 0 ? "+" + delta : delta < 0 ? "−" + Math.abs(delta) : "±0"}</strong><span class="muted small">seit ${fdate(prev.date)}</span>`}</div>
+      </div>
+      <p class="small muted fstich">Stichtag ${fdate(f.stichtag)} · ${FCATS.map(([c, l]) => `${l.replace(" Freunde", "")} ${cnt((x) => x.cat === c)}`).join(" · ")}</p>
+      <table class="ftable">
+        <thead><tr><th></th><th></th><th>%</th><th>Anzahl</th></tr></thead>
+        <tbody>${rows.map((r) => `<tr><td class="fi">${r.icon}</td><td>${r.label}</td><td class="num">${pc(r.c)}</td><td class="num">${r.c}</td></tr>`).join("")}</tbody>
+      </table>
+    </section>
+    ${FCATS.map(([c, l]) => {
+      const xs = list.filter((x) => x.cat === c);
+      return `<section class="panel fcat">
+        <div class="panel-head"><h2>${l}</h2><span class="muted">${xs.length}</span></div>
+        ${xs.length ? `<ul class="flist">${xs.map((x) => `<li><button class="frow" data-fid="${x.id}"><span class="fname">${esc(x.name)}</span><span class="ficons">${friendIcons(x)}</span></button></li>`).join("")}</ul>`
+          : `<p class="muted small" style="margin:0">Noch niemand.</p>`}
+      </section>`;
+    }).join("")}`
+    : `<div class="empty-state">
+        <h2>Noch keine Freunde</h2>
+        <p class="muted">Tippe oben rechts auf +, um Freunde hinzuzufügen. Du kannst auch mehrere Namen auf einmal eintragen.</p>
+        <button class="btn" id="ffirst">Freunde hinzufügen</button>
+      </div>`}`;
+
+  $("#fadd").addEventListener("click", () => openFriend(null));
+  $("#ffirst")?.addEventListener("click", () => openFriend(null));
+  $("#fsettings").addEventListener("click", openFriendSettings);
+  document.querySelectorAll("[data-fid]").forEach((b) => b.addEventListener("click", () => openFriend(b.dataset.fid)));
+}
+
+function friendsChanged() {
+  syncFriendQuestions();
+  save();
+  render();
+}
+
+// Freund anlegen oder bearbeiten
+function openFriend(id) {
+  const f = F();
+  const existing = id ? f.list.find((x) => x.id === id) : null;
+  const draft = existing ? JSON.parse(JSON.stringify(existing)) : { id: uid(), name: "", cat: "friend", tags: {}, isNew: true };
+  let bulk = false, bulkText = "";
+  const dlg = $("#sheet");
+  const draw = () => {
+    dlg.innerHTML = `<form class="sheet-inner" novalidate>
+      <div class="sheet-head">
+        <button type="button" class="linkbtn" id="fcancel">Abbrechen</button>
+        <h2>${existing ? "Freund bearbeiten" : "Neuer Freund"}</h2>
+        <button type="submit" class="linkbtn">Sichern</button>
+      </div>
+      ${bulk ? `<label class="field">Namen, einer pro Zeile<textarea id="fnames" rows="6" placeholder="Bryan&#10;Sabrina&#10;Annika">${esc(bulkText)}</textarea></label>
+        <p class="muted small" style="margin-top:-8px">Labels kannst du danach pro Person setzen.</p>`
+        : `<label class="field">Name<input id="fname" value="${esc(draft.name)}" autocomplete="off" placeholder="z. B. Bryan"></label>`}
+      ${!existing ? `<button type="button" class="linkbtn" id="fbulk" style="margin:-6px 0 14px">${bulk ? "Nur einen Namen eintragen" : "Mehrere auf einmal eintragen"}</button>` : ""}
+      <div class="seg seg-3" role="group" aria-label="Kategorie">${FCATS.map(([c, l]) => `<button type="button" data-fcat="${c}" aria-pressed="${draft.cat === c}">${l.replace(" Freunde", "")}</button>`).join("")}</div>
+      ${bulk ? "" : `<div class="field" style="font-weight:600;font-size:15px;margin-bottom:8px">Labels</div>
+      <div class="chips ftags">
+        ${FTAGS.map((t) => `<button type="button" class="chip" data-ftag="${t.k}" aria-pressed="${!!draft.tags[t.k]}">${tagIcon(t)} ${esc(tagLabel(t))}</button>`).join("")}
+        <button type="button" class="chip" data-fnew aria-pressed="${!!draft.isNew}">${NEW_BADGE} Neuer Freund</button>
+      </div>
+      <p class="muted small">„Neu“ bleibt bis zum nächsten Stichtag.</p>`}
+      ${existing ? `<div class="stack"><button type="button" class="btn danger" id="fdel">Aus der Liste entfernen</button></div>` : ""}
+    </form>`;
+    const sync = () => { const i = $("#fname", dlg); if (i) draft.name = i.value; const t = $("#fnames", dlg); if (t) bulkText = t.value; };
+    $("#fcancel", dlg).addEventListener("click", () => dlg.close());
+    $("#fbulk", dlg)?.addEventListener("click", () => { sync(); bulk = !bulk; draw(); });
+    dlg.querySelectorAll("[data-fcat]").forEach((b) => b.addEventListener("click", () => { sync(); draft.cat = b.dataset.fcat; draw(); }));
+    dlg.querySelectorAll("[data-ftag]").forEach((b) => b.addEventListener("click", () => { sync(); draft.tags[b.dataset.ftag] = !draft.tags[b.dataset.ftag]; draw(); }));
+    dlg.querySelector("[data-fnew]")?.addEventListener("click", () => { sync(); draft.isNew = !draft.isNew; draw(); });
+    $("#fdel", dlg)?.addEventListener("click", () => {
+      if (!confirm(`${existing.name} aus der Liste entfernen? Frühere Stichtage und Antworten bleiben erhalten.`)) return;
+      f.list = f.list.filter((x) => x.id !== existing.id);
+      dlg.close(); friendsChanged(); toast("Entfernt");
+    });
+    dlg.querySelector("form").addEventListener("submit", (e) => {
+      e.preventDefault();
+      const taken = (name, self) => f.list.some((x) => x.id !== self && x.name.toLowerCase() === name.toLowerCase());
+      if (bulk) {
+        const names = Array.from(new Set($("#fnames", dlg).value.split("\n").map((s) => s.trim()).filter(Boolean)));
+        const add = names.filter((nm) => !taken(nm, null));
+        if (!add.length) return toast(names.length ? "Diese Namen gibt es schon" : "Bitte Namen eintragen");
+        add.forEach((nm) => f.list.push({ id: uid(), name: nm, cat: draft.cat, tags: {}, isNew: true }));
+        dlg.close(); friendsChanged(); toast(`${add.length} hinzugefügt${add.length < names.length ? `, ${names.length - add.length} schon vorhanden` : ""}`);
+        return;
+      }
+      sync();
+      draft.name = draft.name.trim();
+      if (!draft.name) return toast("Bitte einen Namen eintragen");
+      if (taken(draft.name, draft.id)) return toast("Diesen Namen gibt es schon");
+      if (existing) {
+        if (existing.name !== draft.name) renameFriendInAnswers(existing.name, draft.name);
+        Object.assign(existing, draft);
+      } else f.list.push(draft);
+      dlg.close(); friendsChanged(); toast(existing ? "Gesichert" : "Hinzugefügt");
+    });
+  };
+  draw();
+  dlg.showModal();
+  document.activeElement?.blur();
+  if (!existing) setTimeout(() => $("#fname", dlg)?.focus(), 50);
+}
+
+// Umbenennen: gespeicherte Antworten der verknüpften Fragen mitziehen
+function renameFriendInAnswers(oldName, newName) {
+  const qs = state.questions.filter((q) => q.friends);
+  for (const a of Object.values(state.answers)) {
+    for (const q of qs) {
+      const v = a[q.id];
+      if (Array.isArray(v)) a[q.id] = v.map((x) => (x === oldName ? newName : x));
+      else if (v === oldName) a[q.id] = newName;
+    }
+  }
+  for (const q of state.questions) {
+    if (q.cond && qs.some((p) => p.id === q.cond.qid)) q.cond.values = q.cond.values.map((x) => (x === oldName ? newName : x));
+  }
+}
+
+// Zahnrad: Stichtag, Verlauf, Namen der Labels
+function openFriendSettings() {
+  const f = F();
+  const dlg = $("#sheet");
+  const draw = () => {
+    const hist = [...f.history].reverse();
+    dlg.innerHTML = `<div class="sheet-inner">
+      <div class="sheet-head"><span></span><h2>Stichtag</h2><button type="button" class="linkbtn" id="fsdone">Fertig</button></div>
+      <section class="sq">
+        <div class="timerow" style="margin-top:0"><span>Aktueller Stichtag</span><input type="date" id="fst" class="timein wide" value="${f.stichtag}"></div>
+        <p class="muted small" style="margin:8px 0 0">Änderungen an der Liste gelten für diesen Stichtag.</p>
+      </section>
+      <section class="sq">
+        <strong>Neuen Stichtag anlegen</strong>
+        <p class="muted small" style="margin:6px 0 10px">Die Liste zum ${fdate(f.stichtag)} wird festgehalten. Wer danach dazukommt, bekommt das Label „Neu“. Bisherige „Neu“-Labels fallen weg.</p>
+        <div class="timerow" style="margin-top:0"><span>Neuer Stichtag</span><input type="date" id="fnewst" class="timein wide" value="${todayIso()}"></div>
+        <button type="button" class="btn block" id="fnewbtn" style="margin-top:12px">Stichtag anlegen</button>
+      </section>
+      ${hist.length ? `<section class="sq">
+        <strong>Frühere Stichtage</strong>
+        <ul class="hlist">${hist.map((h, i) => {
+          const before = hist[i + 1];
+          const d = before ? h.list.length - before.list.length : null;
+          const added = before ? h.list.filter((x) => !before.list.some((y) => y.id === x.id)).length : null;
+          return `<li><span class="hn">${fdate(h.date)}</span><span class="hv">${h.list.length}</span>
+            ${d !== null ? `<span class="hm small muted">${d > 0 ? "+" + d : d < 0 ? "−" + Math.abs(d) : "±0"} gegenüber ${fdate(before.date)}${added ? ` · ${added} neu` : ""}</span>` : ""}</li>`;
+        }).join("")}</ul>
+      </section>` : ""}
+      <section class="sq">
+        <strong>Labels umbenennen</strong>
+        ${FTAGS.map((t) => `<div class="timerow"><span>${tagIcon(t)}</span><input class="flabel" data-fl="${t.k}" value="${esc(tagLabel(t))}"></div>`).join("")}
+      </section>
     </div>`;
+    $("#fsdone", dlg).addEventListener("click", () => dlg.close());
+    $("#fst", dlg).addEventListener("change", (e) => { if (/^\d{4}-\d{2}-\d{2}$/.test(e.target.value)) { f.stichtag = e.target.value; save(); render(); } });
+    $("#fnewbtn", dlg).addEventListener("click", () => {
+      const nd = $("#fnewst", dlg).value;
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(nd)) return toast("Bitte ein Datum wählen");
+      if (nd <= f.stichtag) return toast("Der neue Stichtag muss nach dem aktuellen liegen");
+      if (!confirm(`Liste zum ${fdate(f.stichtag)} festhalten und neuen Stichtag ${fdate(nd)} anlegen?`)) return;
+      f.history.push({ date: f.stichtag, list: JSON.parse(JSON.stringify(f.list)) });
+      f.list.forEach((x) => { x.isNew = false; });
+      f.stichtag = nd;
+      save(); draw(); render(); toast(`Stichtag ${fdate(nd)} angelegt`);
+    });
+    dlg.querySelectorAll("[data-fl]").forEach((i) => i.addEventListener("change", () => {
+      const v = i.value.trim();
+      if (v) f.labels[i.dataset.fl] = v; else delete f.labels[i.dataset.fl];
+      save(); render();
+    }));
+  };
+  draw();
+  dlg.showModal();
+  document.activeElement?.blur();
 }
 
 function answerCount(qid) {
@@ -1603,6 +1830,8 @@ function openEditor(id) {
     ? JSON.parse(JSON.stringify(existing))
     : { id: uid(), text: "", type: "choice", options: ["Ja", "Nein"], multi: false, min: 1, max: 5, minLabel: "", maxLabel: "", unit: "", healthKey: "", archived: false, cond: null };
   if (draft.multi === undefined) draft.multi = false;
+  if (!draft.friends) draft.friends = null;
+  if (draft.friends) draft.options = [...(draft.extra || [])]; // bei Vorlage „Freunde“ nur Zusatzantworten bearbeiten
   if (draft.cond === undefined) draft.cond = null;
 
   const dlg = $("#sheet");
@@ -1618,10 +1847,15 @@ function openEditor(id) {
 
     let typeFields = "";
     if (draft.type === "choice") {
+      const fnames = draft.friends ? friendsOrdered(draft.friends.cats).map((x) => x.name) : [];
       typeFields = `<div class="field" style="margin-bottom:8px;font-weight:600;font-size:15px">Antwortmöglichkeiten</div>
+        <label class="check" style="margin-top:0"><input type="checkbox" id="fsync" ${draft.friends ? "checked" : ""}> Vorlage „Freunde“: Namen aus deiner Freundesliste, bleibt automatisch aktuell</label>
+        ${draft.friends ? `<div class="chips" style="margin:4px 0 8px">${FCATS.map(([c, l]) => `<button type="button" class="chip" data-fsc="${c}" aria-pressed="${draft.friends.cats.includes(c)}">${l}</button>`).join("")}</div>
+          <p class="muted small" style="margin:0 0 12px">${fnames.length ? `${fnames.length} Namen: ${esc(fnames.slice(0, 8).join(", "))}${fnames.length > 8 ? " …" : ""}` : "Noch keine Freunde in diesen Kategorien. Leg sie im Bereich „Freunde“ an."}</p>
+          <div class="field" style="margin-bottom:8px;font-weight:600;font-size:15px">Zusätzliche Antworten (optional)</div>` : ""}
         ${draft.options.map((o, i) => `<div class="opt">
-          <input value="${esc(o)}" data-opt="${i}" aria-label="Antwort ${i + 1}">
-          <button type="button" class="iconbtn" data-delopt="${i}" aria-label="Antwort entfernen" ${draft.options.length <= 2 ? "disabled" : ""}>✕</button>
+          <input value="${esc(o)}" data-opt="${i}" aria-label="Antwort ${i + 1}" ${draft.friends ? 'placeholder="z. B. Familie"' : ""}>
+          <button type="button" class="iconbtn" data-delopt="${i}" aria-label="Antwort entfernen" ${!draft.friends && draft.options.length <= 2 ? "disabled" : ""}>✕</button>
         </div>`).join("")}
         <button type="button" class="linkbtn" id="addopt">Antwort hinzufügen</button>
         <label class="check"><input type="checkbox" id="multi" ${draft.multi ? "checked" : ""} ${typeLocked ? "disabled" : ""}> Mehrere Antworten gleichzeitig erlauben</label>
@@ -1692,6 +1926,27 @@ function openEditor(id) {
     };
 
     dlg.querySelectorAll("[data-type]").forEach((b) => b.addEventListener("click", () => { sync(); draft.type = b.dataset.type; draw(); }));
+    $("#fsync", dlg)?.addEventListener("change", (e) => {
+      sync();
+      const all = F().list.map((x) => x.name);
+      if (e.target.checked) {
+        draft.friends = { cats: FCATS.map(([c]) => c) };
+        draft.options = draft.options.map((o) => o.trim()).filter((o) => o && !all.includes(o) && o !== "Ja" && o !== "Nein");
+        if (draft.multi === false && !used) draft.multi = true; // „Mit wem?“ meist mehrere
+      } else {
+        draft.options = Array.from(new Set([...friendsOrdered(draft.friends.cats).map((x) => x.name), ...draft.options.filter((o) => o.trim())]));
+        while (draft.options.length < 2) draft.options.push("");
+        draft.friends = null;
+      }
+      draw();
+    });
+    dlg.querySelectorAll("[data-fsc]").forEach((b) => b.addEventListener("click", () => {
+      sync();
+      const c = b.dataset.fsc, cats = draft.friends.cats, i = cats.indexOf(c);
+      if (i >= 0) { if (cats.length > 1) cats.splice(i, 1); } else cats.push(c);
+      draft.friends.cats = FCATS.map(([k]) => k).filter((k) => cats.includes(k));
+      draw();
+    }));
     $("#addopt", dlg)?.addEventListener("click", () => { sync(); draft.options.push(""); draw(); dlg.querySelector(`[data-opt="${draft.options.length - 1}"]`).focus(); });
     dlg.querySelectorAll("[data-delopt]").forEach((b) => b.addEventListener("click", () => { sync(); draft.options.splice(+b.dataset.delopt, 1); draw(); }));
     $("#cparent", dlg)?.addEventListener("change", (e) => {
@@ -1728,11 +1983,16 @@ function openEditor(id) {
       sync();
       draft.text = draft.text.trim();
       if (!draft.text) return toast("Bitte eine Frage eingeben");
-      if (draft.type === "choice") {
+      if (draft.type === "choice" && draft.friends) {
+        draft.extra = Array.from(new Set(draft.options.map((o) => o.trim()).filter(Boolean)));
+        draft.options = Array.from(new Set([...friendsOrdered(draft.friends.cats).map((x) => x.name), ...draft.extra]));
+        if (draft.options.length < 2) { draft.options = [...draft.extra]; return toast("Mindestens zwei Antworten nötig – leg zuerst Freunde an"); }
+      } else if (draft.type === "choice") {
+        draft.friends = null; delete draft.extra;
         draft.options = draft.options.map((o) => o.trim()).filter(Boolean);
         if (draft.options.length < 2) return toast("Mindestens zwei Antworten nötig");
         if (new Set(draft.options).size !== draft.options.length) return toast("Antworten müssen unterschiedlich sein");
-      } else draft.multi = false;
+      } else { draft.multi = false; draft.friends = null; }
       if (draft.type === "scale") {
         if (!Number.isInteger(draft.min) || !Number.isInteger(draft.max) || draft.max <= draft.min) return toast("Skala: „Bis“ muss größer als „Von“ sein");
         if (draft.max - draft.min > 10) return toast("Skala: höchstens 11 Stufen");
@@ -1937,15 +2197,15 @@ function renderData() {
     ${questionsPanel()}
 
     <section class="panel">
-      <h2>Erinnerung</h2>
-      ${pushBody}
-    </section>
-
-    <section class="panel">
       <h2>Wochenbericht</h2>
       <p class="muted small">Fasst deine Woche zusammen: erfasste Tage, Ziele, Trends und deine Fragen im Vergleich zu sonst.</p>
       <button class="btn block hold-btn" id="reportopen">Wochenbericht anzeigen</button>
       ${weeklyBody}
+    </section>
+
+    <section class="panel">
+      <h2>Erinnerung</h2>
+      ${pushBody}
     </section>
 
     <section class="panel">
@@ -2263,6 +2523,7 @@ document.addEventListener("visibilitychange", () => {
   if (t !== lastToday) { if (current === lastToday) current = t; lastToday = t; if (tab === "day") renderDay(); }
 });
 
+if (syncFriendQuestions()) save();
 render();
 checkHash();
 
