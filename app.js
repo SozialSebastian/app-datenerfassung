@@ -1265,25 +1265,27 @@ function renderData() {
       <label class="switch row"><input type="checkbox" id="scdone" ${settings.shortcutDone ? "checked" : ""}><span>Ich habe den Kurzbefehl angelegt</span></label>
       <details ${settings.shortcutDone ? "" : "open"}>
         <summary><strong>Anleitung: Kurzbefehl anlegen</strong></summary>
-        <p class="small" style="margin:8px 0 4px">Der Kurzbefehl läuft morgens und schickt die Schritte von <em>gestern</em> (ganzer Tag, 0–24 Uhr) und den Schlaf der <em>letzten Nacht</em> (zählt für heute).</p>
-        <p class="small" style="margin:10px 0 4px"><strong>Schritte von gestern</strong></p>
+        <p class="small" style="margin:8px 0 4px">Der Kurzbefehl schickt die letzten 7 Tage auf einmal. Mosaik ordnet jeden Wert seinem Tag zu: Schritte von 0–24 Uhr, Schlaf beim Tag des Aufwachens. Ältere Werte werden dabei aktualisiert.</p>
+        <p class="small" style="margin:10px 0 4px"><strong>1. Schritte</strong></p>
         <ol class="steps small">
-          <li><strong>Health-Messungen suchen</strong>: Typ <em>Schritte</em>, Startdatum <em>ist in den letzten 2 Tage</em>, Gruppieren nach <em>Tag</em>, Sortieren nach <em>Startdatum</em>, <em>Neuestes zuerst</em>.</li>
-          <li><strong>Objekt aus Liste abrufen</strong>: <em>Objekt am Index</em> <code>2</code> (Index 1 wäre heute).</li>
+          <li><strong>Health-Messungen suchen</strong>: Typ <em>Schritte</em>, Startdatum <em>in den letzten 7 Tagen</em>, Gruppieren nach <em>Tag</em>.</li>
         </ol>
-        <p class="small" style="margin:10px 0 4px"><strong>Schlaf der letzten Nacht</strong></p>
+        <p class="small" style="margin:10px 0 4px"><strong>2. Schlaf</strong></p>
         <ol class="steps small">
-          <li><strong>Health-Messungen suchen</strong>: Typ <em>Schlaf</em>, Startdatum <em>ist in den letzten 18 Stunden</em>, <em>Wert ist nicht Im Bett</em>, <em>Wert ist nicht Wach</em>.</li>
-          <li><strong>Details von Health-Messungen abrufen</strong>: <em>Dauer</em> → <strong>Statistik berechnen</strong>: <em>Summe</em>.</li>
-          <li>Falls Sekunden herauskommen: <strong>Berechnen</strong> <em>÷ 3600</em>. Dann <strong>Zahl runden</strong> auf 1 Nachkommastelle.</li>
+          <li><strong>Health-Messungen suchen</strong> (nicht „filtern“): Typ <em>Schlaf</em>, Startdatum <em>in den letzten 7 Tagen</em>, <em>Wert ist nicht Im Bett</em>, <em>Wert ist nicht Wach</em>.</li>
         </ol>
-        <p class="small" style="margin:10px 0 4px"><strong>Senden</strong></p>
+        <p class="small" style="margin:10px 0 4px"><strong>3. Senden</strong></p>
         <ol class="steps small">
-          <li><strong>Inhalte von URL abrufen</strong>: <code>${SERVER}/in</code>, Methode <em>POST</em>, Header <code>Authorization</code> = Wert aus „Header kopieren“.</li>
-          <li>Haupttext <em>JSON</em>, Felder vom Typ <em>Zahl</em>: <code>schritte_gestern</code> → Objekt aus Liste (dann antippen → <em>Wert</em>), <code>schlaf</code> → gerundete Zahl.</li>
-          <li>Kurzbefehle → <strong>Automation</strong> → <em>Tageszeit</em> (z. B. 10:00, täglich) oder <em>Wecker → wird gestoppt</em> → <em>Sofort ausführen</em> → diesen Kurzbefehl.</li>
+          <li><strong>Inhalte von URL abrufen</strong>: <code>${SERVER}/in</code>, Methode <em>POST</em>, Header <code>Authorization</code> = Wert aus „Header kopieren“, Haupttext <em>JSON</em>.</li>
+          <li>Felder vom Typ <strong>Array</strong> (jeweils Variable einsetzen, antippen und die Eigenschaft wählen):
+            <br><code>schritte</code> → Schritte-Messungen → <em>Wert</em>
+            <br><code>schritte_datum</code> → Schritte-Messungen → <em>Startdatum</em>
+            <br><code>schlaf_start</code> → Schlaf-Messungen → <em>Startdatum</em>
+            <br><code>schlaf_ende</code> → Schlaf-Messungen → <em>Enddatum</em></li>
+          <li>Bei den Datumsfeldern das Datumsformat auf <em>ISO 8601</em> stellen (Variable antippen → Datumsformat), dann ist die Zuordnung eindeutig.</li>
+          <li>Kurzbefehle → <strong>Automation</strong> → <em>Tageszeit</em> (z. B. 10:00, täglich) → <em>Sofort ausführen</em>. Morgens ist das iPhone meist entsperrt, dann darf der Kurzbefehl Health lesen.</li>
         </ol>
-        <p class="small muted">Weitere Werte gehen genauso, z. B. <code>ruhepuls</code> oder <code>kalorien_gestern</code>. Die Endung <code>_gestern</code> trägt den Wert beim Vortag ein. Werte liegen beim Dienst nur, bis Mosaik sie abholt.</p>
+        <p class="small muted">Einzelwerte gehen weiterhin, z. B. Zahl-Feld <code>ruhepuls</code> (heute) oder <code>kalorien_gestern</code> (Vortag). Werte liegen beim Dienst nur, bis Mosaik sie abholt.</p>
       </details>`
       : `<p class="muted small">Trag zuerst unten unter „Verbindung“ deinen Schlüssel ein.</p>`}
     </section>

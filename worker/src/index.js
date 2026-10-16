@@ -119,6 +119,7 @@ function reminder(sub, date) {
 async function readValues(request) {
   const url = new URL(request.url);
   const pairs = {};
+  const lists = {};
   url.searchParams.forEach((v, k) => (pairs[k.toLowerCase()] = v));
   if (request.method === "POST") {
     const type = request.headers.get("Content-Type") || "";
@@ -128,13 +129,73 @@ async function readValues(request) {
         const i = part.indexOf("=");
         if (i > 0) pairs[part.slice(0, i).trim().toLowerCase()] = part.slice(i + 1).trim();
       }
-    } else if (type.includes("json")) {
-      try { const j = JSON.parse(raw); for (const [k, v] of Object.entries(j)) pairs[k.toLowerCase()] = String(v); } catch (e) { /* kein JSON */ }
+    } else if (type.includes("json") || raw.startsWith("{")) {
+      try {
+        const j = JSON.parse(raw);
+        for (const [k, v] of Object.entries(j)) {
+          if (Array.isArray(v)) lists[k.toLowerCase()] = v; else pairs[k.toLowerCase()] = String(v);
+        }
+      } catch (e) { /* kein JSON */ }
     } else {
       new URLSearchParams(raw).forEach((v, k) => (pairs[k.toLowerCase()] = v));
     }
   }
-  return pairs;
+  return { pairs, lists };
+}
+
+/* ---------- Listen aus Kurzbefehlen (mehrere Tage auf einmal) ---------- */
+const num = (v) => {
+  if (typeof v === "number") return v;
+  const m = String(v).replace(/\s|\u00a0/g, "").replace(/\.(?=\d{3}(\D|$))/g, "").match(/-?\d+(?:[.,]\d+)?/);
+  return m ? Number(m[0].replace(",", ".")) : NaN;
+};
+const berlinDate = (ms) => new Intl.DateTimeFormat("en-CA", { timeZone: TZ_DEFAULT, year: "numeric", month: "2-digit", day: "2-digit" }).format(new Date(ms));
+// Datum aus Kurzbefehlen lesen: ISO 8601 (empfohlen) oder deutsch „16.10.2026, 07:12“
+function parseWhen(v) {
+  const s = String(v).trim();
+  let m = s.match(/^(\d{1,2})\.\s?(\d{1,2})\.\s?(\d{2,4})(?:,?\s*(?:um\s*)?(\d{1,2}):(\d{2}))?/);
+  if (m) {
+    const y = m[3].length === 2 ? 2000 + Number(m[3]) : Number(m[3]);
+    const local = `${y}-${m[2].padStart(2, "0")}-${m[1].padStart(2, "0")}`;
+    return { ms: Date.UTC(y, Number(m[2]) - 1, Number(m[1]), Number(m[4] || 12), Number(m[5] || 0)), local };
+  }
+  const ms = Date.parse(s);
+  if (!Number.isNaN(ms)) return { ms, local: /^\d{4}-\d{2}-\d{2}$/.test(s) ? s : berlinDate(ms) };
+  return null;
+}
+const minusDays = (d, n) => { const t = new Date(d + "T12:00:00Z"); t.setUTCDate(t.getUTCDate() - n); return t.toISOString().slice(0, 10); };
+
+// Wandelt Listen in Tageswerte um:
+//  schlaf_start + schlaf_ende  → Summe der Stunden je Nacht (Tag des Aufwachens)
+//  schritte + schritte_datum   → Wert je Datum
+//  schritte allein             → neuester zuerst: heute, gestern, vorgestern …
+function listEntries(lists, today) {
+  const out = [];
+  const done = new Set();
+  for (const key of Object.keys(lists)) {
+    const base = key.replace(/_(start|ende|datum)$/, "");
+    if (done.has(base)) continue;
+    const start = lists[base + "_start"], end = lists[base + "_ende"], dates = lists[base + "_datum"], vals = lists[base];
+    if (Array.isArray(start) && Array.isArray(end)) {
+      done.add(base);
+      const perDay = {};
+      for (let i = 0; i < Math.min(start.length, end.length, 500); i++) {
+        const a = parseWhen(start[i]), b = parseWhen(end[i]);
+        if (!a || !b || b.ms <= a.ms) continue;
+        perDay[b.local] = (perDay[b.local] || 0) + (b.ms - a.ms) / 3600000;
+      }
+      for (const [d, h] of Object.entries(perDay)) out.push([base, String(Math.round(h * 10) / 10), d]);
+    } else if (Array.isArray(vals)) {
+      done.add(base);
+      vals.slice(0, 62).forEach((v, i) => {
+        const n = num(v);
+        if (Number.isNaN(n)) return;
+        const w = Array.isArray(dates) && dates[i] !== undefined ? parseWhen(dates[i]) : null;
+        out.push([base, String(Math.round(n * 10) / 10), w ? w.local : minusDays(today, i)]);
+      });
+    }
+  }
+  return out;
 }
 
 /* ---------- Anfragen ---------- */
@@ -191,7 +252,7 @@ async function handle(request, env) {
   }
 
   if (path === "/in") {
-    const pairs = await readValues(request);
+    const { pairs, lists } = await readValues(request);
     let date = pairs.datum || pairs.date || localNow(TZ_DEFAULT).date;
     if (/^\d{1,2}\.\d{1,2}\.\d{4}$/.test(date)) { const [d, m, y] = date.split("."); date = `${y}-${m.padStart(2, "0")}-${d.padStart(2, "0")}`; }
     if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) return text("Datum nicht erkannt. Bitte JJJJ-MM-TT oder TT.MM.JJJJ.", 400);
@@ -201,10 +262,14 @@ async function handle(request, env) {
     const entries = Object.entries(pairs)
       .filter(([k, v]) => /^[a-z0-9_äöüß-]{1,48}$/.test(k) && v !== "" && v.length <= 200)
       .map(([k, v]) => (k.endsWith("_gestern") ? [k.slice(0, -8), v, prevDay(date)] : [k, v, date]))
-      .filter(([k]) => k.length > 0);
+      .filter(([k]) => k.length > 0)
+      .concat(listEntries(lists, localNow(TZ_DEFAULT).date))
+      .filter(([k]) => /^[a-z0-9_äöüß-]{1,48}$/.test(k));
     if (!entries.length) return text("Keine Werte erkannt. Beispiel: mosaik;schlaf=7,4", 400);
     await env.DB.batch(entries.map(([k, v, d]) => env.DB.prepare("INSERT INTO inbox (created, date, key, value) VALUES (datetime('now'), ?, ?, ?)").bind(d, k, v)));
-    return text(`Gespeichert: ${entries.map(([k, v, d]) => `${k}=${v} (${d})`).join(", ")}. Wird beim nächsten Öffnen von Mosaik übernommen.`);
+    const byKey = {};
+    for (const [k, v, d] of entries) (byKey[k] = byKey[k] || []).push(`${d.slice(8, 10)}.${d.slice(5, 7)}.: ${v}`);
+    return text(`Gespeichert – ${Object.entries(byKey).map(([k, xs]) => `${k}: ${xs.join(", ")}`).join(" | ")}. Mosaik übernimmt das beim nächsten Öffnen.`);
   }
 
   if (path === "/inbox" && request.method === "GET") {
