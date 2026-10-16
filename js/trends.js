@@ -7,7 +7,7 @@ const MIN_D = 0.5;     // ab mittlerem Effekt (Cohen's d) gilt ein Unterschied a
 const MIN_R = 0.4;     // ab dieser Korrelation gilt ein Zusammenhang als auffällig
 const MIN_PAIRS = 8;
 
-const ansOn = (d, q) => (q.weather ? weatherAns(d, q) : q.id === "__place" ? (placeCities(d).length ? placeCities(d) : undefined) : (state.answers[d] || {})[q.id]);
+const ansOn = (d, q) => (q.themeQs ? (() => { const h = themeHits(q.themeQs, d); return h === null ? undefined : h > 0 ? "Ja" : "Nein"; })() : q.weather ? weatherAns(d, q) : q.id === "__place" ? (placeCities(d).length ? placeCities(d) : undefined) : (state.answers[d] || {})[q.id]);
 const has = (v, opt) => (Array.isArray(v) ? v.includes(opt) : v === opt);
 const mean = (a) => a.reduce((s, x) => s + x, 0) / a.length;
 const sd = (a) => { const m = mean(a); return Math.sqrt(a.reduce((s, x) => s + (x - m) ** 2, 0) / Math.max(a.length - 1, 1)); };
@@ -48,6 +48,63 @@ function streakInsights() {
   return out.sort((a, b) => b.score - a.score);
 }
 
+/* ---------- Themen zusammengefasst (z. B. Sport = Bouldern + Paddeln + Volleyball) ---------- */
+// Ja/Nein-Fragen eines Themas (ohne Health-Felder); Themen-Trends erst ab 2 solchen Fragen
+const themeYesQs = (k) => state.questions.filter((q) => !q.archived && q.type === "choice" && !q.multi && q.options.includes("Ja") && !isHealthQ(q) && themeOf(q) === k);
+const themesWithYes = () => THEMES.filter((t) => themeYesQs(t.k).length >= 2);
+const shortQ = (q) => q.text.replace(/\?$/, "").replace(/^(heute|warst du heute|hast du heute|bist du heute|war ich heute)\s+/i, "");
+// Anzahl „Ja“ an einem Tag; null, wenn keine der Fragen beantwortet ist
+function themeHits(qs, d) {
+  const a = state.answers[d] || {};
+  let any = false, n = 0;
+  for (const q of qs) { if (isAnswered(a[q.id])) any = true; if (a[q.id] === "Ja") n++; }
+  return any ? n : null;
+}
+const THEME_WORDS = { sport: { run: "Tage in Folge Sport gemacht", none: "kein Sport" } };
+
+function themeInsights() {
+  const out = [];
+  const t = todayIso();
+  const first = Object.keys(state.answers).sort()[0];
+  if (!first) return out;
+  for (const th of themesWithYes()) {
+    const qs = themeYesQs(th.k);
+    const w = THEME_WORDS[th.k] || { run: `Tage in Folge etwas bei ${th.l}`, none: `nichts bei ${th.l}` };
+    const lead = `${th.i} ${esc(th.l)}`;
+    // 1. letzte 7 Tage gegenüber den 8 Wochen davor (heute zählt erst, wenn schon etwas beantwortet ist)
+    const end = themeHits(qs, t) === null ? addDays(t, -1) : t;
+    const block = (e) => { let n = 0, ans = 0; const per = {}; for (let i = 0; i < 7; i++) { const d = addDays(e, -i); const h = themeHits(qs, d); if (h === null) continue; ans++; n += h; qs.forEach((q) => { if ((state.answers[d] || {})[q.id] === "Ja") per[q.id] = (per[q.id] || 0) + 1; }); } return { n, ans, per }; };
+    const cur = block(end);
+    const prev = Array.from({ length: 8 }, (_, i) => block(addDays(end, -7 * (i + 1)))).filter((b) => b.ans >= 3);
+    if (cur.ans >= 4 && prev.length >= 3) {
+      const m = mean(prev.map((b) => b.n)), diff = cur.n - m;
+      if (Math.abs(diff) >= Math.max(2, 0.35 * m)) {
+        const parts = qs.filter((q) => cur.per[q.id]).map((q) => `${esc(shortQ(q))} ${cur.per[q.id]}×`).join(", ");
+        out.push({ score: 1.5 + Math.abs(diff) / Math.max(m, 1), html: `${lead}: <strong>letzte 7 Tage ${cur.n}×</strong>${parts ? ` (${parts})` : ""}, sonst Ø ${fmt1(m)}× pro Woche` });
+      }
+    }
+    // 2. Serie: Tage in Folge mit mindestens einem „Ja“ im Thema
+    let d = themeHits(qs, t) ? t : addDays(t, -1), run = 0;
+    while (d >= first && themeHits(qs, d) > 0) { run++; d = addDays(d, -1); }
+    if (run >= 3) out.push({ score: 10 + run, html: `${lead}: <strong>${run} ${w.run}</strong>` });
+    // 3. Pause: ungewöhnlich lange nichts im Thema
+    let last = null, yes = 0, ans = 0;
+    for (let x = first; x <= t; x = addDays(x, 1)) { const h = themeHits(qs, x); if (h === null) continue; ans++; if (h > 0) { yes++; last = x; } }
+    if (last && ans >= 14 && yes / ans >= 1 / 7 && run < 3) {
+      const gap = dayCount(last, t) - 1, usual = ans / yes;
+      if (gap >= 5 && gap >= 2 * usual) out.push({ score: 5 + gap / 7, html: `${lead}: <strong>seit ${gap} Tagen ${w.none}</strong> · sonst etwa alle ${Math.round(usual)} Tage` });
+    }
+  }
+  return out.sort((a, b) => b.score - a.score);
+}
+// Für Zusammenhänge: „Tag mit Sport (egal welcher)“ als eigene Gruppe
+function themeGroupings() {
+  return themesWithYes().map((th) => {
+    const qs = themeYesQs(th.k);
+    return { q: { id: "__theme_" + th.k, text: th.l, type: "choice", options: ["Ja", "Nein"], themeQs: qs }, opt: "Ja", label: `${th.i} ${esc(th.l)} (egal welche Frage)` };
+  });
+}
+
 // Gruppen für Vergleiche: Ja/Nein-Fragen → Ja; sonst je Antwortmöglichkeit
 function groupings(qs) {
   const g = [];
@@ -66,7 +123,7 @@ function relationInsights(days) {
   const found = [];
 
   // Mittelwertvergleich: Zahl/Skala an Tagen mit vs. ohne eine bestimmte Antwort (gleicher Tag und Tag danach)
-  for (const g of [...groupings(qs), ...placeGroupings(days), ...(wx.length ? [{ q: RAIN_Q, opt: "Ja", label: "Regen (ab 1 mm)" }] : [])]) {
+  for (const g of [...groupings(qs), ...themeGroupings(), ...placeGroupings(days), ...(wx.length ? [{ q: RAIN_Q, opt: "Ja", label: "Regen (ab 1 mm)" }] : [])]) {
     for (const b of nums) {
       if (b.cond && b.cond.qid === g.q.id) continue; // Folgefrage der Gruppe → trivial
       let bestCase = null;
@@ -279,17 +336,18 @@ function numberInsights() {
 }
 
 // Zuerst die auffälligsten je Art, der Rest aufklappbar
-const T_PREVIEW = { streak: 2, num: 3, season: 2, rel: 2 };
+const T_PREVIEW = { theme: 2, streak: 2, num: 3, season: 2, rel: 2 };
 let showAllTrends = false;
 function trendsPanel(days) {
-  const all = { streak: streakInsights(), num: numberInsights(), season: seasonInsights(), rel: relationInsights(days) };
+  const all = { theme: themeInsights(), streak: streakInsights(), num: numberInsights(), season: seasonInsights(), rel: relationInsights(days) };
   const lim = (k) => (showAllTrends ? all[k] : all[k].slice(0, T_PREVIEW[k]));
-  const streaks = lim("streak"), nums = lim("num"), seasons = lim("season"), rel = lim("rel");
+  const themes = lim("theme"), streaks = lim("streak"), nums = lim("num"), seasons = lim("season"), rel = lim("rel");
   const hidden = Object.keys(all).reduce((n, k) => n + Math.max(all[k].length - T_PREVIEW[k], 0), 0);
   const row = (x, kind) => `<li class="trow ${kind}${x.tone || ""}"><span class="tmark" aria-hidden="true"></span><span>${x.html}${x.note ? ` <span class="muted small">· ${x.note}</span>` : ""}</span></li>`;
   return `<section class="panel trends">
     <h2 class="atitle">Trends</h2>
-    ${streaks.length || rel.length || nums.length || seasons.length ? `
+    ${themes.length || streaks.length || rel.length || nums.length || seasons.length ? `
+      ${themes.length ? `<ul class="tlist" style="margin-bottom:10px">${themes.map((x) => row(x, "theme")).join("")}</ul>` : ""}
       ${streaks.length ? `<ul class="tlist">${streaks.map((x) => row(x, "streak")).join("")}</ul>` : ""}
       ${nums.length ? `<ul class="tlist" ${streaks.length ? 'style="margin-top:10px"' : ""}>${nums.map((x) => row(x, "num")).join("")}</ul>` : ""}
       ${seasons.length ? `<p class="tsub small muted">Jahreszeiten (alle bisherigen Daten)</p><ul class="tlist">${seasons.map((x) => row(x, "season")).join("")}</ul>` : ""}

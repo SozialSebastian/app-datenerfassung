@@ -158,7 +158,8 @@ test("Excel enthält alle Fragen, Datumsformat, Dauer und Orte", async () => {
     const header = []; for (let c = 0; c <= range.e.c; c++) header.push(ws[XLSX.utils.encode_cell({ r: 0, c })].v);
     return { header, rows: range.e.r, a2: ws.A2.z, dur: ws[XLSX.utils.encode_cell({ r: 1, c: header.indexOf("Schlafdauer") })].z, last: ws[XLSX.utils.encode_cell({ r: range.e.r, c: header.indexOf("Orte") })]?.v };
   });
-  assert.deepEqual(r.header, ["Datum", "Wochentag", "Heute bouldern?", "Laune", "Schlafdauer", "Schlafenszeit", "Schritte", "Orte"]);
+  // Spalten nach Thema sortiert: Sport, Gesundheit, Wohlbefinden
+  assert.deepEqual(r.header, ["Datum", "Wochentag", "Heute bouldern?", "Schritte", "Schlafdauer", "Schlafenszeit", "Laune", "Orte"]);
   assert.equal(r.rows, 400);
   assert.equal(r.a2, "dd.mm.yyyy");
   assert.equal(r.dur, "[h]:mm");
@@ -318,6 +319,36 @@ test("Ziel „nie“: eigene Darstellung, keine Warnung, kein Überlaufen", asyn
   const over = await page.evaluate(() => { const p = document.querySelector(".goals").getBoundingClientRect(); return [...document.querySelectorAll(".goals .gst, .goals .gbar")].some((el) => el.getBoundingClientRect().right > p.right - 8); });
   assert.equal(over, false);
   await page.locator(".goals").screenshot({ path: path.join(shots, "ziele-nie.png") });
+  assert.deepEqual(errors, []);
+  await ctx.close();
+});
+
+test("Themen: Zuordnung, Überschriften, Filter und Themen-Trends", async () => {
+  const answers = {};
+  let r = 3; const rnd = () => { r = (r * 9301 + 49297) % 233280; return r / 233280; };
+  for (let i = 90; i >= 0; i--) {
+    const recent = i <= 6;
+    // früher ca. 2× Sport pro Woche, in den letzten 7 Tagen fast täglich
+    answers[daysAgo(i)] = { b: rnd() < (recent ? 0.6 : 0.15) ? "Ja" : "Nein", p: rnd() < (recent ? 0.5 : 0.1) ? "Ja" : "Nein", v: rnd() < 0.05 ? "Ja" : "Nein", al: "Nein", s: 7 + rnd() };
+  }
+  const data = { version: 1, lastBackup: null, answers, questions: [
+    yesNo("al", "Alkohol getrunken?"), yesNo("b", "Heute bouldern?"), yesNo("p", "Heute paddeln?"), yesNo("v", "Volleyball gespielt?"),
+    health("s", "Schlafdauer", "schlaf", "duration")] };
+  const { page, ctx, errors } = await open({ data });
+  // Vorschläge: Sport-Fragen in Sport, Alkohol in Ernährung, Schlaf in Gesundheit; Sortierung nach Thema
+  assert.deepEqual(await page.evaluate(() => ordered().map((o) => `${o.q.id}:${themeOf(o.q)}`)), ["b:sport", "p:sport", "v:sport", "s:health", "al:food"]);
+  assert.match(await page.locator("#view").innerText(), /🏃 Sport[\s\S]*Heute bouldern\?[\s\S]*🍽️ Ernährung[\s\S]*Alkohol/);
+  await page.click('[data-tab="analysis"]');
+  await page.click('[data-range="365"]');
+  if (await page.locator("#tmore").count()) await page.click("#tmore");
+  const tr = await page.locator(".trends").innerText();
+  assert.match(tr, /🏃 Sport: letzte 7 Tage \d+× \(.*bouldern.*\), sonst Ø/);
+  await page.click('[data-th="sport"]');
+  assert.equal(await page.locator(".acard").count(), 3);
+  // Thema im Editor ändern
+  await page.click('[data-tab="data"]'); await page.click("#qmore"); await page.click('[data-edit="al"]');
+  await page.click('[data-theme="mood"]'); await page.click("#savebtn");
+  assert.equal(await page.evaluate(() => qById("al").theme), "mood");
   assert.deepEqual(errors, []);
   await ctx.close();
 });

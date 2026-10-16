@@ -41,7 +41,10 @@ function renderAnalysis() {
   const view = $("#view");
   const days = rangeDays();
   const all = analysisQuestions(days);
-  const qs = all.filter((q) => !qset(q).hidden);
+  // Filter nach Thema (nur wenn es mehrere Themen gibt)
+  const usedThemes = THEMES.filter((t) => all.some((q) => themeOf(q) === t.k));
+  if (prefs.theme && !usedThemes.some((t) => t.k === prefs.theme)) prefs.theme = "";
+  const qs = all.filter((q) => !qset(q).hidden && (!prefs.theme || themeOf(q) === prefs.theme));
   const tracked = days.filter((d) => state.answers[d]).length;
   const hiddenN = all.length - qs.length;
 
@@ -57,9 +60,14 @@ function renderAnalysis() {
     ${all.length && prefs.trends !== false ? trendsPanel(days) : ""}
     ${all.length && prefs.goals !== false ? goalsPanel() : ""}
     ${prefs.places !== false && (Object.keys(state.places || {}).length || (settings.places && settings.places.on)) ? placesPanel(days) : ""}
-    ${qs.length ? qs.map((q) => analysisCard(q, days)).join("") : `<p class="muted">${all.length ? "Alle Fragen sind über das Zahnrad ausgeblendet." : "Noch keine Fragen angelegt."}</p>`}`;
+    ${usedThemes.length > 1 ? `<div class="tfilter" role="group" aria-label="Thema">
+      <button data-th="" aria-pressed="${!prefs.theme}">Alle</button>
+      ${usedThemes.map((t) => `<button data-th="${t.k}" aria-pressed="${prefs.theme === t.k}">${t.i} ${esc(t.l)}</button>`).join("")}
+    </div>` : ""}
+    ${qs.length ? qs.map((q) => analysisCard(q, days)).join("") : prefs.theme ? `<p class="muted">Keine Fragen in diesem Thema.</p>` : `<p class="muted">${all.length ? "Alle Fragen sind über das Zahnrad ausgeblendet." : "Noch keine Fragen angelegt."}</p>`}`;
 
   $("#asettings")?.addEventListener("click", openAnalysisSettings);
+  view.querySelectorAll("[data-th]").forEach((b) => b.addEventListener("click", () => { prefs.theme = b.dataset.th; savePrefs(); renderAnalysis(); }));
   $("#gmore")?.addEventListener("click", () => { showAllGoals = !showAllGoals; renderAnalysis(); });
   $("#tmore")?.addEventListener("click", () => { showAllTrends = !showAllTrends; renderAnalysis(); });
   $("#pmore")?.addEventListener("click", () => { showAllPlaces = !showAllPlaces; renderAnalysis(); });

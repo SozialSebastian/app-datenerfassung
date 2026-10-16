@@ -67,9 +67,24 @@ function reportHtml(mon) {
   // Fragen der Woche
   const qs = ordered().map((o) => o.q).filter((q) => !q.archived);
   const rows = qs.map((q) => ({ q, s: weekStat(q, mon) })).filter((x) => x.s);
-  const qHtml = rows.length ? `<section class="sq">
+  // Themen gesamt (z. B. Sport = alle Sport-Fragen zusammen)
+  const lastOk = todayIso();
+  const thRows = themesWithYes().map((th) => {
+    const tq = themeYesQs(th.k);
+    const sum = (m) => { let n = 0, a = 0; for (let i = 0; i < 7; i++) { const d = addDays(m, i); if (d > lastOk) break; const h = themeHits(tq, d); if (h !== null) { a++; n += h; } } return a ? n : null; };
+    const c = sum(mon);
+    if (c === null) return null;
+    const prev = Array.from({ length: 8 }, (_, i) => sum(addDays(mon, -7 * (i + 1)))).filter((x) => x !== null);
+    const pm = prev.length ? mean(prev) : null;
+    return { th, c, pm };
+  }).filter(Boolean);
+  const qHtml = rows.length || thRows.length ? `<section class="sq">
       <h3 class="rh">Deine Woche</h3>
-      <ul class="wlist">${rows.map(({ q, s }) => `<li>
+      <ul class="wlist">${thRows.map(({ th, c, pm }) => `<li class="wtheme">
+        <span class="wq">${th.i} <strong>${esc(th.l)} gesamt</strong></span>
+        <span class="wv">${c}×</span>
+        ${pm !== null ? `<span class="wc small muted">sonst Ø ${fmt1(pm)}×</span>` : ""}
+      </li>`).join("")}${rows.map(({ q, s }) => `<li>
         <span class="wq">${esc(q.text)}</span>
         <span class="wv">${s.val}${s.dir ? `<span class="wdir ${s.dir > 0 ? "up" : "down"} ${s.good === true ? "good" : s.good === false ? "bad" : ""}" aria-label="${s.dir > 0 ? "mehr" : "weniger"} als sonst">${s.dir > 0 ? "▲" : "▼"}</span>` : ""}</span>
         ${s.cmp ? `<span class="wc small muted">${s.cmp}</span>` : ""}
@@ -79,7 +94,7 @@ function reportHtml(mon) {
 
   // Trends (immer der aktuelle Stand)
   const last30 = Array.from({ length: 30 }, (_, i) => addDays(t, i - 29));
-  const tr = [...streakInsights().slice(0, 3).map((x) => ({ ...x, k: "streak" })), ...numberInsights().slice(0, 3).map((x) => ({ ...x, k: "num" })), ...seasonInsights().slice(0, 1).map((x) => ({ ...x, k: "season" })), ...relationInsights(last30).slice(0, 2).map((x) => ({ ...x, k: "rel" }))];
+  const tr = [...themeInsights().slice(0, 2).map((x) => ({ ...x, k: "theme" })), ...streakInsights().slice(0, 3).map((x) => ({ ...x, k: "streak" })), ...numberInsights().slice(0, 3).map((x) => ({ ...x, k: "num" })), ...seasonInsights().slice(0, 1).map((x) => ({ ...x, k: "season" })), ...relationInsights(last30).slice(0, 2).map((x) => ({ ...x, k: "rel" }))];
   const trHtml = tr.length ? `<section class="sq">
       <div class="ghead"><h3 class="rh">Trends</h3><span class="small muted">aktueller Stand</span></div>
       <ul class="tlist">${tr.slice(0, 8).map((x) => `<li class="trow ${x.k}"><span class="tmark" aria-hidden="true"></span><span>${x.html}</span></li>`).join("")}</ul>

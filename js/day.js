@@ -48,9 +48,13 @@ function renderDay() {
     body = `<button class="btn block ${done < qs.length ? "hold-btn" : "ghost"}" id="startquiz">${startLabel}</button>
       <p class="progress">${done} von ${qs.length} beantwortet</p>`;
     body += healthHtml;
+    let lastTheme = null;
     body += qs.map((q) => {
       const val = a[q.id];
-      return `<section class="q ${isAnswered(val) ? "done" : ""} ${q.cond ? "child" : ""}" data-qid="${q.id}">
+      const th = q.cond ? null : themeOf(q);
+      const head = th && th !== lastTheme ? `<h3 class="themehead">${themeById(th).i} ${esc(themeById(th).l)}</h3>` : "";
+      if (th) lastTheme = th;
+      return `${head}<section class="q ${isAnswered(val) ? "done" : ""} ${q.cond ? "child" : ""}" data-qid="${q.id}">
         <p class="q-title">${esc(q.text)}</p>
         ${answerInput(q, val)}
       </section>`;

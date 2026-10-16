@@ -561,3 +561,17 @@ body.no-scroll { overflow: hidden; touch-action: none; }
 .gq { white-space: normal; overflow: visible; }
 .gtop { align-items: flex-start; }
 .gst { padding-top: 2px; }
+
+/* ---------- Themen ---------- */
+.themehead { margin: 20px 0 8px; font-size: 15px; font-weight: 700; color: var(--ink-2); letter-spacing: .01em; }
+.qtheme { list-style: none; margin: 12px 0 6px; font-size: 14px; font-weight: 700; color: var(--ink-2); }
+.qtheme:first-child { margin-top: 0; }
+.themechips { margin-bottom: 16px; }
+.themechips .chip { padding: 8px 12px; font-size: 15px; }
+.tfilter { display: flex; gap: 6px; overflow-x: auto; margin: 4px -16px 14px; padding: 0 16px 2px; scrollbar-width: none; }
+.tfilter::-webkit-scrollbar { display: none; }
+.tfilter button { flex: none; border: 1.5px solid var(--line); background: var(--surface); color: var(--ink); border-radius: 999px; padding: 7px 12px; font-size: 14px; font-weight: 600; }
+.tfilter button[aria-pressed="true"] { background: var(--act); color: var(--act-ink); border-color: var(--act); }
+.trow.theme .tmark { background: var(--s6); }
+.wlist li.wtheme { background: var(--bg); border-radius: 10px; padding: 9px 10px; margin-bottom: 4px; border-top: 0; }
+.wlist li.wtheme + li { border-top: 0; }

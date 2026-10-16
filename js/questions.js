@@ -5,11 +5,22 @@
 // Fragen verwalten – als Feld in den Einstellungen; zeigt erst einige, aufklappbar
 const Q_PREVIEW = 3;
 let showAllQuestions = false;
+// Liste mit Überschrift, sobald das Thema wechselt
+function withThemeHeads(list, keyOf, render, head) {
+  let last = null;
+  return list.map((x) => {
+    const k = keyOf(x);
+    const h = k && k !== last ? head(themeById(k)) : "";
+    if (k) last = k;
+    return h + render(x);
+  }).join("");
+}
+
 function questionsPanel() {
   const all = ordered();
   const act = all.filter((o) => !o.q.archived);
   const arch = all.filter((o) => o.q.archived);
-  const siblings = (q) => state.questions.filter((x) => !x.archived && (x.cond?.qid || null) === (q.cond?.qid || null));
+  const siblings = (q) => state.questions.filter((x) => !x.archived && (x.cond?.qid || null) === (q.cond?.qid || null) && (q.cond || themeOf(x) === themeOf(q)));
   const row = ({ q, depth }) => {
     const sib = siblings(q);
     const pos = sib.indexOf(q);
@@ -31,7 +42,7 @@ function questionsPanel() {
         <h2>Fragen</h2>
         <button class="addbtn" id="newq" aria-label="Neue Frage anlegen">+</button>
       </div>
-      ${act.length ? `<ul class="qlist">${shown.map(row).join("")}</ul>` : `<p class="muted small" style="margin:0">Noch keine Fragen. Tippe auf +, um die erste anzulegen.</p>`}
+      ${act.length ? `<ul class="qlist">${withThemeHeads(shown, (o) => o.depth === 0 && themeOf(o.q), row, (t) => `<li class="qtheme">${t.i} ${esc(t.l)}</li>`)}</ul>` : `<p class="muted small" style="margin:0">Noch keine Fragen. Tippe auf +, um die erste anzulegen.</p>`}
       ${showAllQuestions ? `
         ${act.length ? `<p class="muted small" style="margin-top:10px">Folgefragen (↳) erscheinen nur nach einer bestimmten Antwort. Anlegen über + → „Nur fragen, wenn …“. Reihenfolge ändern: Frage lange drücken und ziehen oder die Pfeile nutzen.</p>` : ""}
         ${arch.length ? `<h3 class="subhead">Ausgeblendet</h3>
@@ -47,7 +58,7 @@ function wireDrag(root) {
   const list = root.querySelector(".qlist");
   if (!list) return;
   let drag = null, timer = null, suppressClick = false;
-  const sibs = (q) => state.questions.filter((x) => !x.archived && (x.cond?.qid || null) === (q.cond?.qid || null));
+  const sibs = (q) => state.questions.filter((x) => !x.archived && (x.cond?.qid || null) === (q.cond?.qid || null) && (q.cond || themeOf(x) === themeOf(q)));
   const cancel = () => { clearTimeout(timer); timer = null; };
   const finish = (commit) => {
     if (!drag) return;
@@ -115,7 +126,7 @@ function wireQuestions(root) {
   root.querySelectorAll("[data-edit]").forEach((b) => b.addEventListener("click", () => openEditor(b.dataset.edit)));
   root.querySelectorAll("[data-move]").forEach((b) => b.addEventListener("click", () => {
     const q = qById(b.dataset.move);
-    const sib = state.questions.filter((x) => !x.archived && (x.cond?.qid || null) === (q.cond?.qid || null));
+    const sib = state.questions.filter((x) => !x.archived && (x.cond?.qid || null) === (q.cond?.qid || null) && (q.cond || themeOf(x) === themeOf(q)));
     const other = sib[sib.indexOf(q) + Number(b.dataset.dir)];
     if (!other) return;
     const list = state.questions;
@@ -232,6 +243,8 @@ function openEditor(id) {
         <button type="submit" class="linkbtn" id="savebtn">Sichern</button>
       </div>
       <label class="field">Frage<input id="qtext" value="${esc(draft.text)}" placeholder="z. B. Heute bouldern?" autocomplete="off"></label>
+      ${draft.cond ? "" : `<div class="field" style="margin-bottom:8px;font-weight:600;font-size:15px">Thema</div>
+      <div class="chips themechips">${THEMES.map((t) => `<button type="button" class="chip" data-theme="${t.k}" aria-pressed="${(draft.theme || guessTheme(draft)) === t.k}">${t.i} ${esc(t.l)}</button>`).join("")}</div>`}
       <div class="seg" role="group" aria-label="Antworttyp">
         ${["choice", "scale", "number"].map((t) => `<button type="button" data-type="${t}" aria-pressed="${draft.type === t}" ${(typeLocked && draft.type !== t) || (hasChildren && t === "number") ? "disabled" : ""}>${typeLabel[t]}</button>`).join("")}
       </div>
@@ -268,6 +281,7 @@ function openEditor(id) {
     };
 
     dlg.querySelectorAll("[data-type]").forEach((b) => b.addEventListener("click", () => { sync(); draft.type = b.dataset.type; draw(); }));
+    dlg.querySelectorAll("[data-theme]").forEach((b) => b.addEventListener("click", () => { sync(); draft.theme = b.dataset.theme; draw(); }));
     dlg.querySelectorAll("[data-fmt]").forEach((b) => b.addEventListener("click", () => { sync(); draft.format = draft.format === b.dataset.fmt ? null : b.dataset.fmt; draft.unit = ""; if (!draft.better || draft.better === "none") draft.better = draft.format === "clock" ? "none" : draft.better; draw(); }));
     dlg.querySelectorAll("[data-unit]").forEach((b) => b.addEventListener("click", () => { sync(); const u = b.dataset.unit; draft.unit = draft.unit === u && !draft.format ? "" : u; draft.format = null; draw(); }));
     dlg.querySelectorAll("[data-better]").forEach((b) => b.addEventListener("click", () => { sync(); draft.better = b.dataset.better; draw(); }));
@@ -346,6 +360,7 @@ function openEditor(id) {
       }
       if (draft.cond && !draft.cond.values.length) return toast("Wähle mindestens eine Antwort, bei der die Folgefrage kommt");
       if (draft.healthKey && state.questions.some((q) => q.id !== draft.id && q.healthKey === draft.healthKey)) return toast("Dieses Health-Kürzel ist schon vergeben");
+      if (!draft.cond && !draft.theme) draft.theme = guessTheme(draft);
       if (existing) Object.assign(existing, draft);
       else state.questions.push(draft);
       save(); dlg.close(); render();

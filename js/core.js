@@ -18,6 +18,8 @@ function load() {
 }
 let state = load();
 // Health-Zeitfelder richtig formatieren (auch bei schon vorhandenen Fragen)
+// Themen für bestehende Fragen einmalig vorschlagen (änderbar im Fragen-Editor)
+for (const q of state.questions) if (!q.theme && !q.cond) q.theme = guessTheme(q);
 for (const q of state.questions) {
   if (!q.format && q.healthKey === "schlaf") { q.format = "duration"; if (q.unit === "Stunden") q.unit = ""; }
   if (!q.format && q.healthKey === "schlafenszeit") q.format = "clock";
@@ -57,7 +59,42 @@ const isAnswered = (v) => v !== undefined && v !== null && v !== "" && !(Array.i
 const qById = (id) => state.questions.find((q) => q.id === id);
 const childrenOf = (id) => state.questions.filter((q) => q.cond && q.cond.qid === id);
 
-// Alle Fragen in Anzeigereihenfolge: Folgefragen stehen direkt hinter ihrer Ausgangsfrage
+/* ---------- Themen ---------- */
+const THEMES = [
+  { k: "sport", l: "Sport", i: "🏃" },
+  { k: "health", l: "Gesundheit", i: "❤️" },
+  { k: "food", l: "Ernährung", i: "🍽️" },
+  { k: "mood", l: "Wohlbefinden", i: "🙂" },
+  { k: "work", l: "Arbeit & Uni", i: "💼" },
+  { k: "social", l: "Soziales", i: "👥" },
+  { k: "other", l: "Sonstiges", i: "📦" }
+];
+const THEME_IDX = Object.fromEntries(THEMES.map((t, i) => [t.k, i]));
+const themeById = (k) => THEMES[THEME_IDX[k] ?? THEME_IDX.other];
+// Vorschlag anhand von Health-Kürzel und Fragetext
+function guessTheme(q) {
+  const hk = q.healthKey || "";
+  if (/^(schritte|distanz|training|kalorien|aktivkalorien|stockwerke|stehen)$/.test(hk)) return "sport";
+  if (hk) return /achtsamkeit/.test(hk) ? "mood" : "health";
+  if (q.friends) return "social";
+  const t = (q.text || "").toLowerCase();
+  const has = (re) => re.test(t);
+  if (has(/boulder|kletter|paddel|volleyball|sport|lauf|jogg|rad ?fahr|schwimm|training|fitness|gym|yoga|tango|tanz|wander|fußball|tennis|workout/)) return "sport";
+  if (has(/schlaf|krank|puls|gewicht|medikament|kopfschmerz|arzt|gesund/)) return "health";
+  if (has(/alkohol|süß|essen|gegessen|kaffee|wasser|vegetar|vegan|gekocht|snack|zucker|bier|wein|fleisch|getrunken/)) return "food";
+  if (has(/laune|stimmung|geht'?s|gefühl|stress|energie|zufrieden|glück|motivation|meditat|müde/)) return "mood";
+  if (has(/arbeit|uni\b|uni |lern|vorlesung|büro|tutor|klausur|studium|home ?office|hwwi/)) return "work";
+  if (has(/mit wem|freund|getroffen|treffen|familie|date|telefon|partner|besuch/)) return "social";
+  return "other";
+}
+// Thema einer Frage; Folgefragen erben das Thema ihrer Ausgangsfrage
+function themeOf(q, guard = 0) {
+  if (q.theme && THEME_IDX[q.theme] !== undefined && !q.cond) return q.theme;
+  if (q.cond && guard < 20) { const p = qById(q.cond.qid); if (p) return themeOf(p, guard + 1); }
+  return q.theme && THEME_IDX[q.theme] !== undefined ? q.theme : guessTheme(q);
+}
+
+// Alle Fragen in Anzeigereihenfolge: nach Thema, innerhalb in eigener Reihenfolge; Folgefragen direkt hinter ihrer Ausgangsfrage
 function ordered() {
   const ids = new Set(state.questions.map((q) => q.id));
   const out = [];
@@ -68,7 +105,8 @@ function ordered() {
     out.push({ q, depth });
     childrenOf(q.id).forEach((c) => visit(c, depth + 1));
   };
-  state.questions.filter((q) => !q.cond || !ids.has(q.cond.qid)).forEach((q) => visit(q, 0));
+  const roots = state.questions.filter((q) => !q.cond || !ids.has(q.cond.qid));
+  roots.map((q, i) => ({ q, i, t: THEME_IDX[themeOf(q)] })).sort((a, b) => a.t - b.t || a.i - b.i).forEach((x) => visit(x.q, 0));
   state.questions.forEach((q) => visit(q, 0)); // Sicherheitsnetz
   return out;
 }
