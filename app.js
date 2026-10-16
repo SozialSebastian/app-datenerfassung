@@ -1513,6 +1513,129 @@ function reportTeaser() {
   return s;
 }
 
+/* ================= Grafik erstellen (PNG) ================= */
+// Bausteine, die als Bild gespeichert werden können – immer vollständig aufgeklappt
+function withAllOpen(fn) {
+  const keep = [showAllTrends, showAllGoals, showAllFriendChanges];
+  showAllTrends = showAllGoals = showAllFriendChanges = true;
+  try { return fn(); } finally { [showAllTrends, showAllGoals, showAllFriendChanges] = keep; }
+}
+const fileSafe = (s) => s.replace(/[^\wäöüÄÖÜß-]+/g, "_").replace(/^_+|_+$/g, "").slice(0, 40) || "Grafik";
+
+function exportItems() {
+  const items = [];
+  const f = F();
+  if (f.list.length) {
+    items.push({ id: "fsum", group: "Freunde", label: `Übersicht und Quoten (${f.list.length} Freunde)`, file: "Freunde_Uebersicht", html: () => friendsSummaryHtml() });
+    if (f.history.length) items.push({ id: "fchg", group: "Freunde", label: "Veränderung zum vorigen Stichtag", file: "Freunde_Veraenderung", html: () => withAllOpen(friendChangesPanel) });
+    items.push({ id: "flist", group: "Freunde", label: "Liste nach Kategorien", file: "Freunde_Liste", html: () => friendsListHtml() });
+  }
+  if (state.questions.length) {
+    const days = rangeDays();
+    const range = (RANGES.find(([k]) => k === prefs.range) || [, ""])[1];
+    items.push({ id: "trends", group: "Analyse", label: `Trends (${range})`, file: "Trends", html: () => withAllOpen(() => trendsPanel(days)) });
+    if (goalItems().length) items.push({ id: "goals", group: "Analyse", label: "Ziele", file: "Ziele", html: () => withAllOpen(goalsPanel) });
+    analysisQuestions(days).filter((q) => !qset(q).hidden).forEach((q) =>
+      items.push({ id: "q:" + q.id, group: "Analyse", label: `${q.text} (${range})`, file: fileSafe(q.text), html: () => analysisCard(q, days) }));
+    const wk = reportDefaultWeek();
+    items.push({ id: "report", group: "Wochenbericht", label: `Wochenbericht KW ${kw(wk)}`, file: `Wochenbericht_KW${kw(wk)}`, html: () => `<div class="report">${reportHtml(wk)}</div>` });
+  }
+  return items;
+}
+
+let exportSel = new Set();
+function openExport() {
+  const dlg = $("#sheet");
+  const items = exportItems();
+  exportSel = new Set([...exportSel].filter((id) => items.some((x) => x.id === id)));
+  const draw = () => {
+    const groups = [...new Set(items.map((x) => x.group))];
+    dlg.innerHTML = `<div class="sheet-inner">
+      <div class="sheet-head"><button type="button" class="linkbtn" id="xclose">Schließen</button><h2>Grafik erstellen</h2><span></span></div>
+      ${items.length ? `
+      <div class="xbar"><button type="button" class="linkbtn" id="xall">${exportSel.size === items.length ? "Keine auswählen" : "Alle auswählen"}</button><span class="muted small">${exportSel.size} ausgewählt</span></div>
+      ${groups.map((g) => `<section class="sq"><strong>${g}</strong>
+        ${items.filter((x) => x.group === g).map((x) => `<label class="xrow"><input type="checkbox" data-xid="${esc(x.id)}" ${exportSel.has(x.id) ? "checked" : ""}><span>${esc(x.label)}</span></label>`).join("")}
+      </section>`).join("")}
+      <p class="muted small">Die Analyse-Grafiken nutzen den Zeitraum, der unter Analyse eingestellt ist. Bilder sind immer hell, damit sie in Präsentationen passen.</p>
+      <button type="button" class="btn block hold-btn" id="xgo" ${exportSel.size ? "" : "disabled"}>${exportSel.size > 1 ? `${exportSel.size} Bilder erstellen` : "Bild erstellen"}</button>`
+      : `<p class="muted">Noch nichts da. Leg zuerst Fragen oder Freunde an.</p>`}
+    </div>`;
+    $("#xclose", dlg).addEventListener("click", () => dlg.close());
+    $("#xall", dlg)?.addEventListener("click", () => { exportSel = exportSel.size === items.length ? new Set() : new Set(items.map((x) => x.id)); draw(); });
+    dlg.querySelectorAll("[data-xid]").forEach((c) => c.addEventListener("change", () => { if (c.checked) exportSel.add(c.dataset.xid); else exportSel.delete(c.dataset.xid); draw(); }));
+    $("#xgo", dlg)?.addEventListener("click", () => makeImages(items.filter((x) => exportSel.has(x.id))));
+  };
+  draw();
+  if (!dlg.open) dlg.showModal();
+  document.activeElement?.blur();
+}
+
+// Bibliothek erst bei Bedarf laden
+function loadScreenshotLib() {
+  if (window.modernScreenshot) return Promise.resolve();
+  return new Promise((res, rej) => {
+    const sc = document.createElement("script");
+    sc.src = "vendor/modern-screenshot.min.js";
+    sc.onload = () => res(); sc.onerror = () => rej(new Error("Grafik-Funktion konnte nicht geladen werden"));
+    document.head.appendChild(sc);
+  });
+}
+
+async function makeImages(list) {
+  const dlg = $("#sheet");
+  const inner = dlg.querySelector(".sheet-inner");
+  const go = $("#xgo", dlg);
+  if (go) { go.disabled = true; go.textContent = "Erstelle …"; }
+  const out = [];
+  try {
+    await loadScreenshotLib();
+    const stage = document.createElement("div");
+    stage.className = "export-stage";
+    document.body.appendChild(stage);
+    const stamp = fdate(todayIso());
+    for (let i = 0; i < list.length; i++) {
+      const it = list[i];
+      if (go) go.textContent = `Erstelle ${i + 1} von ${list.length} …`;
+      stage.innerHTML = `<div class="export-card">${it.html()}<p class="export-foot">Mosaik · ${stamp}</p></div>`;
+      const node = stage.firstElementChild;
+      await new Promise((r) => requestAnimationFrame(() => r()));
+      const url = await modernScreenshot.domToPng(node, { scale: 3, backgroundColor: "#F4F1EE" });
+      const blob = await (await fetch(url)).blob();
+      out.push({ name: `Mosaik_${it.file}_${todayIso()}.png`, url, blob, label: it.label });
+    }
+    stage.remove();
+  } catch (e) {
+    console.error(e);
+    document.querySelector(".export-stage")?.remove();
+    toast(e.message || "Bild konnte nicht erstellt werden");
+    if (go) { go.disabled = false; go.textContent = "Nochmal versuchen"; }
+    return;
+  }
+  // Ergebnis: Vorschau und Sichern (eigener Tipp nötig, sonst blockiert iOS das Teilen)
+  inner.innerHTML = `<div class="sheet-head"><button type="button" class="linkbtn" id="xback">Zurück</button><h2>${out.length} Bild${out.length > 1 ? "er" : ""}</h2><button type="button" class="linkbtn" id="xclose">Fertig</button></div>
+    <button type="button" class="btn block hold-btn" id="xshare">${out.length > 1 ? "Alle sichern oder teilen" : "Sichern oder teilen"}</button>
+    <p class="muted small">„Bilder sichern“ legt sie in Fotos ab. Einzelne Bilder kannst du auch lange drücken.</p>
+    <div class="xprev">${out.map((o, i) => `<figure><img src="${o.url}" alt="${esc(o.label)}"><figcaption><span>${esc(o.label)}</span><button type="button" class="linkbtn" data-xone="${i}">Einzeln</button></figcaption></figure>`).join("")}</div>`;
+  $("#xclose", inner).addEventListener("click", () => dlg.close());
+  $("#xback", inner).addEventListener("click", () => openExport());
+  const share = async (files) => {
+    const fs = files.map((o) => new File([o.blob], o.name, { type: "image/png" }));
+    if (navigator.canShare && navigator.canShare({ files: fs })) {
+      try { await navigator.share({ files: fs }); return; } catch (e) { if (e.name === "AbortError") return; }
+    }
+    // Fallback: einzeln herunterladen
+    for (const o of files) {
+      const a = document.createElement("a");
+      a.href = o.url; a.download = o.name; document.body.appendChild(a); a.click(); a.remove();
+      await new Promise((r) => setTimeout(r, 300));
+    }
+  };
+  $("#xshare", inner).addEventListener("click", () => share(out));
+  inner.querySelectorAll("[data-xone]").forEach((b) => b.addEventListener("click", () => share([out[+b.dataset.xone]])));
+  inner.scrollTop = 0;
+}
+
 /* ================= Fragen verwalten ================= */
 // Fragen verwalten – als Feld in den Einstellungen; zeigt erst einige, aufklappbar
 const Q_PREVIEW = 3;
@@ -1623,7 +1746,8 @@ function syncFriendQuestions() {
   return changed;
 }
 
-function renderFriends() {
+// Übersicht mit Gesamtzahl und Quoten (auch für „Grafik erstellen“)
+function friendsSummaryHtml() {
   const f = F();
   const list = f.list;
   const n = list.length;
@@ -1635,16 +1759,7 @@ function renderFriends() {
     { icon: NEW_BADGE, label: "Neue Freunde", c: cnt((x) => x.isNew) },
     ...FTAGS.map((t) => ({ icon: tagIcon(t), label: esc(tagLabel(t)), c: cnt((x) => x.tags && x.tags[t.k]) }))
   ];
-
-  $("#view").innerHTML = `
-    <div class="dayhead">
-      <h1>Freunde</h1>
-      <div class="headbtns">
-        <button class="gear" id="fsettings" aria-label="Stichtag und Labels">${GEAR}</button>
-        <button class="addbtn big" id="fadd" aria-label="Freund hinzufügen">+</button>
-      </div>
-    </div>
-    ${n ? `<section class="panel fsum">
+  return `<section class="panel fsum">
       <div class="ftop">
         <div><span class="fbig">${n}</span><span class="muted">Freunde insgesamt</span></div>
         <div class="fdelta">${delta === null ? "" : `<strong>${delta > 0 ? "+" + delta : delta < 0 ? "−" + Math.abs(delta) : "±0"}</strong><span class="muted small">seit ${fdate(prev.date)}</span>`}</div>
@@ -1654,16 +1769,32 @@ function renderFriends() {
         <thead><tr><th></th><th></th><th>%</th><th>Anzahl</th></tr></thead>
         <tbody>${rows.map((r) => `<tr><td class="fi">${r.icon}</td><td>${r.label}</td><td class="num">${pc(r.c)}</td><td class="num">${r.c}</td></tr>`).join("")}</tbody>
       </table>
-    </section>
-    ${friendChangesPanel()}
-    ${FCATS.map(([c, l]) => {
-      const xs = list.filter((x) => x.cat === c);
-      return `<section class="panel fcat">
+    </section>`;
+}
+
+function friendsListHtml() {
+  const list = F().list;
+  return FCATS.map(([c, l]) => {
+    const xs = list.filter((x) => x.cat === c);
+    return `<section class="panel fcat">
         <div class="panel-head"><h2>${l}</h2><span class="muted">${xs.length}</span></div>
         ${xs.length ? `<ul class="flist">${xs.map((x) => `<li><button class="frow" data-fid="${x.id}"><span class="fname">${esc(x.name)}</span><span class="ficons">${friendIcons(x)}</span></button></li>`).join("")}</ul>`
           : `<p class="muted small" style="margin:0">Noch niemand.</p>`}
       </section>`;
-    }).join("")}`
+  }).join("");
+}
+
+function renderFriends() {
+  const n = F().list.length;
+  $("#view").innerHTML = `
+    <div class="dayhead">
+      <h1>Freunde</h1>
+      <div class="headbtns">
+        <button class="gear" id="fsettings" aria-label="Stichtag und Labels">${GEAR}</button>
+        <button class="addbtn big" id="fadd" aria-label="Freund hinzufügen">+</button>
+      </div>
+    </div>
+    ${n ? `${friendsSummaryHtml()}${friendChangesPanel()}${friendsListHtml()}`
     : `<div class="empty-state">
         <h2>Noch keine Freunde</h2>
         <p class="muted">Tippe oben rechts auf +, um Freunde hinzuzufügen. Du kannst auch mehrere Namen auf einmal eintragen.</p>
@@ -2314,6 +2445,12 @@ function renderData() {
     </section>
 
     <section class="panel">
+      <h2>Grafik erstellen</h2>
+      <p class="muted small">Speichert Übersichten als PNG, z. B. für Präsentationen: Freunde und Quoten, Veränderung, Trends, Ziele, einzelne Fragen und den Wochenbericht. Mehrere auf einmal möglich.</p>
+      <button class="btn block" id="exportopen">Grafiken auswählen</button>
+    </section>
+
+    <section class="panel">
       <h2>Erinnerung</h2>
       ${pushBody}
     </section>
@@ -2439,6 +2576,7 @@ function renderData() {
   $("#inboxnow")?.addEventListener("click", () => fetchInbox(true));
 
   $("#reportopen").addEventListener("click", () => openReport());
+  $("#exportopen").addEventListener("click", openExport);
   const weekSave = async () => {
     const day = Number($("#weekday").value), time = $("#weektime").value || "19:00";
     settings.weekly.day = day; settings.weekly.time = time; saveSettings();
