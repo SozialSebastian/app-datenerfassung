@@ -2019,7 +2019,7 @@ function questionsPanel() {
   const row = ({ q, depth }) => {
     const sib = siblings(q);
     const pos = sib.indexOf(q);
-    return `<li class="qrow ${q.archived ? "archived" : ""}" style="margin-left:${q.archived ? 0 : depth * 18}px">
+    return `<li class="qrow ${q.archived ? "archived" : ""}" data-qrow="${q.id}" style="margin-left:${q.archived ? 0 : depth * 18}px">
       <button class="qmain" data-edit="${q.id}">
         <span class="qtext">${q.cond && !q.archived ? "↳ " : ""}${esc(q.text)}</span>
         <span class="qmeta">${q.friends ? "Vorlage Freunde · " : ""}${esc(describe(q))}${q.healthKey ? " · Health: " + esc(q.healthKey) : ""}</span>
@@ -2039,7 +2039,7 @@ function questionsPanel() {
       </div>
       ${act.length ? `<ul class="qlist">${shown.map(row).join("")}</ul>` : `<p class="muted small" style="margin:0">Noch keine Fragen. Tippe auf +, um die erste anzulegen.</p>`}
       ${showAllQuestions ? `
-        ${act.length ? `<p class="muted small" style="margin-top:10px">Folgefragen (↳) erscheinen nur nach einer bestimmten Antwort. Anlegen über + → „Nur fragen, wenn …“.</p>` : ""}
+        ${act.length ? `<p class="muted small" style="margin-top:10px">Folgefragen (↳) erscheinen nur nach einer bestimmten Antwort. Anlegen über + → „Nur fragen, wenn …“. Reihenfolge ändern: Frage lange drücken und ziehen oder die Pfeile nutzen.</p>` : ""}
         ${arch.length ? `<h3 class="subhead">Ausgeblendet</h3>
           <p class="muted small">Werden nicht mehr abgefragt, bleiben aber im Excel-Export.</p>
           <ul class="qlist">${arch.map(row).join("")}</ul>` : ""}` : ""}
@@ -2048,7 +2048,74 @@ function questionsPanel() {
     </section>`;
 }
 
+// Lange drücken und ziehen: Frage unter ihren Geschwistern (gleiche Ausgangsfrage) verschieben
+function wireDrag(root) {
+  const list = root.querySelector(".qlist");
+  if (!list) return;
+  let drag = null, timer = null, suppressClick = false;
+  const sibs = (q) => state.questions.filter((x) => !x.archived && (x.cond?.qid || null) === (q.cond?.qid || null));
+  const cancel = () => { clearTimeout(timer); timer = null; };
+  const finish = (commit) => {
+    if (!drag) return;
+    const { el, q, marker, target } = drag;
+    el.classList.remove("dragging"); el.style.transform = "";
+    marker.remove();
+    document.body.classList.remove("no-scroll");
+    drag = null;
+    if (!commit || target === undefined) return;
+    const arr = state.questions;
+    arr.splice(arr.indexOf(q), 1);
+    if (target === null) { const s2 = sibs(q); const last = s2[s2.length - 1]; arr.splice(last ? arr.indexOf(last) + 1 : arr.length, 0, q); }
+    else arr.splice(arr.indexOf(target), 0, q);
+    save(); refreshQuestions();
+  };
+  list.querySelectorAll(".qrow:not(.archived)").forEach((el) => {
+    el.addEventListener("pointerdown", (e) => {
+      if (e.target.closest("[data-move]")) return;
+      const q = qById(el.dataset.qrow);
+      const x0 = e.clientX, y0 = e.clientY;
+      cancel();
+      timer = setTimeout(() => {
+        timer = null;
+        const marker = document.createElement("li");
+        marker.className = "qdrop";
+        drag = { el, q, y0, x0, marker, target: undefined };
+        el.classList.add("dragging");
+        document.body.classList.add("no-scroll");
+        if (navigator.vibrate) navigator.vibrate(15);
+      }, 450);
+      const move = (ev) => {
+        if (!drag) { if (Math.abs(ev.clientY - y0) > 8 || Math.abs(ev.clientX - x0) > 8) cancel(); return; }
+        ev.preventDefault();
+        drag.el.style.transform = `translateY(${ev.clientY - drag.y0}px)`;
+        // Ziel: erste sichtbare Geschwister-Zeile, deren Mitte unter dem Finger liegt
+        const rows = sibs(drag.q).filter((x) => x !== drag.q).map((x) => list.querySelector(`[data-qrow="${x.id}"]`)).filter(Boolean);
+        let target = null, before = null;
+        for (const r of rows) { const b = r.getBoundingClientRect(); if (ev.clientY < b.top + b.height / 2) { target = qById(r.dataset.qrow); before = r; break; } }
+        drag.target = target;
+        if (before) list.insertBefore(drag.marker, before);
+        else { const lastRow = rows[rows.length - 1]; if (lastRow) lastRow.after(drag.marker); }
+      };
+      const up = () => {
+        cancel();
+        if (drag) { suppressClick = true; finish(true); setTimeout(() => (suppressClick = false), 50); }
+        window.removeEventListener("pointermove", move);
+        window.removeEventListener("pointerup", up);
+        window.removeEventListener("pointercancel", up);
+      };
+      window.addEventListener("pointermove", move, { passive: false });
+      window.addEventListener("pointerup", up);
+      window.addEventListener("pointercancel", up);
+    });
+    el.addEventListener("click", (e) => { if (suppressClick) { e.stopPropagation(); e.preventDefault(); } }, true);
+    el.addEventListener("contextmenu", (e) => e.preventDefault());
+  });
+  // iOS: Scrollen während des Ziehens verhindern
+  list.addEventListener("touchmove", (e) => { if (drag) e.preventDefault(); }, { passive: false });
+}
+
 function wireQuestions(root) {
+  wireDrag(root);
   $("#newq", root)?.addEventListener("click", () => openEditor(null));
   $("#qmore", root)?.addEventListener("click", () => { showAllQuestions = !showAllQuestions; refreshQuestions(); });
   root.querySelectorAll("[data-edit]").forEach((b) => b.addEventListener("click", () => openEditor(b.dataset.edit)));
