@@ -482,6 +482,7 @@ function renderAnalysis() {
 
   $("#asettings")?.addEventListener("click", openAnalysisSettings);
   $("#gmore")?.addEventListener("click", () => { showAllGoals = !showAllGoals; renderAnalysis(); });
+  $("#tmore")?.addEventListener("click", () => { showAllTrends = !showAllTrends; renderAnalysis(); });
   view.querySelectorAll("[data-range]").forEach((b) => b.addEventListener("click", () => { prefs.range = b.dataset.range; savePrefs(); renderAnalysis(); }));
   view.querySelectorAll("[data-focus]").forEach((b) => b.addEventListener("click", () => {
     prefs.focus[b.dataset.qid] = b.dataset.focus; savePrefs(); renderAnalysis();
@@ -806,7 +807,7 @@ function streakInsights() {
       if (gap >= 7 && gap >= 2 * usual) out.push({ score: 5 + gap / 7, html: `<strong>Seit ${gap} Tagen</strong> kein Ja bei ${qName(q)} · sonst etwa alle ${Math.round(usual)} Tage` });
     }
   }
-  return out.sort((a, b) => b.score - a.score).slice(0, 3);
+  return out.sort((a, b) => b.score - a.score);
 }
 
 // Gruppen für Vergleiche: Ja/Nein-Fragen → Ja; sonst je Antwortmöglichkeit
@@ -880,7 +881,7 @@ function relationInsights(days) {
       note: `${xs.length} Tage`
     });
   }
-  return found.sort((a, b) => b.score - a.score).slice(0, 5);
+  return found.sort((a, b) => b.score - a.score);
 }
 
 // Trends für einzelne Zahlen (z. B. Schritte, Schlaf): Normalwert, Wochentage, Rekorde, Serien
@@ -973,21 +974,26 @@ function numberInsights() {
     if (d >= addDays(t, -2)) while (val[d] !== undefined && rule.ok(val[d])) { n++; d = addDays(d, -1); }
     if (n >= 3) out.push({ score: 1 + n / 3, html: `<strong>${rule.text(n)}</strong>` });
   }
-  return out.sort((a, b) => b.score - a.score).slice(0, 5);
+  return out.sort((a, b) => b.score - a.score);
 }
 
+// Zuerst die auffälligsten je Art, der Rest aufklappbar
+const T_PREVIEW = { streak: 2, num: 3, rel: 2 };
+let showAllTrends = false;
 function trendsPanel(days) {
-  const streaks = streakInsights();
-  const rel = relationInsights(days);
-  const nums = numberInsights();
+  const all = { streak: streakInsights(), num: numberInsights(), rel: relationInsights(days) };
+  const lim = (k) => (showAllTrends ? all[k] : all[k].slice(0, T_PREVIEW[k]));
+  const streaks = lim("streak"), nums = lim("num"), rel = lim("rel");
+  const hidden = Object.keys(all).reduce((n, k) => n + Math.max(all[k].length - T_PREVIEW[k], 0), 0);
   const row = (x, kind) => `<li class="trow ${kind}"><span class="tmark" aria-hidden="true"></span><span>${x.html}${x.note ? ` <span class="muted small">· ${x.note}</span>` : ""}</span></li>`;
   return `<section class="panel trends">
     <h2 class="atitle">Trends</h2>
     ${streaks.length || rel.length || nums.length ? `
       ${streaks.length ? `<ul class="tlist">${streaks.map((x) => row(x, "streak")).join("")}</ul>` : ""}
       ${nums.length ? `<ul class="tlist" ${streaks.length ? 'style="margin-top:10px"' : ""}>${nums.map((x) => row(x, "num")).join("")}</ul>` : ""}
-      ${rel.length ? `<p class="tsub small muted">Auffällige Zusammenhänge im gewählten Zeitraum</p><ul class="tlist">${rel.map((x) => row(x, "rel")).join("")}</ul>
-        <p class="small muted tfoot">Zeigt nur deutliche Unterschiede ab ${MIN_GROUP} Tagen je Gruppe. Ein Zusammenhang heißt nicht, dass das eine das andere verursacht.</p>` : ""}`
+      ${rel.length ? `<p class="tsub small muted">Auffällige Zusammenhänge im gewählten Zeitraum</p><ul class="tlist">${rel.map((x) => row(x, "rel")).join("")}</ul>` : ""}
+      ${hidden ? `<button class="btn ghost block" id="tmore" style="margin-top:12px">${showAllTrends ? "Weniger anzeigen" : `Alle Trends anzeigen (${hidden} weitere)`}</button>` : ""}
+      ${rel.length ? `<p class="small muted tfoot">Zeigt nur deutliche Unterschiede ab ${MIN_GROUP} Tagen je Gruppe. Ein Zusammenhang heißt nicht, dass das eine das andere verursacht.</p>` : ""}`
       : `<p class="muted small" style="margin:0">Noch nichts Auffälliges. Serien erscheinen ab 3 Tagen am Stück, Zusammenhänge meist nach ein paar Wochen Daten.</p>`}
   </section>`;
 }
@@ -1448,7 +1454,7 @@ function reportHtml(mon) {
 
   // Trends (immer der aktuelle Stand)
   const last30 = Array.from({ length: 30 }, (_, i) => addDays(t, i - 29));
-  const tr = [...streakInsights().map((x) => ({ ...x, k: "streak" })), ...numberInsights().map((x) => ({ ...x, k: "num" })), ...relationInsights(last30).map((x) => ({ ...x, k: "rel" }))];
+  const tr = [...streakInsights().slice(0, 3).map((x) => ({ ...x, k: "streak" })), ...numberInsights().slice(0, 3).map((x) => ({ ...x, k: "num" })), ...relationInsights(last30).slice(0, 2).map((x) => ({ ...x, k: "rel" }))];
   const trHtml = tr.length ? `<section class="sq">
       <div class="ghead"><h3 class="rh">Trends</h3><span class="small muted">aktueller Stand</span></div>
       <ul class="tlist">${tr.slice(0, 8).map((x) => `<li class="trow ${x.k}"><span class="tmark" aria-hidden="true"></span><span>${x.html}</span></li>`).join("")}</ul>
