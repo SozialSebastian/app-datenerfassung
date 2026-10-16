@@ -149,7 +149,7 @@ function render() {
   });
   if (quiz) renderQuiz();
   else if (tab === "day") renderDay();
-  else if (tab === "questions") renderQuestions();
+  else if (tab === "friends") renderFriends();
   else if (tab === "analysis") renderAnalysis();
   else renderData();
 }
@@ -821,8 +821,10 @@ function trendsPanel(days) {
 }
 
 /* ================= Fragen verwalten ================= */
-function renderQuestions() {
-  const view = $("#view");
+// Fragen verwalten – als Feld in den Einstellungen; zeigt erst einige, aufklappbar
+const Q_PREVIEW = 3;
+let showAllQuestions = false;
+function questionsPanel() {
   const all = ordered();
   const act = all.filter((o) => !o.q.archived);
   const arch = all.filter((o) => o.q.archived);
@@ -841,29 +843,59 @@ function renderQuestions() {
       <button class="iconbtn" data-move="${q.id}" data-dir="1" aria-label="Nach unten" ${pos === sib.length - 1 ? "disabled" : ""}>↓</button>`}
     </li>`;
   };
+  const shown = showAllQuestions ? act : act.slice(0, Q_PREVIEW);
+  const more = act.length - shown.length + (showAllQuestions ? 0 : arch.length);
+  return `<section class="panel" id="qpanel">
+      <div class="panel-head">
+        <h2>Fragen</h2>
+        <button class="addbtn" id="newq" aria-label="Neue Frage anlegen">+</button>
+      </div>
+      ${act.length ? `<ul class="qlist">${shown.map(row).join("")}</ul>` : `<p class="muted small" style="margin:0">Noch keine Fragen. Tippe auf +, um die erste anzulegen.</p>`}
+      ${showAllQuestions ? `
+        ${act.length ? `<p class="muted small" style="margin-top:10px">Folgefragen (↳) erscheinen nur nach einer bestimmten Antwort. Anlegen über + → „Nur fragen, wenn …“.</p>` : ""}
+        ${arch.length ? `<h3 class="subhead">Ausgeblendet</h3>
+          <p class="muted small">Werden nicht mehr abgefragt, bleiben aber im Excel-Export.</p>
+          <ul class="qlist">${arch.map(row).join("")}</ul>` : ""}` : ""}
+      ${more > 0 || showAllQuestions && (act.length > Q_PREVIEW || arch.length)
+        ? `<button class="btn ghost block" id="qmore" style="margin-top:6px">${showAllQuestions ? "Weniger anzeigen" : `Alle Fragen anzeigen (${more} weitere)`}</button>` : ""}
+    </section>`;
+}
 
-  view.innerHTML = `
-    <div class="dayhead"><h1>Fragen</h1></div>
-    ${act.length ? `<ul class="qlist">${act.map(row).join("")}</ul>` : `<p class="muted">Noch keine Fragen angelegt.</p>`}
-    <button class="btn block" id="newq" style="margin-top:8px">Neue Frage</button>
-    ${act.length ? `<p class="muted small" style="margin-top:10px">Folgefragen (↳) erscheinen nur nach einer bestimmten Antwort. Anlegen über „Neue Frage“ → „Nur fragen, wenn …“.</p>` : ""}
-    ${arch.length ? `<h2>Ausgeblendet</h2>
-      <p class="muted small">Werden nicht mehr abgefragt, bleiben aber im Excel-Export.</p>
-      <ul class="qlist">${arch.map(row).join("")}</ul>` : ""}`;
-
-  $("#newq").addEventListener("click", () => openEditor(null));
-  view.querySelectorAll("[data-edit]").forEach((b) => b.addEventListener("click", () => openEditor(b.dataset.edit)));
-  view.querySelectorAll("[data-move]").forEach((b) => b.addEventListener("click", () => {
+function wireQuestions(root) {
+  $("#newq", root)?.addEventListener("click", () => openEditor(null));
+  $("#qmore", root)?.addEventListener("click", () => { showAllQuestions = !showAllQuestions; refreshQuestions(); });
+  root.querySelectorAll("[data-edit]").forEach((b) => b.addEventListener("click", () => openEditor(b.dataset.edit)));
+  root.querySelectorAll("[data-move]").forEach((b) => b.addEventListener("click", () => {
     const q = qById(b.dataset.move);
-    const sib = siblings(q);
+    const sib = state.questions.filter((x) => !x.archived && (x.cond?.qid || null) === (q.cond?.qid || null));
     const other = sib[sib.indexOf(q) + Number(b.dataset.dir)];
     if (!other) return;
     const list = state.questions;
     const i1 = list.indexOf(q), i2 = list.indexOf(other);
     [list[i1], list[i2]] = [list[i2], list[i1]];
     save();
-    renderQuestions();
+    refreshQuestions();
   }));
+}
+
+// nur das Fragen-Feld neu zeichnen (Scrollposition bleibt)
+function refreshQuestions() {
+  const old = $("#qpanel");
+  if (!old) return render();
+  const tmp = document.createElement("div");
+  tmp.innerHTML = questionsPanel();
+  const fresh = tmp.firstElementChild;
+  old.replaceWith(fresh);
+  wireQuestions(fresh);
+}
+
+/* ================= Freunde (folgt) ================= */
+function renderFriends() {
+  $("#view").innerHTML = `
+    <div class="dayhead"><h1>Freunde</h1></div>
+    <div class="empty-state">
+      <p class="muted">Dieser Bereich ist noch leer. Hier kommt bald etwas Neues hin.</p>
+    </div>`;
 }
 
 function answerCount(qid) {
@@ -951,7 +983,7 @@ function openEditor(id) {
         <label class="field" style="margin-top:8px">Health-Kürzel
           <input id="hkey" value="${esc(draft.healthKey)}" placeholder="z. B. schlaf" autocapitalize="off" autocomplete="off">
         </label>
-        <p class="muted small">Wenn dein Kurzbefehl einen Wert mit diesem Kürzel liefert, trägt „Werte aus Health einfügen“ ihn hier ein. Anleitung unter Export.</p>
+        <p class="muted small">Wenn dein Kurzbefehl einen Wert mit diesem Kürzel liefert, trägt „Werte aus Health einfügen“ ihn hier ein. Anleitung unter Einstellungen.</p>
       </details>
       ${existing ? `<div class="stack">
         <button type="button" class="btn ghost" id="archive">${existing.archived ? "Wieder einblenden" : "Ausblenden (Daten bleiben)"}</button>
@@ -1144,6 +1176,8 @@ function renderData() {
   view.innerHTML = `
     <div class="dayhead"><h1>Einstellungen</h1></div>
 
+    ${questionsPanel()}
+
     <section class="panel">
       <h2>Erinnerung</h2>
       ${pushBody}
@@ -1169,7 +1203,7 @@ function renderData() {
 
     <section class="panel">
       <h2>Kurzbefehle und Apple Health</h2>
-      <p class="muted">Kurzbefehle können Werte eintragen, z. B. die Schlafdauer aus Health. Dafür braucht die Frage unter „Fragen“ ein Health-Kürzel, z. B. <code>schlaf</code>.</p>
+      <p class="muted">Kurzbefehle können Werte eintragen, z. B. die Schlafdauer aus Health. Dafür braucht die Frage oben unter „Fragen“ ein Health-Kürzel, z. B. <code>schlaf</code>.</p>
       <details ${connected ? "" : ""}>
         <summary><strong>Im Hintergrund senden</strong> (empfohlen)</summary>
         ${connected ? `<ol class="steps small">
@@ -1216,6 +1250,7 @@ function renderData() {
 
     <p class="muted small">Adresse dieser App: <code>${esc(base)}</code></p>`;
 
+  wireQuestions($("#qpanel"));
   $("#xlsx").addEventListener("click", exportExcel);
   $("#backup").addEventListener("click", exportBackup);
   $("#restore").addEventListener("click", () => $("#restorefile").click());

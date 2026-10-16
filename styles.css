@@ -344,3 +344,15 @@ input.timein { padding: 9px 10px; border-radius: var(--r-sm); border: 1.5px soli
 .panel details { margin-top: 10px; }
 .panel details summary { padding: 6px 0; }
 .tabbar button { font-size: 11px; }
+
+/* ---------- Fragen-Feld in den Einstellungen ---------- */
+.panel-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; }
+.panel-head h2 { margin: 0; }
+.addbtn { border: 0; width: 36px; height: 36px; border-radius: 50%; background: var(--act); color: var(--act-ink); font-size: 24px; line-height: 1; font-weight: 500; display: grid; place-items: center; padding: 0 0 2px; }
+#qpanel .qrow { background: var(--bg); }
+.subhead { font-size: 16px; margin: 18px 0 4px; }
+#qpanel .qrow { padding: 2px 2px 2px 12px; margin-bottom: 6px; }
+#qpanel .qmain { padding: 6px 0; }
+#qpanel .qtext { font-size: 16px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+#qpanel .qmeta { font-size: 12px; }
+#qpanel .iconbtn { width: 34px; height: 34px; font-size: 16px; }
