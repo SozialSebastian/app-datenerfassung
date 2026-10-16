@@ -186,7 +186,7 @@ function listEntries(lists, today) {
     if (Array.isArray(start) && Array.isArray(end)) {
       done.add(base);
       const perDay = {};
-      for (let i = 0; i < Math.min(start.length, end.length, 500); i++) {
+      for (let i = 0; i < Math.min(start.length, end.length, 20000); i++) {
         const a = parseWhen(start[i]), b = parseWhen(end[i]);
         if (!a || !b || b.ms <= a.ms) continue;
         perDay[b.local] = (perDay[b.local] || 0) + (b.ms - a.ms) / 3600000;
@@ -194,7 +194,7 @@ function listEntries(lists, today) {
       for (const [d, h] of Object.entries(perDay)) out.push([base, String(Math.round(h * 10) / 10), d]);
     } else if (Array.isArray(vals)) {
       done.add(base);
-      vals.slice(0, 62).forEach((v, i) => {
+      vals.slice(0, 400).forEach((v, i) => {
         const n = num(v);
         if (Number.isNaN(n)) return;
         const w = Array.isArray(dates) && dates[i] !== undefined ? parseWhen(dates[i]) : null;
@@ -286,7 +286,7 @@ async function handle(request, env) {
 
   if (path === "/inbox/ack" && request.method === "POST") {
     const b = await request.json();
-    const ids = (b.ids || []).map(Number).filter(Number.isInteger).slice(0, 500);
+    const ids = (b.ids || []).map(Number).filter(Number.isInteger).slice(0, 2000);
     if (ids.length) await env.DB.prepare(`DELETE FROM inbox WHERE id IN (${ids.map(() => "?").join(",")})`).bind(...ids).run();
     return json({ ok: true, deleted: ids.length });
   }
