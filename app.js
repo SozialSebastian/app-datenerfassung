@@ -279,7 +279,8 @@ function renderDay() {
   const qs = askQuestions(current);
   const a = state.answers[current] || {};
   const done = qs.filter((q) => isAnswered(a[q.id])).length;
-  const hq = healthQuestions();
+  // nur Health-Werte zeigen, die für den Tag vorliegen
+  const hq = healthQuestions().filter((q) => isAnswered(a[q.id]));
   const healthHtml = hq.length ? `<section class="q healthcard">
       <p class="q-title">Apple Health</p>
       ${hq.map((q) => `<label class="hrow" data-hq="${q.id}"><span>${esc(q.text)}</span><span class="hval"><input type="text" inputmode="${q.format ? "text" : "decimal"}" autocomplete="off" value="${esc(q.format ? fmtQ(q, a[q.id]) : fmtNum(a[q.id]))}" placeholder="${q.format === "clock" ? "hh:mm" : q.format === "duration" ? "h:mm" : "–"}" aria-label="${esc(q.text)}" class="${q.format ? "wide" : ""}">${q.unit && !q.format ? `<span class="unit">${esc(q.unit)}</span>` : ""}</span></label>`).join("")}
@@ -1871,7 +1872,8 @@ async function refreshNowWeather() {
 // Zeile unter dem Datum auf „Tag“
 function placeLine(date) {
   const list = P()[date] || [];
-  if (!list.length && !(settings.places && settings.places.on)) return "";
+  // ohne erfassten Ort nichts anzeigen (heute höchstens das aktuelle Wetter)
+  if (!list.length && !(date === todayIso() && nowWeather)) return "";
   // heute: aktuelles Wetter; frühere Tage: Höchsttemperatur des Tages
   let wx = "";
   if (date === todayIso() && nowWeather) wx = `<span class="pwx" title="${esc(nowWeather.text)}">${nowWeather.icon} ${nowWeather.temp} °C</span>`;
@@ -1880,8 +1882,8 @@ function placeLine(date) {
     wx = `<span class="pwx" title="Höchsttemperatur">${w.r >= 1 ? "🌧️" : w.s >= 6 ? "☀️" : "⛅"} max ${Math.round(w.t)} °C</span>`;
   }
   return `<button class="placeline" id="placeedit" aria-label="Orte des Tages bearbeiten">
-    <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 21s-6.5-6.2-6.5-11.2a6.5 6.5 0 0 1 13 0C18.5 14.8 12 21 12 21z"/><circle cx="12" cy="9.8" r="2.3"/></svg>
-    <span>${list.length ? list.map((x) => esc(x.c)).join(" → ") : `<span class="muted">Noch kein Ort</span>`}</span>${wx}
+    ${list.length ? `<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 21s-6.5-6.2-6.5-11.2a6.5 6.5 0 0 1 13 0C18.5 14.8 12 21 12 21z"/><circle cx="12" cy="9.8" r="2.3"/></svg>` : ""}
+    ${list.length ? `<span>${list.map((x) => esc(x.c)).join(" → ")}</span>` : ""}${list.length ? wx : wx.replace('class="pwx"', 'class="pwx solo"')}
   </button>`;
 }
 

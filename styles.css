@@ -537,3 +537,4 @@ input.flabel { flex: 1; padding: 8px 10px; border-radius: var(--r-sm); border: 1
 body.no-scroll { overflow: hidden; touch-action: none; }
 .gtag { display: inline-block; margin-left: 6px; padding: 1px 8px; border-radius: 999px; background: var(--bg); color: var(--ink-2); font-size: 12px; font-weight: 600; vertical-align: 1px; }
 .gform .sq-row { grid-template-columns: 104px 1fr; }
+.pwx.solo { margin-left: 0; padding-left: 0; border-left: 0; }
