@@ -2829,8 +2829,8 @@ function openEditor(id) {
 /* ================= Mosaik-Dienst: Erinnerung und Eingang ================= */
 const SERVER = "https://mosaik-sync.sebastian-taglieber.workers.dev";
 const SETTINGS_KEY = "mosaik.settings";
-let settings = { token: "", push: { on: false, time: "23:00", endpoint: null }, weekly: { on: false, day: 0, time: "19:00" }, places: { on: false, last: 0 }, weather: { on: false, last: 0 }, lastInbox: null };
-try { const s = JSON.parse(localStorage.getItem(SETTINGS_KEY) || "{}"); settings = { ...settings, ...s, push: { ...settings.push, ...(s.push || {}) }, weekly: { ...settings.weekly, ...(s.weekly || {}) }, places: { ...settings.places, ...(s.places || {}) }, weather: { ...settings.weather, ...(s.weather || {}) } }; } catch (e) { /* egal */ }
+let settings = { token: "", push: { on: false, time: "23:00", endpoint: null }, weekly: { on: false, day: 0, time: "19:00" }, goalpush: { on: false, day: 5, time: "18:00" }, places: { on: false, last: 0 }, weather: { on: false, last: 0 }, lastInbox: null };
+try { const s = JSON.parse(localStorage.getItem(SETTINGS_KEY) || "{}"); settings = { ...settings, ...s, push: { ...settings.push, ...(s.push || {}) }, weekly: { ...settings.weekly, ...(s.weekly || {}) }, goalpush: { ...settings.goalpush, ...(s.goalpush || {}) }, places: { ...settings.places, ...(s.places || {}) }, weather: { ...settings.weather, ...(s.weather || {}) } }; } catch (e) { /* egal */ }
 const saveSettings = () => { try { localStorage.setItem(SETTINGS_KEY, JSON.stringify(settings)); } catch (e) { /* egal */ } };
 
 async function api(path, body) {
@@ -2878,8 +2878,9 @@ async function disablePush() {
   const sub = await reg.pushManager.getSubscription();
   const endpoint = (sub && sub.endpoint) || settings.push.endpoint;
   if (endpoint) await api("/unsubscribe", { endpoint }).catch(() => {});
-  if (sub && !settings.weekly.on) await sub.unsubscribe().catch(() => {}); // Abo bleibt für den Wochenbericht
-  settings.push = { ...settings.push, on: false, endpoint: settings.weekly.on ? settings.push.endpoint : null };
+  const keep = settings.weekly.on || settings.goalpush.on;
+  if (sub && !keep) await sub.unsubscribe().catch(() => {}); // Abo bleibt für Wochenbericht/Ziele
+  settings.push = { ...settings.push, on: false, endpoint: keep ? settings.push.endpoint : null };
   saveSettings();
 }
 
@@ -2897,8 +2898,48 @@ async function disableWeekly() {
   const endpoint = (sub && sub.endpoint) || settings.weekly.endpoint;
   if (endpoint) await api("/weekly", { on: false, subscription: { endpoint } }).catch(() => {});
   settings.weekly = { ...settings.weekly, on: false };
-  if (sub && !settings.push.on) await sub.unsubscribe().catch(() => {});
+  if (sub && !settings.push.on && !settings.goalpush.on) await sub.unsubscribe().catch(() => {});
   saveSettings();
+}
+
+// Ziel-Erinnerung: Mitteilung zu einem festen Wochentag, wenn Ziele dieser Woche wackeln
+async function enableGoalPush(day, time) {
+  const sub = await pushSub();
+  await api("/goals", { on: true, subscription: sub.toJSON(), day, time, tz: Intl.DateTimeFormat().resolvedOptions().timeZone || "Europe/Berlin" });
+  settings.goalpush = { on: true, day, time, endpoint: sub.endpoint };
+  saveSettings();
+  reportStatus();
+}
+async function disableGoalPush() {
+  const reg = await navigator.serviceWorker.ready;
+  const sub = await reg.pushManager.getSubscription();
+  const endpoint = (sub && sub.endpoint) || settings.goalpush.endpoint;
+  if (endpoint) await api("/goals", { on: false, subscription: { endpoint } }).catch(() => {});
+  settings.goalpush = { ...settings.goalpush, on: false };
+  if (sub && !settings.push.on && !settings.weekly.on) await sub.unsubscribe().catch(() => {});
+  saveSettings();
+}
+
+// Text der Ziel-Erinnerung: Ziele, deren Zeitraum diese Woche endet und die noch offen sind
+function goalAlertText() {
+  const t = todayIso(), sun = addDays(mondayOf(t), 6);
+  const parts = [];
+  for (const g of goalItems()) {
+    const per = goalCur(g);
+    if (per.end > sun) continue; // endet nicht in dieser Woche
+    const e = evalGoal(g, per);
+    if (e.status === "done" || e.status === "fail" || e.status === "none") continue;
+    const name = e.q.text.replace(/\?$/, "");
+    const until = per.end === sun ? "Sonntag" : dm(per.end);
+    if (g.kind === "avg") { if (e.status === "behind") parts.push(`${name}: ${e.cur}, Ziel ${cmpWord(e.q, g.cmp)} ${valText(e.q, g.val)}`); continue; }
+    if (e.upper) { if (e.c >= e.target) parts.push(`${name}: Limit von ${e.target}× erreicht`); continue; }
+    const need = e.target - e.c;
+    if (need <= 0) continue;
+    if (g.kind === "sum") parts.push(`${name}: noch ${valText(e.q, Math.round(need * 100) / 100)} bis ${until}`);
+    else if (g.kind === "days") parts.push(`${name}: noch ${need} Tag${need === 1 ? "" : "e"} bis ${until}`);
+    else parts.push(`${name}: noch ${need}× bis ${until}`);
+  }
+  return parts.slice(0, 4).join(" · ");
 }
 
 // Dem Dienst mitteilen, wie viele Fragen heute noch offen sind (keine Antworten!)
@@ -2908,6 +2949,7 @@ function reportStatus() {
   clearTimeout(statusTimer);
   statusTimer = setTimeout(() => {
     // Kurztext für die Wochenbericht-Mitteilung
+    if (settings.goalpush.on && settings.goalpush.endpoint) api("/goals/teaser", { endpoint: settings.goalpush.endpoint, week: mondayOf(todayIso()), text: goalAlertText() }).catch(() => {});
     if (settings.weekly.on && settings.weekly.endpoint) api("/weekly/teaser", { endpoint: settings.weekly.endpoint, week: mondayOf(todayIso()), text: reportTeaser() }).catch(() => {});
     if (!settings.push.on || !settings.push.endpoint) return;
     const t = todayIso();
@@ -2990,7 +3032,14 @@ function renderData() {
       <div class="timerow"><span>Uhrzeit</span><input type="time" id="pushtime" value="${esc(p.time)}" class="timein"></div>
       <p class="muted small" style="margin:8px 0 0">Kommt nur, wenn an dem Tag noch Fragen offen sind. Tippen auf die Mitteilung startet direkt die Abfrage für diesen Tag.</p>
       ${p.on ? `<button class="btn ghost block" id="pushtest" style="margin-top:12px">Test-Erinnerung senden</button>` : ""}
-      <p class="small" id="pushmsg" style="margin:8px 0 0"></p>`;
+      <p class="small" id="pushmsg" style="margin:8px 0 0"></p>
+      <div class="subsep"></div>
+      <label class="switch row" style="margin-top:0"><input type="checkbox" id="goalpushon" ${settings.goalpush.on ? "checked" : ""}><span>Ziel-Erinnerung</span></label>
+      <div class="timerow"><span>Tag</span><select id="goalpushday" class="timein">${[1, 2, 3, 4, 5, 6, 0].map((i) => `<option value="${i}" ${settings.goalpush.day === i ? "selected" : ""}>${WD[i]}</option>`).join("")}</select></div>
+      <div class="timerow"><span>Uhrzeit</span><input type="time" id="goalpushtime" value="${esc(settings.goalpush.time)}" class="timein"></div>
+      <p class="muted small" style="margin:8px 0 0">Kommt nur, wenn ein Ziel, dessen Zeitraum diese Woche endet, noch offen ist, z. B. „Bouldern: noch 1× bis Sonntag“. Tippen öffnet die Ziele.</p>
+      ${settings.goalpush.on ? `<button class="btn ghost block" id="goalpushtest" style="margin-top:12px">Test-Mitteilung senden</button>` : ""}
+      <p class="small" id="goalpushmsg" style="margin:8px 0 0"></p>`;
 
   const w = settings.weekly;
   const WDN = ["Sonntag", "Montag", "Dienstag", "Mittwoch", "Donnerstag", "Freitag", "Samstag"];
@@ -3158,6 +3207,26 @@ function renderData() {
   $("#inboxnow")?.addEventListener("click", () => fetchInbox(true));
 
   $("#reportopen").addEventListener("click", () => openReport());
+  const goalSave = async () => {
+    const day = Number($("#goalpushday").value), time = $("#goalpushtime").value || "18:00";
+    settings.goalpush.day = day; settings.goalpush.time = time; saveSettings();
+    if (!settings.goalpush.on) return;
+    try { await enableGoalPush(day, time); toast(`Ziel-Erinnerung ${WD[day]} ${time} Uhr`); } catch (err) { msg("goalpushmsg", err.message, true); }
+  };
+  $("#goalpushon")?.addEventListener("change", async (e) => {
+    const on = e.target.checked;
+    try {
+      if (on) { await enableGoalPush(Number($("#goalpushday").value), $("#goalpushtime").value || "18:00"); toast(`Ziel-Erinnerung ${WD[settings.goalpush.day]} ${settings.goalpush.time} Uhr`); }
+      else { await disableGoalPush(); toast("Ziel-Erinnerung aus"); }
+      renderData();
+    } catch (err) { e.target.checked = !on; msg("goalpushmsg", err.message, true); }
+  });
+  $("#goalpushday")?.addEventListener("change", goalSave);
+  $("#goalpushtime")?.addEventListener("change", (e) => { if (/^\d{2}:\d{2}$/.test(e.target.value)) goalSave(); });
+  $("#goalpushtest")?.addEventListener("click", async () => {
+    try { reportStatus(); await new Promise((r) => setTimeout(r, 1800)); await api("/goals/test", { endpoint: settings.goalpush.endpoint }); msg("goalpushmsg", "Test verschickt. Die Mitteilung kommt in wenigen Sekunden."); }
+    catch (err) { msg("goalpushmsg", err.message, true); }
+  });
   $("#placeson").addEventListener("change", async (e) => {
     settings.places.on = e.target.checked; settings.places.last = 0; saveSettings();
     if (e.target.checked) { await capturePlace(true); syncWeather(true); } else toast("Orte und Wetter werden nicht mehr erfasst");
@@ -3364,6 +3433,12 @@ if (syncFriendQuestions()) save();
 render();
 checkHash();
 
+// Analyse mit den Zielen öffnen (Tippen auf die Ziel-Erinnerung)
+function openGoalsView() {
+  quiz = null; tab = "analysis"; showAllGoals = true; prefs.goals = true; render();
+  setTimeout(() => document.querySelector(".goals")?.scrollIntoView({ block: "start" }), 50);
+}
+
 // Tippen auf die Erinnerung: …/?quiz=2026-10-16 startet die Abfrage für diesen Tag
 function openQuizFromLink(date) {
   if (!/^\d{4}-\d{2}-\d{2}$/.test(date || "") || date > todayIso()) return;
@@ -3375,11 +3450,13 @@ function openQuizFromLink(date) {
   const qd = sp.get("quiz");
   if (qd) { history.replaceState(null, "", location.pathname); openQuizFromLink(qd); }
   if (sp.get("report")) { history.replaceState(null, "", location.pathname); openReport(); }
+  if (sp.get("open") === "goals") { history.replaceState(null, "", location.pathname); openGoalsView(); }
 }
 if ("serviceWorker" in navigator) {
   navigator.serviceWorker.addEventListener("message", (e) => {
     if (e.data && e.data.type === "quiz") openQuizFromLink(e.data.date);
     if (e.data && e.data.type === "report") { const d = $("#sheet"); if (d.open) d.close(); openReport(); }
+    if (e.data && e.data.type === "open" && e.data.what === "goals") { const d = $("#sheet"); if (d.open) d.close(); openGoalsView(); }
   });
 }
 fetchInbox(false);

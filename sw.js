@@ -1,5 +1,5 @@
 // Offline-Cache für die App. Bei jeder Änderung an den Dateien VERSION erhöhen.
-const VERSION = "mosaik-v42";
+const VERSION = "mosaik-v43";
 const FILES = [
   "./",
   "./index.html",
@@ -48,8 +48,8 @@ self.addEventListener("push", (e) => {
     body: d.body || "Zeit für die Abfrage von heute.",
     icon: "icons/icon-192.png",
     badge: "icons/icon-192.png",
-    tag: d.report ? "mosaik-woche" : "mosaik-taeglich",
-    data: { date: d.date || null, report: d.report || null }
+    tag: d.report ? "mosaik-woche" : d.open ? "mosaik-ziele" : "mosaik-taeglich",
+    data: { date: d.date || null, report: d.report || null, open: d.open || null }
   }));
 });
 
@@ -59,8 +59,8 @@ self.addEventListener("notificationclick", (e) => {
   const data = e.notification.data || {};
   const date = data.date;
   // Wochenbericht öffnen bzw. Abfrage für den Tag starten
-  const msg = data.report ? { type: "report" } : { type: "quiz", date };
-  const url = new URL(data.report ? "./?report=week" : date ? `./?quiz=${date}` : "./", self.registration.scope).href;
+  const msg = data.report ? { type: "report" } : data.open ? { type: "open", what: data.open } : { type: "quiz", date };
+  const url = new URL(data.report ? "./?report=week" : data.open ? `./?open=${data.open}` : date ? `./?quiz=${date}` : "./", self.registration.scope).href;
   e.waitUntil((async () => {
     const wins = await self.clients.matchAll({ type: "window", includeUncontrolled: true });
     for (const c of wins) {

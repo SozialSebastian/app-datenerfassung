@@ -110,7 +110,8 @@ async function sendPush(env, sub, message) {
   if (res.status === 404 || res.status === 410) {
     await env.DB.batch([
       env.DB.prepare("DELETE FROM subs WHERE endpoint = ?").bind(sub.endpoint),
-      env.DB.prepare("DELETE FROM weekly WHERE endpoint = ?").bind(sub.endpoint)
+      env.DB.prepare("DELETE FROM weekly WHERE endpoint = ?").bind(sub.endpoint),
+      env.DB.prepare("DELETE FROM goals WHERE endpoint = ?").bind(sub.endpoint)
     ]);
   }
   return res.status;
@@ -135,6 +136,12 @@ function weeklyMessage(sub, date) {
     report: "week",
     url: `${APP_URL}?report=week`
   };
+}
+
+// Ziel-Erinnerung: Text kommt von der App (nur gefährdete Ziele dieser Woche); ohne Text keine Mitteilung
+function goalsMessage(sub, date) {
+  const fresh = sub.teaser && sub.teaser_week === mondayOf(date);
+  return fresh ? { title: "Mosaik · Ziele", body: sub.teaser, open: "goals", url: `${APP_URL}?open=goals` } : null;
 }
 
 /* ---------- Eingang für Kurzbefehle ---------- */
@@ -293,12 +300,14 @@ async function handle(request, env) {
     return json({ ok: status < 300, status });
   }
 
-  if (path === "/weekly" && request.method === "POST") {
+  const sched = path.match(/^\/(weekly|goals)(\/teaser|\/test)?$/);
+  const table = sched && sched[1];
+  if (sched && !sched[2] && request.method === "POST") {
     const b = await request.json();
     const s = b.subscription;
     if (!s || !s.endpoint) return json({ error: "Abo unvollständig" }, 400);
     if (!b.on) {
-      await env.DB.prepare("DELETE FROM weekly WHERE endpoint = ?").bind(s.endpoint).run();
+      await env.DB.prepare(`DELETE FROM ${table} WHERE endpoint = ?`).bind(s.endpoint).run();
       return json({ ok: true });
     }
     if (!s.keys || !s.keys.p256dh || !s.keys.auth) return json({ error: "Abo unvollständig" }, 400);
@@ -310,26 +319,28 @@ async function handle(request, env) {
     const now = localNow(tz);
     const last = now.wd === day && b.time <= now.time ? now.date : "";
     await env.DB.prepare(
-      `INSERT INTO weekly (endpoint, p256dh, auth, day, time, tz, last_sent, created)
+      `INSERT INTO ${table} (endpoint, p256dh, auth, day, time, tz, last_sent, created)
        VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, datetime('now'))
        ON CONFLICT(endpoint) DO UPDATE SET p256dh = ?2, auth = ?3, day = ?4, time = ?5, tz = ?6,
-         last_sent = CASE WHEN weekly.day = ?4 AND weekly.time = ?5 THEN weekly.last_sent ELSE ?7 END`
+         last_sent = CASE WHEN ${table}.day = ?4 AND ${table}.time = ?5 THEN ${table}.last_sent ELSE ?7 END`
     ).bind(s.endpoint, s.keys.p256dh, s.keys.auth, day, b.time, tz, last).run();
     return json({ ok: true });
   }
 
-  if (path === "/weekly/teaser" && request.method === "POST") {
+  if (sched && sched[2] === "/teaser" && request.method === "POST") {
     const b = await request.json();
-    await env.DB.prepare("UPDATE weekly SET teaser = ?, teaser_week = ? WHERE endpoint = ?")
-      .bind(String(b.text || "").slice(0, 160), String(b.week || ""), b.endpoint || "").run();
+    await env.DB.prepare(`UPDATE ${table} SET teaser = ?, teaser_week = ? WHERE endpoint = ?`)
+      .bind(String(b.text || "").slice(0, 300), String(b.week || ""), b.endpoint || "").run();
     return json({ ok: true });
   }
 
-  if (path === "/weekly/test" && request.method === "POST") {
+  if (sched && sched[2] === "/test" && request.method === "POST") {
     const b = await request.json();
-    const sub = await env.DB.prepare("SELECT * FROM weekly WHERE endpoint = ?").bind(b.endpoint || "").first();
-    if (!sub) return json({ error: "Wochenbericht ist für dieses Gerät nicht aktiviert" }, 404);
-    const status = await sendPush(env, sub, weeklyMessage(sub, localNow(sub.tz).date));
+    const sub = await env.DB.prepare(`SELECT * FROM ${table} WHERE endpoint = ?`).bind(b.endpoint || "").first();
+    if (!sub) return json({ error: `${table === "goals" ? "Ziel-Erinnerung" : "Wochenbericht"} ist für dieses Gerät nicht aktiviert` }, 404);
+    const date = localNow(sub.tz).date;
+    const msg = table === "goals" ? (goalsMessage(sub, date) || { title: "Mosaik · Ziele", body: "Test: Gerade ist kein Ziel gefährdet. So sieht die Erinnerung aus.", open: "goals", url: `${APP_URL}?open=goals` }) : weeklyMessage(sub, date);
+    const status = await sendPush(env, sub, msg);
     return json({ ok: status < 300, status });
   }
 
@@ -394,6 +405,15 @@ async function scheduled(env) {
     if (now.wd !== sub.day || now.time < sub.time || sub.last_sent === now.date) continue;
     await env.DB.prepare("UPDATE weekly SET last_sent = ? WHERE endpoint = ?").bind(now.date, sub.endpoint).run();
     try { await sendPush(env, sub, weeklyMessage(sub, now.date)); } catch (e) { console.error("Wochenbericht fehlgeschlagen", e); }
+  }
+  const goals = (await env.DB.prepare("SELECT * FROM goals").all()).results;
+  for (const sub of goals) {
+    const now = localNow(sub.tz);
+    if (now.wd !== sub.day || now.time < sub.time || sub.last_sent === now.date) continue;
+    await env.DB.prepare("UPDATE goals SET last_sent = ? WHERE endpoint = ?").bind(now.date, sub.endpoint).run();
+    const msg = goalsMessage(sub, now.date);
+    if (!msg) continue; // nichts gefährdet → keine Mitteilung
+    try { await sendPush(env, sub, msg); } catch (e) { console.error("Ziel-Erinnerung fehlgeschlagen", e); }
   }
   await env.DB.prepare("DELETE FROM inbox WHERE created < datetime('now', '-30 days')").run();
 }

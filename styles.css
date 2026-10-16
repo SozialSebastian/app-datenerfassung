@@ -552,3 +552,4 @@ body.no-scroll { overflow: hidden; touch-action: none; }
 .mmonth { display: grid; gap: 8px; }
 .mmonth p { margin: 0; font-size: 15px; line-height: 1.4; }
 .mmonth strong { font-size: 18px; }
+.subsep { height: 1px; background: var(--line); margin: 16px 0 14px; }
