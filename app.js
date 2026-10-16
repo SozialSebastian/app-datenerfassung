@@ -1586,5 +1586,19 @@ reportStatus();
 document.addEventListener("visibilitychange", () => { if (document.visibilityState === "visible") { fetchInbox(false); reportStatus(); } });
 
 if ("serviceWorker" in navigator && location.protocol !== "file:") {
-  navigator.serviceWorker.register("sw.js").catch((e) => console.warn("SW", e));
+  const hadController = !!navigator.serviceWorker.controller;
+  navigator.serviceWorker.register("sw.js").then((reg) => {
+    // Beim Zurückkehren in die App nach einer neuen Version schauen
+    document.addEventListener("visibilitychange", () => { if (document.visibilityState === "visible") reg.update().catch(() => {}); });
+  }).catch((e) => console.warn("SW", e));
+  // Neue Version aktiv → einmal neu laden (nicht mitten in einer Abfrage oder einem offenen Fenster)
+  let reloading = false;
+  navigator.serviceWorker.addEventListener("controllerchange", () => {
+    if (!hadController || reloading) return;
+    const tryReload = () => {
+      if (quiz || document.querySelector("dialog[open]")) return setTimeout(tryReload, 5000);
+      reloading = true; location.reload();
+    };
+    tryReload();
+  });
 }
