@@ -913,6 +913,55 @@ function words(q) {
   return { hi: "am höchsten", lo: "am niedrigsten", top: "Höchster Wert", bottom: "Niedrigster Wert" };
 }
 
+// Abstand zweier Daten im Jahreslauf (0–182 Tage), z. B. 20.12. und 10.1. → 21
+function doyDist(a, b) {
+  const doy = (s) => { const d = parseIso(s); return Math.round((d - new Date(d.getFullYear(), 0, 1)) / 864e5); };
+  const x = Math.abs(doy(a) - doy(b));
+  return Math.min(x, 365 - x);
+}
+// Meteorologische Jahreszeiten
+const SEASONS = ["Winter", "Frühling", "Sommer", "Herbst"];
+const SEASON_IN = ["im Winter", "im Frühling", "im Sommer", "im Herbst"];
+const seasonOf = (s) => Math.floor((Number(s.slice(5, 7)) % 12) / 3); // Dez–Feb 0, Mär–Mai 1, Jun–Aug 2, Sep–Nov 3
+
+// Jahreszeiten-Muster: Zahlen (Schnitt je Jahreszeit) und Ja/Nein (Anteil Ja je Jahreszeit)
+function seasonInsights() {
+  const out = [];
+  const t = todayIso();
+  for (const q of state.questions) {
+    if (q.archived) continue;
+    const yesNo = q.type === "choice" && !q.multi && q.options.includes("Ja");
+    if (q.type !== "number" && !yesNo) continue;
+    const last = isHealthQ(q) ? addDays(t, -1) : t;
+    const by = [[], [], [], []];
+    for (const d of Object.keys(state.answers)) {
+      if (d > last) continue;
+      const v = (state.answers[d] || {})[q.id];
+      if (q.type === "number" ? typeof v === "number" : isAnswered(v)) by[seasonOf(d)].push(q.type === "number" ? v : v === "Ja" ? 1 : 0);
+    }
+    // mindestens 2 Jahreszeiten mit je mind. 20 Tagen
+    const ok = by.map((a, i) => ({ i, a })).filter((x) => x.a.length >= 20);
+    if (ok.length < 2) continue;
+    const m = ok.map((x) => ({ i: x.i, m: mean(x.a), n: x.a.length }));
+    const hi = m.reduce((a, b) => (b.m > a.m ? b : a)), lo = m.reduce((a, b) => (b.m < a.m ? b : a));
+    if (hi.i === lo.i) continue;
+    const name = q.healthKey === "schritte" ? "Schritte" : esc(q.text.replace(/\?$/, ""));
+    const note = ok.length < 4 ? `bisher nur ${ok.map((x) => SEASONS[x.i]).join(" und ")}` : "";
+    if (q.type === "number") {
+      const all = ok.flatMap((x) => x.a);
+      const eff = (hi.m - lo.m) / (sd(all) || 1);
+      if (eff < 0.5) continue;
+      const w = words(q);
+      out.push({ score: 1 + eff, note, html: `${name}: <strong>${SEASON_IN[hi.i]} ${w.hi}</strong> (Ø ${fmtNice(q, hi.m)}), ${SEASON_IN[lo.i]} ${w.lo} (Ø ${fmtNice(q, lo.m)})` });
+    } else {
+      const pp = Math.round((hi.m - lo.m) * 100);
+      if (pp < 20) continue;
+      out.push({ score: 1 + pp / 25, note, html: `${qName(q)}: <strong>${SEASON_IN[hi.i]} öfter Ja</strong> (${Math.round(hi.m * 100)} % der Tage), ${SEASON_IN[lo.i]} seltener (${Math.round(lo.m * 100)} %)` });
+    }
+  }
+  return out.sort((a, b) => b.score - a.score);
+}
+
 function numberInsights() {
   const out = [];
   const t = todayIso();
@@ -929,14 +978,20 @@ function numberInsights() {
     const all = series.map((x) => x.v);
     const sdAll = sd(all) || 1;
 
-    // 1. Diese Woche im Vergleich zum Normalwert (letzte 365 Tage davor)
+    // 1. Diese Woche im Vergleich zum Normalwert. Gibt es Vorjahresdaten zur gleichen
+    //    Jahreszeit (±30 Tage), wird damit verglichen – sonst mit den 365 Tagen davor.
     const weekStart = addDays(last, -6);
     const week = series.filter((x) => x.d >= weekStart).map((x) => x.v);
-    const before = series.filter((x) => x.d < weekStart && x.d >= addDays(weekStart, -365)).map((x) => x.v);
+    const mid = addDays(weekStart, 3);
+    const sameSeason = series.filter((x) => x.d < addDays(weekStart, -300) && doyDist(x.d, mid) <= 30).map((x) => x.v);
+    const seasonal = sameSeason.length >= 14;
+    const before = seasonal ? sameSeason : series.filter((x) => x.d < weekStart && x.d >= addDays(weekStart, -365)).map((x) => x.v);
     if (week.length >= 4 && before.length >= 14) {
       const mw = mean(week), mb = mean(before), diff = mw - mb;
       const z = Math.abs(diff) / (sd(before) || 1);
-      if (z >= 0.4) out.push({ score: 1 + z, html: `<strong>${name} diese Woche Ø ${fmtNice(q, mw)}</strong>, ${fmtDiff(q, diff, mb)}` });
+      let txt = fmtDiff(q, diff, mb);
+      if (seasonal) txt = txt.replace("deinem Schnitt", "deinem Schnitt um diese Jahreszeit").replace("als sonst", "als sonst um diese Jahreszeit");
+      if (z >= 0.4) out.push({ score: 1 + z, html: `<strong>${name} diese Woche Ø ${fmtNice(q, mw)}</strong>, ${txt}` });
     }
 
     // 2. Wochentagsmuster (mind. 4 Werte je Wochentag)
@@ -978,19 +1033,20 @@ function numberInsights() {
 }
 
 // Zuerst die auffälligsten je Art, der Rest aufklappbar
-const T_PREVIEW = { streak: 2, num: 3, rel: 2 };
+const T_PREVIEW = { streak: 2, num: 3, season: 2, rel: 2 };
 let showAllTrends = false;
 function trendsPanel(days) {
-  const all = { streak: streakInsights(), num: numberInsights(), rel: relationInsights(days) };
+  const all = { streak: streakInsights(), num: numberInsights(), season: seasonInsights(), rel: relationInsights(days) };
   const lim = (k) => (showAllTrends ? all[k] : all[k].slice(0, T_PREVIEW[k]));
-  const streaks = lim("streak"), nums = lim("num"), rel = lim("rel");
+  const streaks = lim("streak"), nums = lim("num"), seasons = lim("season"), rel = lim("rel");
   const hidden = Object.keys(all).reduce((n, k) => n + Math.max(all[k].length - T_PREVIEW[k], 0), 0);
   const row = (x, kind) => `<li class="trow ${kind}"><span class="tmark" aria-hidden="true"></span><span>${x.html}${x.note ? ` <span class="muted small">· ${x.note}</span>` : ""}</span></li>`;
   return `<section class="panel trends">
     <h2 class="atitle">Trends</h2>
-    ${streaks.length || rel.length || nums.length ? `
+    ${streaks.length || rel.length || nums.length || seasons.length ? `
       ${streaks.length ? `<ul class="tlist">${streaks.map((x) => row(x, "streak")).join("")}</ul>` : ""}
       ${nums.length ? `<ul class="tlist" ${streaks.length ? 'style="margin-top:10px"' : ""}>${nums.map((x) => row(x, "num")).join("")}</ul>` : ""}
+      ${seasons.length ? `<p class="tsub small muted">Jahreszeiten (alle bisherigen Daten)</p><ul class="tlist">${seasons.map((x) => row(x, "season")).join("")}</ul>` : ""}
       ${rel.length ? `<p class="tsub small muted">Auffällige Zusammenhänge im gewählten Zeitraum</p><ul class="tlist">${rel.map((x) => row(x, "rel")).join("")}</ul>` : ""}
       ${hidden ? `<button class="btn ghost block" id="tmore" style="margin-top:12px">${showAllTrends ? "Weniger anzeigen" : `Alle Trends anzeigen (${hidden} weitere)`}</button>` : ""}
       ${rel.length ? `<p class="small muted tfoot">Zeigt nur deutliche Unterschiede ab ${MIN_GROUP} Tagen je Gruppe. Ein Zusammenhang heißt nicht, dass das eine das andere verursacht.</p>` : ""}`
@@ -1454,7 +1510,7 @@ function reportHtml(mon) {
 
   // Trends (immer der aktuelle Stand)
   const last30 = Array.from({ length: 30 }, (_, i) => addDays(t, i - 29));
-  const tr = [...streakInsights().slice(0, 3).map((x) => ({ ...x, k: "streak" })), ...numberInsights().slice(0, 3).map((x) => ({ ...x, k: "num" })), ...relationInsights(last30).slice(0, 2).map((x) => ({ ...x, k: "rel" }))];
+  const tr = [...streakInsights().slice(0, 3).map((x) => ({ ...x, k: "streak" })), ...numberInsights().slice(0, 3).map((x) => ({ ...x, k: "num" })), ...seasonInsights().slice(0, 1).map((x) => ({ ...x, k: "season" })), ...relationInsights(last30).slice(0, 2).map((x) => ({ ...x, k: "rel" }))];
   const trHtml = tr.length ? `<section class="sq">
       <div class="ghead"><h3 class="rh">Trends</h3><span class="small muted">aktueller Stand</span></div>
       <ul class="tlist">${tr.slice(0, 8).map((x) => `<li class="trow ${x.k}"><span class="tmark" aria-hidden="true"></span><span>${x.html}</span></li>`).join("")}</ul>
