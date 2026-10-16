@@ -22,4 +22,11 @@ jobs:
           echo "Workers-Recht:     $(api /accounts/$ACC/workers/scripts | jq -r '.success, (.errors[0].message // "")' | paste -sd' ')"
           echo "D1-Recht:          $(api /accounts/$ACC/d1/database | jq -r '.success, (.errors[0].message // "")' | paste -sd' ')"
           echo "workers.dev-Name:  $(api /accounts/$ACC/workers/subdomain | jq -r '.result.subdomain // ("nicht gesetzt " + (.errors[0].message // ""))')"
+          note() { echo "::notice title=$1::$2"; }
+          note "Token" "$(api /user/tokens/verify | jq -r '[.success, .result.status] | join(" ")')"
+          note "Konto" "$(api /accounts/$ACC | jq -r '[.success, (.errors[0].message // "")] | join(" ")')"
+          note "Workers" "$(api /accounts/$ACC/workers/scripts | jq -r '[.success, (.errors[0].message // "")] | join(" ")')"
+          note "D1" "$(api /accounts/$ACC/d1/database | jq -r '[.success, (.errors[0].message // "")] | join(" ")')"
+          note "Subdomain" "$(api /accounts/$ACC/workers/subdomain | jq -r '.result.subdomain // ("nicht gesetzt " + (.errors[0].message // ""))')"
+          note "Secrets" "token=$([ -n "$TOKEN" ] && echo ja || echo nein) account=$([ -n "$ACC" ] && echo ja || echo nein)"
           [ $ok = 1 ]
