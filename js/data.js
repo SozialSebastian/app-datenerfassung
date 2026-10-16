@@ -4,7 +4,7 @@
 async function shareOrDownload(blob, filename) {
   const file = new File([blob], filename, { type: blob.type });
   if (navigator.canShare && navigator.canShare({ files: [file] })) {
-    try { await navigator.share({ files: [file], title: filename }); return true; }
+    try { await navigator.share({ files: [file] }); return true; } // ohne Titel, sonst speichert iOS eine zweite Textdatei
     catch (e) { if (e.name === "AbortError") return false; }
   }
   const url = URL.createObjectURL(blob);
@@ -74,7 +74,8 @@ async function exportExcel() {
 }
 
 async function exportBackup() {
-  const blob = new Blob([JSON.stringify(state, null, 1)], { type: "application/json" });
+  // alles aus dem App-Speicher plus die Darstellung der Analyse (ohne Schlüssel und Geräte-Einstellungen)
+  const blob = new Blob([JSON.stringify({ ...state, prefs }, null, 1)], { type: "application/json" });
   if (await shareOrDownload(blob, `Mosaik_Sicherung_${todayIso()}.json`)) {
     state.lastBackup = new Date().toISOString();
     save(); renderData(); toast("Sicherung erstellt");
@@ -91,6 +92,8 @@ function importBackup(e) {
       if (!Array.isArray(s.questions) || typeof s.answers !== "object") throw new Error("Format");
       const nd = Object.keys(s.answers).length;
       if (!confirm(`Sicherung mit ${s.questions.length} Fragen und ${nd} Tagen laden? Die aktuellen Daten in der App werden dadurch ersetzt.`)) return;
+      if (s.prefs && typeof s.prefs === "object") { prefs = { ...prefs, ...s.prefs }; savePrefs(); }
+      delete s.prefs;
       state = { ...empty(), ...s };
       save(); render(); toast("Sicherung wiederhergestellt");
     } catch (err) {

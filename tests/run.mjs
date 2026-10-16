@@ -306,6 +306,30 @@ test("Health-Werte per Text übernehmen", async () => {
   await ctx.close();
 });
 
+test("Sicherung enthält alles und lässt sich wiederherstellen", async () => {
+  const data = yearData();
+  data.friends = { stichtag: daysAgo(5), labels: {}, history: [], list: [{ id: "a", name: "Anna", cat: "best", tags: { fem: true } }] };
+  data.goals = { period: "week", seen: {}, seenFails: [], items: [{ id: "g", qid: "b", kind: "count", key: "Ja", op: "min", n: 2, period: "week", repeat: true }] };
+  data.places = { [daysAgo(1)]: [{ c: "Wedel", t: "08:00" }] };
+  data.weather = { [daysAgo(1)]: { t: 14, r: 0, s: 3 } };
+  const { page, ctx, errors } = await open({ data });
+  // so baut die App die Sicherungsdatei
+  const backup = await page.evaluate(() => { prefs.range = "365"; return JSON.stringify({ ...state, prefs }); });
+  const b = JSON.parse(backup);
+  for (const k of ["questions", "answers", "friends", "goals", "places", "weather", "prefs"]) assert.ok(b[k], `Sicherung enthält ${k}`);
+  // Wiederherstellen in einer leeren App
+  const file = path.join(shots, "sicherung-test.json");
+  fs.writeFileSync(file, backup);
+  const fresh = await open();
+  await fresh.page.click('[data-tab="data"]');
+  await fresh.page.setInputFiles("#restorefile", file);
+  await fresh.page.waitForTimeout(300);
+  const r = await fresh.page.evaluate(() => [state.friends.list[0].name, state.goals.items.length, Object.keys(state.answers).length, prefs.range, "prefs" in state]);
+  assert.deepEqual(r, ["Anna", 1, 400, "365", false]);
+  assert.deepEqual([...errors, ...fresh.errors], []);
+  await ctx.close(); await fresh.ctx.close();
+});
+
 test("Dunkelmodus: alle Bereiche ohne Fehler (Bilder unter tests/screens)", async () => {
   const data = yearData();
   data.friends = { stichtag: daysAgo(10), labels: {}, history: [{ date: daysAgo(100), list: [{ id: "a", name: "Anna", cat: "best", tags: {} }] }],
