@@ -488,11 +488,13 @@ function renderAnalysis() {
     <p class="muted small" style="margin:0 0 16px">${tracked} von ${days.length} Tagen erfasst · ${shortDate(days[0])} – ${shortDate(days[days.length - 1])}${hiddenN ? ` · ${hiddenN} Frage${hiddenN > 1 ? "n" : ""} ausgeblendet` : ""}</p>
     ${all.length && prefs.trends !== false ? trendsPanel(days) : ""}
     ${all.length && prefs.goals !== false ? goalsPanel() : ""}
+    ${prefs.places !== false && (Object.keys(state.places || {}).length || (settings.places && settings.places.on)) ? placesPanel(days) : ""}
     ${qs.length ? qs.map((q) => analysisCard(q, days)).join("") : `<p class="muted">${all.length ? "Alle Fragen sind über das Zahnrad ausgeblendet." : "Noch keine Fragen angelegt."}</p>`}`;
 
   $("#asettings")?.addEventListener("click", openAnalysisSettings);
   $("#gmore")?.addEventListener("click", () => { showAllGoals = !showAllGoals; renderAnalysis(); });
   $("#tmore")?.addEventListener("click", () => { showAllTrends = !showAllTrends; renderAnalysis(); });
+  $("#pmore")?.addEventListener("click", () => { showAllPlaces = !showAllPlaces; renderAnalysis(); });
   view.querySelectorAll("[data-range]").forEach((b) => b.addEventListener("click", () => { prefs.range = b.dataset.range; savePrefs(); renderAnalysis(); }));
   view.querySelectorAll("[data-focus]").forEach((b) => b.addEventListener("click", () => {
     prefs.focus[b.dataset.qid] = b.dataset.focus; savePrefs(); renderAnalysis();
@@ -738,6 +740,12 @@ function openAnalysisSettings() {
         </div>
         <p class="muted small" style="margin:6px 0 0">Stand deiner Ziele. Festlegen unter „Tag“ über das Zahnrad.</p>
       </section>
+      <section class="sq">
+        <div class="sq-head"><strong>Orte</strong>
+          <label class="switch"><input type="checkbox" data-f="places" ${prefs.places !== false ? "checked" : ""}><span>Anzeigen</span></label>
+        </div>
+        <p class="muted small" style="margin:6px 0 0">Wo du im Zeitraum warst, je Ort die Anzahl Tage.</p>
+      </section>
       ${qs.map((q) => {
         const s = qset(q);
         const dist = q.type === "choice" || q.type === "scale";
@@ -762,6 +770,7 @@ function openAnalysisSettings() {
     dlg.querySelectorAll("input[data-f]").forEach((i) => i.addEventListener("change", () => {
       if (i.dataset.f === "trends") { prefs.trends = i.checked; savePrefs(); }
       else if (i.dataset.f === "goals") { prefs.goals = i.checked; savePrefs(); }
+      else if (i.dataset.f === "places") { prefs.places = i.checked; savePrefs(); }
       else if (i.dataset.f === "show") setQ(i.dataset.q, { hidden: !i.checked });
       else setQ(i.dataset.q, { trend: i.checked });
       draw(); renderAnalysis();
@@ -1608,6 +1617,7 @@ function exportItems() {
     const range = (RANGES.find(([k]) => k === exportRange) || [, ""])[1];
     items.push({ id: "trends", group: "Analyse", label: `Trends (${range})`, file: "Trends", html: () => withAllOpen(() => trendsPanel(days)) });
     if (goalItems().length) items.push({ id: "goals", group: "Analyse", label: "Ziele", file: "Ziele", html: () => withAllOpen(goalsPanel) });
+    if (Object.keys(state.places || {}).length) items.push({ id: "places", group: "Analyse", label: `Orte (${range})`, file: "Orte", html: () => { const k = showAllPlaces; showAllPlaces = true; try { return placesPanel(days); } finally { showAllPlaces = k; } } });
     analysisQuestions(days).filter((q) => !qset(q).hidden).forEach((q) =>
       items.push({ id: "q:" + q.id, group: "Analyse", label: `${q.text} (${range})`, file: fileSafe(q.text), html: () => analysisCard(q, days) }));
     const wk = reportDefaultWeek();
@@ -1843,6 +1853,35 @@ function openPlaces(date) {
   draw();
   dlg.showModal();
   document.activeElement?.blur();
+}
+
+// Analyse: Orte im Zeitraum – jeder Ort zählt pro Tag höchstens einmal
+const PLACE_PREVIEW = 6;
+let showAllPlaces = false;
+function placesPanel(days) {
+  const counts = {};
+  let withPlace = 0;
+  for (const d of days) {
+    const cs = placeCities(d);
+    if (cs.length) withPlace++;
+    cs.forEach((c) => (counts[c] = (counts[c] || 0) + 1));
+  }
+  const rows = Object.entries(counts).sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0], "de"));
+  if (!rows.length) {
+    return `<section class="panel"><h2 class="atitle">Orte</h2><p class="muted small" style="margin:0">${settings.places && settings.places.on ? "Im gewählten Zeitraum wurde noch kein Ort erfasst." : "Noch keine Orte. Einschalten unter Einstellungen → Orte."}</p></section>`;
+  }
+  const shown = showAllPlaces ? rows : rows.slice(0, PLACE_PREVIEW);
+  return `<section class="panel acard places">
+    <h2 class="atitle">Orte</h2>
+    <p class="hero"><span class="big">${rows.length}</span><span class="muted">${rows.length === 1 ? "Ort" : "verschiedene Orte"} · Ort erfasst an ${withPlace} von ${days.length} Tagen</span></p>
+    <div class="bars">${shown.map(([c, n]) => `<div class="barrow static">
+      <span class="bl">${esc(c)}</span>
+      <span class="bt"><span style="width:${(n / withPlace) * 100}%"></span></span>
+      <span class="bv">${n} von ${withPlace}</span>
+    </div>`).join("")}</div>
+    ${rows.length > PLACE_PREVIEW ? `<button class="btn ghost block" id="pmore" style="margin-top:10px">${showAllPlaces ? "Weniger anzeigen" : `Alle Orte anzeigen (${rows.length - PLACE_PREVIEW} weitere)`}</button>` : ""}
+    <p class="small muted" style="margin:10px 0 0">Jeder Ort zählt pro Tag einmal, egal wie oft er erfasst wurde.</p>
+  </section>`;
 }
 
 // Für Trends: Orte wie eine Auswahlfrage behandeln („an Tagen in Hamburg“)

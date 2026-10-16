@@ -525,3 +525,5 @@ input.flabel { flex: 1; padding: 8px 10px; border-radius: var(--r-sm); border: 1
 .plist li:first-child { border-top: 0; }
 .plist .pc { font-weight: 600; }
 .rplaces { margin: -4px 0 12px; }
+.places .barrow { grid-template-columns: minmax(70px, 34%) 1fr auto; }
+.places .bv { white-space: nowrap; font-variant-numeric: tabular-nums; }
