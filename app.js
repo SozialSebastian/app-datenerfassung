@@ -1084,11 +1084,13 @@ function trendsPanel(days) {
 
 /* ================= Ziele ================= */
 // Gespeichert in state.goals (mit in der Sicherung):
-// { period: "week"|"month"|"year", items: [Ziel], seenPeriod, seenFails }
-// Ziel: { id, qid, kind: "count"|"days"|"avg"|"sum", key, op: "min"|"max", n, cmp: "ge"|"le", val }
+// { period (Vorgabe für neue Ziele), items: [Ziel], seen: { week|month|year: zuletzt gemeldeter Zeitraum }, seenFails }
+// Ziel: { id, qid, kind: "count"|"days"|"avg"|"sum", key, op: "min"|"max", n, cmp: "ge"|"le", val,
+//         period: "week"|"month"|"year", repeat: true|false, once: Zeitraum-Schlüssel bei einmaligen Zielen }
 const GOAL_PERIODS = [["week", "Woche"], ["month", "Monat"], ["year", "Jahr"]];
 const PER_WORD = { week: "pro Woche", month: "im Monat", year: "im Jahr" };
-const PREV_WORD = { week: "Letzte Woche", month: "Letzter Monat", year: "Letztes Jahr" };
+const THIS_WORD = { week: "diese Woche", month: "diesen Monat", year: "dieses Jahr" };
+const EVERY_WORD = { week: "Jede Woche", month: "Jeden Monat", year: "Jedes Jahr" };
 const GOAL_PREVIEW = 3;
 let showAllGoals = false;
 
@@ -1097,10 +1099,19 @@ function G() {
   const g = state.goals;
   if (!GOAL_PERIODS.some(([k]) => k === g.period)) g.period = "month";
   if (!Array.isArray(g.items)) g.items = [];
+  // ältere Ziele hatten einen gemeinsamen Zeitraum → fest übernehmen
+  g.items.forEach((x) => { if (!x.period) x.period = g.period; });
   if (!Array.isArray(g.seenFails)) g.seenFails = [];
+  if (!g.seen || typeof g.seen !== "object") { g.seen = {}; if (g.seenPeriod) g.seen[g.seenPeriod.split(":")[0]] = g.seenPeriod; }
   return g;
 }
-const goalItems = () => G().items.filter((x) => { const q = qById(x.qid); return q && !q.archived; });
+const gp = (g) => g.period || G().period; // Zeitraum eines Ziels (ältere Ziele: gemeinsamer Zeitraum)
+const goalCur = (g) => periodOf(gp(g), todayIso());
+const goalActive = (g) => g.repeat !== false || g.once === goalCur(g).key; // einmalige Ziele nur in ihrem Zeitraum
+// aktive Ziele mit aktiver Frage
+const goalItems = () => G().items.filter((x) => { const q = qById(x.qid); return q && !q.archived && goalActive(x); });
+// Gilt ein Ziel in einem (früheren) Zeitraum?
+const goalIn = (g, per) => gp(g) === per.kind && (g.repeat !== false || g.once === per.key);
 const dayCount = (a, b) => Math.round((parseIso(b) - parseIso(a)) / 864e5) + 1;
 const dm = (s) => { const d = parseIso(s); return `${d.getDate()}.${d.getMonth() + 1}.`; };
 
@@ -1153,7 +1164,7 @@ function evalGoal(g, per) {
   if (!ended && !isHealthQ(q) && !isAnswered((state.answers[t] || {})[q.id])) rest += 1;
   const daysLeft = ended ? 0 : dayCount(t, per.end);
   const pace = counted / total;
-  const r = { q, g, ended, vals: vals.length, daysLeft };
+  const r = { q, g, per, ended, vals: vals.length, daysLeft };
 
   if (g.kind === "avg") {
     const nums = vals.map((x) => x.v).filter((v) => typeof v === "number");
@@ -1199,51 +1210,59 @@ function goalRow(e) {
   const bar = e.frac === null ? "" : `<span class="gbar"><span style="width:${Math.round(e.frac * 100)}%"></span></span>`;
   return `<li class="grow st-${e.status}">
     <div class="gtop"><span class="gq">${esc(e.q.text)}</span><span class="gst"><span class="gdot" aria-hidden="true"></span>${statusLabel(e)}</span></div>
-    <div class="gdesc small muted">${goalText(e.g, e.q)}</div>
+    <div class="gdesc small muted">${goalText(e.g, e.q)} ${PER_WORD[e.per.kind]}${e.g.repeat === false ? " (einmalig)" : ""}${e.ended ? "" : ` · noch ${e.daysLeft} Tag${e.daysLeft === 1 ? "" : "e"}`}</div>
     ${bar}
     <div class="gcur small"><strong>${e.cur}</strong>${e.note ? ` · ${e.note}` : ""}</div>
   </li>`;
 }
 
+// Rückblick: frühere Zeiträume je Zeitraum-Art, jeweils mit den dort gültigen Zielen
+function goalHistory() {
+  const all = G().items.filter((g) => qById(g.qid));
+  const first = Object.keys(state.answers).sort()[0];
+  const out = [];
+  if (!first) return out;
+  const LIMIT = { week: 6, month: 6, year: 3 };
+  for (const [k] of GOAL_PERIODS) {
+    const gs = all.filter((g) => gp(g) === k);
+    if (!gs.length) continue;
+    let p = prevPeriod(periodOf(k, todayIso()));
+    for (let i = 0; i < LIMIT[k] && p.start >= first; i++, p = prevPeriod(p)) {
+      const ev = gs.filter((g) => goalIn(g, p)).map((g) => evalGoal(g, p));
+      if (ev.length) out.push({ p, ok: ev.filter((e) => e.status === "done").length, all: ev.length, miss: ev.filter((e) => e.status !== "done") });
+    }
+  }
+  return out.sort((a, b) => (a.p.end < b.p.end ? 1 : -1)).slice(0, 8);
+}
+
 // Bereich „Ziele“ in der Analyse
 function goalsPanel() {
-  const gs = G();
   const items = goalItems();
   if (!items.length) {
     return `<section class="panel goals"><h2 class="atitle">Ziele</h2>
-      <p class="muted small" style="margin:0">Noch keine Ziele. Leg sie unter „Tag“ über das Zahnrad oben rechts an.</p></section>`;
+      <p class="muted small" style="margin:0">Noch keine aktiven Ziele. Leg sie unter „Tag“ über das Zahnrad oben rechts an.</p></section>`;
   }
-  const per = periodOf(gs.period, todayIso());
-  const evals = items.map((g) => evalGoal(g, per)).sort((a, b) => STATUS_ORDER[a.status] - STATUS_ORDER[b.status]);
-  const n = (s) => evals.filter((e) => e.status === s).length;
+  const evals = items.map((g) => evalGoal(g, goalCur(g))).sort((a, b) => STATUS_ORDER[a.status] - STATUS_ORDER[b.status]);
+  const n = (s2) => evals.filter((e) => e.status === s2).length;
   const parts = [];
   if (n("done")) parts.push(`${n("done")} erreicht`);
   if (n("ok")) parts.push(`${n("ok")} auf Kurs`);
   if (n("behind")) parts.push(`${n("behind")} hinterher`);
   if (n("fail")) parts.push(`${n("fail")} verfehlt`);
   if (n("none")) parts.push(`${n("none")} offen`);
-  const left = dayCount(todayIso(), per.end);
   const shown = showAllGoals ? evals : evals.slice(0, GOAL_PREVIEW);
-
-  // frühere Zeiträume (höchstens 6), nur mit heutigen Zielen bewertet
-  const hist = [];
-  let p = prevPeriod(per);
-  const first = Object.keys(state.answers).sort()[0];
-  for (let i = 0; i < 6 && first && p.start >= first; i++, p = prevPeriod(p)) {
-    const ev = items.map((g) => evalGoal(g, p));
-    hist.push({ p, ok: ev.filter((e) => e.status === "done").length, all: ev.length, miss: ev.filter((e) => e.status !== "done") });
-  }
+  const hist = goalHistory();
 
   return `<section class="panel goals">
-    <div class="ghead"><h2 class="atitle">Ziele</h2><span class="small muted">${esc(per.name)} · noch ${left} Tag${left === 1 ? "" : "e"}</span></div>
+    <h2 class="atitle">Ziele</h2>
     <p class="gsum small">${parts.join(" · ")}</p>
     <ul class="glist">${shown.map(goalRow).join("")}</ul>
     ${evals.length > GOAL_PREVIEW ? `<button class="btn ghost block" id="gmore" style="margin-top:10px">${showAllGoals ? "Weniger anzeigen" : `Alle Ziele anzeigen (${evals.length - GOAL_PREVIEW} weitere)`}</button>` : ""}
     ${hist.length ? `<details class="ghist">
-      <summary>${PREV_WORD[gs.period]}: ${hist[0].ok} von ${hist[0].all} erreicht</summary>
+      <summary>Rückblick: ${esc(hist[0].p.name)} ${hist[0].ok} von ${hist[0].all} erreicht</summary>
       <ul class="hlist">${hist.map((h) => `<li><span class="hn">${esc(h.p.name)}</span><span class="hv ${h.ok === h.all ? "all" : ""}">${h.ok}/${h.all}</span>
         ${h.miss.length ? `<span class="hm small muted">verfehlt: ${h.miss.map((e) => esc(e.q.text)).join(", ")}</span>` : ""}</li>`).join("")}</ul>
-      <p class="small muted" style="margin:8px 0 0">Bewertet mit deinen aktuellen Zielen.</p>
+      <p class="small muted" style="margin:8px 0 0">Wiederholte Ziele werden mit ihrer heutigen Einstellung bewertet.</p>
     </details>` : ""}
   </section>`;
 }
@@ -1251,33 +1270,40 @@ function goalsPanel() {
 // Hinweis: Zeitraum vorbei (mit verfehlten Zielen) oder Ziel nicht mehr erreichbar
 function goalNotices() {
   const gs = G();
-  const items = goalItems();
-  if (!items.length || quiz || document.querySelector("dialog[open]")) return;
-  const per = periodOf(gs.period, todayIso());
-  const prev = prevPeriod(per);
-  let summary = null;
-  if (gs.seenPeriod !== prev.key && gs.seenPeriod !== per.key) {
-    const ev = items.map((g) => evalGoal(g, prev));
-    gs.seenPeriod = prev.key;
+  const all = gs.items.filter((g) => { const q = qById(g.qid); return q && !q.archived; });
+  if (!all.length || quiz || document.querySelector("dialog[open]")) return;
+  // 1. abgelaufene Zeiträume je Art (Woche, Monat, Jahr) – einmal melden
+  const summaries = [];
+  for (const [k] of GOAL_PERIODS) {
+    const gsK = all.filter((g) => gp(g) === k);
+    if (!gsK.length) continue;
+    const prev = prevPeriod(periodOf(k, todayIso()));
+    if (!gs.seen[k]) { gs.seen[k] = prev.key; continue; } // erst ab dem nächsten Wechsel melden
+    if (gs.seen[k] === prev.key) continue;
+    gs.seen[k] = prev.key;
+    const ev = gsK.filter((g) => goalIn(g, prev)).map((g) => evalGoal(g, prev));
+    if (!ev.length) continue;
     const ok = ev.filter((e) => e.status === "done").length;
     if (ok === ev.length) toast(`${prev.name}: alle ${ev.length} Ziele erreicht!`);
-    else summary = { ev, ok };
+    else summaries.push({ prev, ev, ok });
   }
-  gs.seenFails = gs.seenFails.filter((k) => k.startsWith(per.key + "|"));
-  const fresh = items.map((g) => evalGoal(g, per)).filter((e) => e.status === "fail" && !gs.seenFails.includes(`${per.key}|${e.g.id}`));
-  fresh.forEach((e) => gs.seenFails.push(`${per.key}|${e.g.id}`));
+  // 2. Ziele, die im laufenden Zeitraum nicht mehr zu schaffen sind
+  const curKeys = new Set(goalItems().map((g) => goalCur(g).key));
+  gs.seenFails = gs.seenFails.filter((x) => curKeys.has(x.split("|")[0]));
+  const fresh = goalItems().map((g) => evalGoal(g, goalCur(g))).filter((e) => e.status === "fail" && !gs.seenFails.includes(`${e.per.key}|${e.g.id}`));
+  fresh.forEach((e) => gs.seenFails.push(`${e.per.key}|${e.g.id}`));
   save();
-  if (!summary && !fresh.length) return;
+  if (!summaries.length && !fresh.length) return;
 
   const dlg = $("#sheet");
   dlg.innerHTML = `<div class="sheet-inner">
     <div class="sheet-head"><span></span><h2>Ziele</h2><button type="button" class="linkbtn" id="gok">Okay</button></div>
-    ${summary ? `<section class="sq">
-      <p class="gbig"><strong>${esc(prev.name)}</strong> ist vorbei: ${summary.ok} von ${summary.ev.length} Zielen erreicht.</p>
-      <ul class="glist">${summary.ev.sort((a, b) => STATUS_ORDER[a.status] - STATUS_ORDER[b.status]).map(goalRow).join("")}</ul>
-    </section>` : ""}
+    ${summaries.map((sm) => `<section class="sq">
+      <p class="gbig"><strong>${esc(sm.prev.name)}</strong> ist vorbei: ${sm.ok} von ${sm.ev.length} Zielen erreicht.</p>
+      <ul class="glist">${sm.ev.sort((a, b) => STATUS_ORDER[a.status] - STATUS_ORDER[b.status]).map(goalRow).join("")}</ul>
+    </section>`).join("")}
     ${fresh.length ? `<section class="sq">
-      <p class="gbig">${fresh.length === 1 ? "Ein Ziel ist" : `${fresh.length} Ziele sind`} für ${esc(per.name)} nicht mehr zu schaffen.</p>
+      <p class="gbig">${fresh.length === 1 ? "Ein Ziel ist" : `${fresh.length} Ziele sind`} im laufenden Zeitraum nicht mehr zu schaffen.</p>
       <ul class="glist">${fresh.map(goalRow).join("")}</ul>
     </section>` : ""}
     <button type="button" class="btn ghost block" id="gadj">Ziele anpassen</button>
@@ -1319,8 +1345,10 @@ function openGoals() {
 
   const form = () => {
     const q = qById(edit.qid);
-    const per = PER_WORD[G().period];
-    let f = `<label class="field">Frage<select id="gq">${qs().map((x) => `<option value="${x.id}" ${x.id === q.id ? "selected" : ""}>${esc(x.text)}</option>`).join("")}</select></label>`;
+    const per = PER_WORD[edit.period];
+    let f = `<label class="field">Frage<select id="gq">${qs().map((x) => `<option value="${x.id}" ${x.id === q.id ? "selected" : ""}>${esc(x.text)}</option>`).join("")}</select></label>
+      <div class="sq-row"><span>Zeitraum</span><div class="seg seg-3" role="group">${GOAL_PERIODS.map(([k, l]) => `<button type="button" data-gper="${k}" aria-pressed="${edit.period === k}">${l}</button>`).join("")}</div></div>
+      <div class="sq-row"><span>Wiederholen</span>${seg2("grep", [["yes", EVERY_WORD[edit.period]], ["no", `Nur ${THIS_WORD[edit.period]}`]], edit.repeat === false ? "no" : "yes")}</div>`;
     if (q.type === "choice") {
       f += `<div class="sq-row"><span>Antwort</span><select id="gkey">${q.options.map((o) => `<option ${o === edit.key ? "selected" : ""}>${esc(o)}</option>`).join("")}</select></div>
         <div class="sq-row"><span>Wie oft</span>${seg2("gop", [["min", "mindestens"], ["max", "höchstens"]], edit.op)}</div>
@@ -1332,7 +1360,7 @@ function openGoals() {
         <div class="gline">${valInput(q, edit.val)}</div>`;
     }
     const valid = goalValid(edit, q);
-    f += `<p class="gprev small">${valid ? `Ziel: <strong>${goalText(edit, q)}</strong> ${per}` : `<span class="muted">Bitte ${q.type === "choice" || edit.kind === "days" ? "Anzahl" : "Wert"} eintragen</span>`}</p>
+    f += `<p class="gprev small">${valid ? `Ziel: <strong>${goalText(edit, q)}</strong> ${per}${edit.repeat === false ? ` (nur ${esc(periodOf(edit.period, todayIso()).name)})` : ""}` : `<span class="muted">Bitte ${q.type === "choice" || edit.kind === "days" ? "Anzahl" : "Wert"} eintragen</span>`}</p>
       <div class="gbtns"><button type="button" class="btn ghost" id="gcancel">Abbrechen</button><button type="button" class="btn" id="gsave">${edit.isNew ? "Ziel anlegen" : "Sichern"}</button></div>`;
     return `<section class="sq gform" id="gform">${f}</section>`;
   };
@@ -1350,21 +1378,17 @@ function openGoals() {
   const draw = () => {
     const gs = G();
     const keep = dlg.querySelector(".sheet-inner")?.scrollTop || 0;
-    const per = periodOf(gs.period, todayIso());
     const items = gs.items.filter((x) => qById(x.qid));
     dlg.innerHTML = `<div class="sheet-inner">
       <div class="sheet-head"><span></span><h2>Ziele</h2><button type="button" class="linkbtn" id="gdone">Fertig</button></div>
-      <section class="sq">
-        <div class="sq-row"><span>Zeitraum</span><div class="seg seg-3" role="group">${GOAL_PERIODS.map(([k, l]) => `<button type="button" data-gper="${k}" aria-pressed="${gs.period === k}">${l}</button>`).join("")}</div></div>
-        <p class="muted small" style="margin:8px 0 0">Gilt für alle Ziele. Aktuell: ${esc(per.name)} (${dm(per.start)}–${dm(per.end)}).</p>
-      </section>
       ${items.map((g) => {
         const q = qById(g.qid);
         if (edit && edit.id === g.id) return form();
-        return `<section class="sq ${q.archived ? "off" : ""}">
+        const done = !goalActive(g);
+        return `<section class="sq ${q.archived || done ? "off" : ""}">
           <div class="sq-head"><strong>${esc(q.text)}</strong>
             <button type="button" class="iconbtn" data-gdel="${g.id}" aria-label="Ziel löschen">✕</button></div>
-          <button type="button" class="gedit" data-gedit="${g.id}">${goalText(g, q)} ${PER_WORD[gs.period]}${q.archived ? " · Frage ausgeblendet" : ""}<span class="muted"> · ändern</span></button>
+          <button type="button" class="gedit" data-gedit="${g.id}">${goalText(g, q)} ${PER_WORD[gp(g)]}<span class="gtag">${g.repeat === false ? (done ? "abgeschlossen" : `nur ${esc(goalCur(g).name)}`) : `${EVERY_WORD[gp(g)].toLowerCase()}`}</span>${q.archived ? " · Frage ausgeblendet" : ""}<span class="muted"> · ändern</span></button>
         </section>`;
       }).join("")}
       ${edit && edit.isNew ? form() : ""}
@@ -1375,21 +1399,15 @@ function openGoals() {
     dlg.querySelector(".sheet-inner").scrollTop = keep;
 
     $("#gdone", dlg).addEventListener("click", () => dlg.close());
-    dlg.querySelectorAll("[data-gper]").forEach((b) => b.addEventListener("click", () => {
-      sync();
-      gs.period = b.dataset.gper;
-      // beim Wechsel keinen Rückblick auf einen alten Zeitraum aufpoppen lassen
-      gs.seenPeriod = prevPeriod(periodOf(gs.period, todayIso())).key;
-      save(); draw(); render();
-    }));
     $("#gadd", dlg)?.addEventListener("click", () => {
       const q = qs()[0];
-      edit = { id: uid(), qid: q.id, ...goalDraft(q, gs.period), isNew: true };
+      edit = { id: uid(), qid: q.id, period: gs.period, repeat: true, ...goalDraft(q, gs.period), isNew: true };
       draw();
       $("#gform", dlg)?.scrollIntoView({ block: "nearest" });
     });
     dlg.querySelectorAll("[data-gedit]").forEach((b) => b.addEventListener("click", () => {
-      edit = { ...gs.items.find((x) => x.id === b.dataset.gedit), isNew: false };
+      const g0 = gs.items.find((x) => x.id === b.dataset.gedit);
+      edit = { ...g0, period: gp(g0), repeat: g0.repeat !== false, isNew: false };
       draw();
     }));
     dlg.querySelectorAll("[data-gdel]").forEach((b) => b.addEventListener("click", () => {
@@ -1402,16 +1420,28 @@ function openGoals() {
     // Formular
     $("#gq", dlg).addEventListener("change", (e) => {
       const q = qById(e.target.value);
-      edit = { id: edit.id, qid: q.id, ...goalDraft(q, gs.period), isNew: edit.isNew };
+      edit = { id: edit.id, qid: q.id, period: edit.period, repeat: edit.repeat, ...goalDraft(q, edit.period), isNew: edit.isNew };
       draw();
     });
     $("#gkey", dlg)?.addEventListener("change", () => { sync(); draw(); });
+    dlg.querySelectorAll("[data-gper]").forEach((b) => b.addEventListener("click", () => {
+      sync();
+      // Anzahl bzw. Summe passend zum neuen Zeitraum umrechnen (Woche 1, Monat ≈ 4,3, Jahr 52)
+      const W_ = { week: 1, month: 4.3, year: 52 }, f = W_[b.dataset.gper] / W_[edit.period];
+      if (f !== 1) {
+        if (Number.isInteger(edit.n) && (edit.kind === "count" || edit.kind === "days")) edit.n = Math.max(edit.op === "max" ? 0 : 1, Math.round(edit.n * f));
+        if (edit.kind === "sum" && typeof edit.val === "number") edit.val = Math.round(edit.val * f);
+        if (edit.kind === "days") edit.n = Math.min(edit.n, dayCount(periodOf(b.dataset.gper, todayIso()).start, periodOf(b.dataset.gper, todayIso()).end));
+      }
+      edit.period = b.dataset.gper; draw();
+    }));
+    dlg.querySelectorAll("[data-grep]").forEach((b) => b.addEventListener("click", () => { sync(); edit.repeat = b.dataset.grep === "yes"; draw(); }));
     dlg.querySelectorAll("[data-gop]").forEach((b) => b.addEventListener("click", () => { sync(); edit.op = b.dataset.gop; draw(); }));
     dlg.querySelectorAll("[data-gcmp]").forEach((b) => b.addEventListener("click", () => { sync(); edit.cmp = b.dataset.gcmp; draw(); }));
     dlg.querySelectorAll("[data-gk]").forEach((b) => b.addEventListener("click", () => {
       sync(); edit.kind = b.dataset.gk;
       if (edit.kind === "sum" && edit.val !== null) { // Summe: Tageswert × Tage als Vorschlag
-        const days = dayCount(periodOf(gs.period, todayIso()).start, periodOf(gs.period, todayIso()).end);
+        const days = dayCount(periodOf(edit.period, todayIso()).start, periodOf(edit.period, todayIso()).end);
         edit.val = Math.round(edit.val * days);
       }
       draw();
@@ -1422,7 +1452,7 @@ function openGoals() {
         sync();
         const prev = dlg.querySelector(".gprev");
         const q = qById(edit.qid);
-        if (prev) prev.innerHTML = goalValid(edit, q) ? `Ziel: <strong>${goalText(edit, q)}</strong> ${PER_WORD[gs.period]}` : `<span class="muted">Bitte gültige Zahl eintragen</span>`;
+        if (prev) prev.innerHTML = goalValid(edit, q) ? `Ziel: <strong>${goalText(edit, q)}</strong> ${PER_WORD[edit.period]}${edit.repeat === false ? ` (nur ${esc(periodOf(edit.period, todayIso()).name)})` : ""}` : `<span class="muted">Bitte gültige Zahl eintragen</span>`;
         if (inp.id === "gval" && q.format && edit.val !== null) inp.value = fmtQ(q, edit.val);
         else inp.value = before;
       });
@@ -1435,9 +1465,11 @@ function openGoals() {
       if (!goalValid(edit, q)) return toast(q.type === "choice" || edit.kind === "days" ? "Bitte eine Anzahl ab 1 eintragen" : "Bitte einen Wert eintragen");
       const { isNew, ...g } = edit;
       // nur die Felder behalten, die zur Art passen
-      const clean = q.type === "choice" ? { id: g.id, qid: g.qid, kind: "count", key: g.key, op: g.op, n: g.n }
-        : { id: g.id, qid: g.qid, kind: g.kind, cmp: g.cmp, val: g.val, ...(g.kind === "days" ? { n: g.n } : {}) };
-      if (!gs.seenPeriod) gs.seenPeriod = prevPeriod(periodOf(gs.period, todayIso())).key;
+      const timing = { period: g.period, repeat: g.repeat !== false, ...(g.repeat === false ? { once: periodOf(g.period, todayIso()).key } : {}) };
+      const clean = q.type === "choice" ? { id: g.id, qid: g.qid, kind: "count", key: g.key, op: g.op, n: g.n, ...timing }
+        : { id: g.id, qid: g.qid, kind: g.kind, cmp: g.cmp, val: g.val, ...(g.kind === "days" ? { n: g.n } : {}), ...timing };
+      gs.period = g.period; // Vorgabe für das nächste neue Ziel
+      if (!gs.seen[g.period]) gs.seen[g.period] = prevPeriod(periodOf(g.period, todayIso())).key;
       const i = gs.items.findIndex((x) => x.id === g.id);
       if (i >= 0) gs.items[i] = clean; else gs.items.push(clean);
       // geändertes Ziel darf wieder einen Hinweis auslösen
@@ -1513,12 +1545,13 @@ function reportHtml(mon) {
   const items = goalItems();
   let goalsHtml = "";
   if (items.length) {
-    const per = periodOf(gs.period, sun <= t ? sun : t);
-    const ev = items.map((g) => evalGoal(g, per)).sort((a, b) => STATUS_ORDER[a.status] - STATUS_ORDER[b.status]);
+    const ref = sun <= t ? sun : t;
+    const ev = items.map((g) => evalGoal(g, periodOf(gp(g), ref))).sort((a, b) => STATUS_ORDER[a.status] - STATUS_ORDER[b.status]);
+    const running = ev.some((e) => !e.ended);
     const done = ev.filter((e) => e.status === "done").length;
     const okn = ev.filter((e) => e.status === "ok").length;
     goalsHtml = `<section class="sq">
-      <div class="ghead"><h3 class="rh">Ziele</h3><span class="small muted">${esc(per.name)}${per.end >= t ? " · Stand heute" : ""}</span></div>
+      <div class="ghead"><h3 class="rh">Ziele</h3><span class="small muted">${running ? "Stand heute" : ""}</span></div>
       <p class="gsum small">${done} erreicht · ${okn} auf Kurs · ${ev.length - done - okn} offen oder verfehlt</p>
       <ul class="glist">${ev.map(goalRow).join("")}</ul>
     </section>`;
@@ -1552,7 +1585,7 @@ function reportHtml(mon) {
       <div class="rstats">
         <div><strong>${tracked}</strong><span>von ${days.length} Tagen erfasst</span></div>
         <div><strong>${full}</strong><span>Tage vollständig</span></div>
-        ${items.length ? `<div><strong>${items.map((g) => evalGoal(g, periodOf(gs.period, sun <= t ? sun : t))).filter((e) => e.status === "done" || e.status === "ok").length}/${items.length}</strong><span>Ziele erreicht oder auf Kurs</span></div>` : ""}
+        ${items.length ? `<div><strong>${items.map((g) => evalGoal(g, periodOf(gp(g), sun <= t ? sun : t))).filter((e) => e.status === "done" || e.status === "ok").length}/${items.length}</strong><span>Ziele erreicht oder auf Kurs</span></div>` : ""}
       </div>
     </section>
     ${goalsHtml}${qHtml}${trHtml}
@@ -1592,7 +1625,7 @@ function reportTeaser() {
   let s = `${tracked} von 7 Tagen erfasst.`;
   const items = goalItems();
   if (items.length) {
-    const ev = items.map((g) => evalGoal(g, periodOf(G().period, t)));
+    const ev = items.map((g) => evalGoal(g, goalCur(g)));
     const done = ev.filter((e) => e.status === "done").length, ok = ev.filter((e) => e.status === "ok").length;
     s += ` Ziele: ${done} erreicht${ok ? `, ${ok} auf Kurs` : ""}.`;
   }

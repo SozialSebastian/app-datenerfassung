@@ -535,3 +535,5 @@ input.flabel { flex: 1; padding: 8px 10px; border-radius: var(--r-sm); border: 1
 #qpanel .qrow.dragging { position: relative; z-index: 5; box-shadow: 0 8px 24px rgba(0,0,0,.18); background: var(--surface); transition: box-shadow .15s; }
 .qdrop { list-style: none; height: 3px; border-radius: 2px; background: var(--hold); margin: -2px 0 4px; }
 body.no-scroll { overflow: hidden; touch-action: none; }
+.gtag { display: inline-block; margin-left: 6px; padding: 1px 8px; border-radius: 999px; background: var(--bg); color: var(--ink-2); font-size: 12px; font-weight: 600; vertical-align: 1px; }
+.gform .sq-row { grid-template-columns: 104px 1fr; }
