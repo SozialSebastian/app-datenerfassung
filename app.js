@@ -429,7 +429,7 @@ const savePrefs = () => { try { localStorage.setItem(PREF_KEY, JSON.stringify(pr
 const qset = (q) => ({ chart: "bars", unit: "pct", trend: q.type !== "choice", hidden: false, ...(prefs.q[q.id] || {}) });
 const setQ = (qid, patch) => { prefs.q[qid] = { ...(prefs.q[qid] || {}), ...patch }; savePrefs(); };
 
-const RANGES = [["7", "7 Tage"], ["30", "30 Tage"], ["365", "12 Monate"], ["all", "Alles"]];
+const RANGES = [["7", "7 Tage"], ["30", "30 Tage"], ["ytd", "Seit 1.1."], ["365", "12 Mon."], ["all", "Alles"]];
 const SERIES = 8; // Farben für Kuchendiagramme, weitere Antworten → „Weitere“
 const fmt1 = (n) => (Math.round(n * 10) / 10).toLocaleString("de-DE");
 const pct = (a, b) => (b ? Math.round((a / b) * 100) : 0);
@@ -442,7 +442,8 @@ function rangeDays() {
   if (prefs.range === "all") {
     const first = Object.keys(state.answers).sort()[0];
     start = first && first < t ? first : t;
-  } else start = addDays(t, -(Number(prefs.range) - 1));
+  } else if (prefs.range === "ytd") start = t.slice(0, 4) + "-01-01"; // seit Jahresbeginn
+  else start = addDays(t, -(Number(prefs.range) - 1));
   const out = [];
   for (let d = start; d <= t; d = addDays(d, 1)) out.push(d);
   return out;
