@@ -196,10 +196,15 @@ async function handle(request, env) {
     if (/^\d{1,2}\.\d{1,2}\.\d{4}$/.test(date)) { const [d, m, y] = date.split("."); date = `${y}-${m.padStart(2, "0")}-${d.padStart(2, "0")}`; }
     if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) return text("Datum nicht erkannt. Bitte JJJJ-MM-TT oder TT.MM.JJJJ.", 400);
     delete pairs.datum; delete pairs.date; delete pairs.mosaik; delete pairs.taeglich;
-    const entries = Object.entries(pairs).filter(([k, v]) => /^[a-z0-9_äöüß-]{1,40}$/.test(k) && v !== "" && v.length <= 200);
+    const prevDay = (d) => { const t = new Date(d + "T12:00:00Z"); t.setUTCDate(t.getUTCDate() - 1); return t.toISOString().slice(0, 10); };
+    // Endung „_gestern“ trägt den Wert beim Vortag ein, z. B. schritte_gestern=9500
+    const entries = Object.entries(pairs)
+      .filter(([k, v]) => /^[a-z0-9_äöüß-]{1,48}$/.test(k) && v !== "" && v.length <= 200)
+      .map(([k, v]) => (k.endsWith("_gestern") ? [k.slice(0, -8), v, prevDay(date)] : [k, v, date]))
+      .filter(([k]) => k.length > 0);
     if (!entries.length) return text("Keine Werte erkannt. Beispiel: mosaik;schlaf=7,4", 400);
-    await env.DB.batch(entries.map(([k, v]) => env.DB.prepare("INSERT INTO inbox (created, date, key, value) VALUES (datetime('now'), ?, ?, ?)").bind(date, k, v)));
-    return text(`Gespeichert: ${entries.map(([k, v]) => `${k}=${v}`).join(", ")} für ${date}. Wird beim nächsten Öffnen von Mosaik übernommen.`);
+    await env.DB.batch(entries.map(([k, v, d]) => env.DB.prepare("INSERT INTO inbox (created, date, key, value) VALUES (datetime('now'), ?, ?, ?)").bind(d, k, v)));
+    return text(`Gespeichert: ${entries.map(([k, v, d]) => `${k}=${v} (${d})`).join(", ")}. Wird beim nächsten Öffnen von Mosaik übernommen.`);
   }
 
   if (path === "/inbox" && request.method === "GET") {

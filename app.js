@@ -85,6 +85,11 @@ const visibleQuestions = (date) => {
   return ordered().map((o) => o.q).filter((q) => !q.archived && condMet(q, a));
 };
 
+// Health-Felder werden automatisch gefüllt und nicht abgefragt
+const isHealthQ = (q) => q.source === "health";
+const askQuestions = (date) => visibleQuestions(date).filter((q) => !isHealthQ(q));
+const healthQuestions = () => ordered().map((o) => o.q).filter((q) => isHealthQ(q) && !q.archived);
+
 function setAnswer(date, qid, value) {
   if (!state.answers[date]) state.answers[date] = {};
   const a = state.answers[date];
@@ -104,7 +109,7 @@ function setAnswer(date, qid, value) {
 }
 
 function dayProgress(date) {
-  const qs = visibleQuestions(date);
+  const qs = askQuestions(date);
   if (!qs.length) return 0;
   const a = state.answers[date] || {};
   return qs.filter((q) => isAnswered(a[q.id])).length / qs.length;
@@ -236,13 +241,19 @@ function renderDay() {
   }
   week += `<button class="nav" data-week="7" aria-label="Nächste Woche">›</button>`;
 
-  const qs = visibleQuestions(current);
+  const qs = askQuestions(current);
   const a = state.answers[current] || {};
   const done = qs.filter((q) => isAnswered(a[q.id])).length;
-  const hasHealth = qs.some((q) => q.healthKey);
+  const hq = healthQuestions();
+  const healthHtml = hq.length ? `<section class="q healthcard">
+      <p class="q-title">Apple Health</p>
+      ${hq.map((q) => `<label class="hrow" data-hq="${q.id}"><span>${esc(q.text)}</span><span class="hval"><input type="text" inputmode="decimal" autocomplete="off" value="${esc(fmtNum(a[q.id]))}" placeholder="–" aria-label="${esc(q.text)}">${q.unit ? `<span class="unit">${esc(q.unit)}</span>` : ""}</span></label>`).join("")}
+    </section>` : "";
 
   let body;
-  if (!qs.length) {
+  if (!qs.length && hq.length) {
+    body = healthHtml + `<p class="muted small">Leg unter Einstellungen → Fragen deine erste Frage an.</p>`;
+  } else if (!qs.length) {
     body = `<div class="empty-state">
       <h2>Noch keine Fragen</h2>
       <p class="muted">Leg deine erste Frage an, zum Beispiel „Heute bouldern?“ mit den Antworten Ja und Nein.</p>
@@ -252,7 +263,7 @@ function renderDay() {
     const startLabel = done === 0 ? "Abfrage starten" : done < qs.length ? "Abfrage fortsetzen" : "Abfrage nochmal durchgehen";
     body = `<button class="btn block ${done < qs.length ? "hold-btn" : "ghost"}" id="startquiz">${startLabel}</button>
       <p class="progress">${done} von ${qs.length} beantwortet</p>`;
-    if (hasHealth) body += `<button class="btn ghost block" id="healthbtn" style="margin-bottom:12px">Werte aus Health einfügen</button>`;
+    body += healthHtml;
     body += qs.map((q) => {
       const val = a[q.id];
       return `<section class="q ${isAnswered(val) ? "done" : ""} ${q.cond ? "child" : ""}" data-qid="${q.id}">
@@ -277,22 +288,30 @@ function renderDay() {
   view.querySelectorAll("[data-date]").forEach((b) => b.addEventListener("click", () => { current = b.dataset.date; renderDay(); }));
   $("#gotoday")?.addEventListener("click", () => { current = todayIso(); renderDay(); });
   $("#firstq")?.addEventListener("click", () => openEditor(null));
-  $("#healthbtn")?.addEventListener("click", healthFromClipboard);
+  view.querySelectorAll("[data-hq]").forEach((row) => {
+    const inp = row.querySelector("input");
+    inp.addEventListener("change", () => {
+      const n = parseNum(inp.value);
+      if (Number.isNaN(n)) { toast("Bitte eine Zahl eingeben"); inp.value = fmtNum((state.answers[current] || {})[row.dataset.hq]); return; }
+      setAnswer(current, row.dataset.hq, n);
+    });
+    inp.addEventListener("keydown", (e) => { if (e.key === "Enter") inp.blur(); });
+  });
   $("#startquiz")?.addEventListener("click", () => startQuiz(current));
 
-  view.querySelectorAll(".q").forEach((card) => wireInput(card, qById(card.dataset.qid), current, (kind) => {
+  view.querySelectorAll(".q[data-qid]").forEach((card) => wireInput(card, qById(card.dataset.qid), current, (kind) => {
     if (kind !== "input") return renderDay();
     // Zahlen können keine Folgefragen auslösen → nur Markierung und Zähler aktualisieren
     const aa = state.answers[current] || {};
     card.classList.toggle("done", isAnswered(aa[card.dataset.qid]));
-    const vq = visibleQuestions(current);
+    const vq = askQuestions(current);
     $(".progress").textContent = `${vq.filter((x) => isAnswered(aa[x.id])).length} von ${vq.length} beantwortet`;
   }));
 }
 
 /* ================= Abfrage: eine Frage nach der anderen ================= */
 function startQuiz(date) {
-  const qs = visibleQuestions(date);
+  const qs = askQuestions(date);
   const a = state.answers[date] || {};
   const first = qs.findIndex((q) => !isAnswered(a[q.id]));
   quiz = { date, idx: first < 0 ? 0 : first };
@@ -303,7 +322,7 @@ function startQuiz(date) {
 function renderQuiz() {
   const view = $("#view");
   const { date } = quiz;
-  const qs = visibleQuestions(date); // wird nach jeder Antwort neu berechnet → Folgefragen erscheinen
+  const qs = askQuestions(date); // wird nach jeder Antwort neu berechnet → Folgefragen erscheinen
   const a = state.answers[date] || {};
 
   if (quiz.idx >= qs.length) {
@@ -983,7 +1002,8 @@ function openEditor(id) {
         <label class="field" style="margin-top:8px">Health-Kürzel
           <input id="hkey" value="${esc(draft.healthKey)}" placeholder="z. B. schlaf" autocapitalize="off" autocomplete="off">
         </label>
-        <p class="muted small">Wenn dein Kurzbefehl einen Wert mit diesem Kürzel liefert, trägt „Werte aus Health einfügen“ ihn hier ein. Anleitung unter Einstellungen.</p>
+        <p class="muted small">Schickt der Kurzbefehl einen Wert mit diesem Kürzel, wird er hier eingetragen. Anleitung unter Einstellungen → Schnittstelle Apple Health.</p>
+        ${draft.type === "number" ? `<label class="check" style="margin-top:4px"><input type="checkbox" id="hsrc" ${draft.source === "health" ? "checked" : ""}> Nur aus Apple Health füllen (unter „Tag“ als Health-Feld, wird nicht abgefragt)</label>` : ""}
       </details>
       ${existing ? `<div class="stack">
         <button type="button" class="btn ghost" id="archive">${existing.archived ? "Wieder einblenden" : "Ausblenden (Daten bleiben)"}</button>
@@ -999,6 +1019,8 @@ function openEditor(id) {
       if ($("#smin", dlg)) { draft.min = parseInt($("#smin", dlg).value, 10); draft.max = parseInt($("#smax", dlg).value, 10); draft.minLabel = $("#sminl", dlg).value; draft.maxLabel = $("#smaxl", dlg).value; }
       if ($("#unit", dlg)) draft.unit = $("#unit", dlg).value;
       draft.healthKey = $("#hkey", dlg).value.trim().toLowerCase().replace(/[^a-z0-9_äöüß-]/g, "");
+      if ($("#hsrc", dlg)) draft.source = $("#hsrc", dlg).checked ? "health" : null;
+      if (draft.type !== "number" || !draft.healthKey) draft.source = null;
     };
 
     dlg.querySelectorAll("[data-type]").forEach((b) => b.addEventListener("click", () => { sync(); draft.type = b.dataset.type; draw(); }));
@@ -1121,9 +1143,30 @@ function reportStatus() {
   statusTimer = setTimeout(() => {
     const t = todayIso();
     const a = state.answers[t] || {};
-    const open = visibleQuestions(t).filter((q) => !isAnswered(a[q.id])).length;
+    const open = askQuestions(t).filter((q) => !isAnswered(a[q.id])).length;
     api("/status", { endpoint: settings.push.endpoint, date: t, open }).catch(() => {});
   }, 1500);
+}
+
+// Bekannte Kürzel bekommen einen schönen Namen
+const HEALTH_NAMES = {
+  schlaf: ["Schlafdauer", "Stunden"], schritte: ["Schritte", ""], ruhepuls: ["Ruhepuls", "bpm"], puls: ["Puls", "bpm"],
+  hrv: ["Herzfrequenzvariabilität", "ms"], kalorien: ["Aktivkalorien", "kcal"], aktivkalorien: ["Aktivkalorien", "kcal"],
+  training: ["Trainingsminuten", "min"], stehen: ["Stehstunden", "h"], distanz: ["Distanz", "km"], gewicht: ["Gewicht", "kg"],
+  achtsamkeit: ["Achtsamkeitsminuten", "min"], stockwerke: ["Stockwerke", ""]
+};
+// Für ein Kürzel aus dem Kurzbefehl das passende Health-Feld finden oder anlegen
+function ensureHealthQuestion(key, created) {
+  let q = state.questions.find((x) => x.healthKey === key);
+  if (q) {
+    if (q.type === "number" && !q.source) { q.source = "health"; save(); }
+    return q;
+  }
+  const [text, unit] = HEALTH_NAMES[key] || [key.charAt(0).toUpperCase() + key.slice(1).replace(/_/g, " "), ""];
+  q = { id: uid(), text, type: "number", options: [], multi: false, min: 1, max: 5, minLabel: "", maxLabel: "", unit, healthKey: key, source: "health", archived: false, cond: null };
+  state.questions.push(q);
+  created.push(q);
+  return q;
 }
 
 // Werte abholen, die Kurzbefehle im Hintergrund geschickt haben
@@ -1136,11 +1179,17 @@ async function fetchInbox(manual) {
     const { items } = await api("/inbox");
     const done = [], unknown = new Set();
     let setCount = 0;
+    const created = [];
     for (const it of items) {
+      const q = ensureHealthQuestion(it.key, created);
       const r = applyPairs({ [it.key]: it.value }, it.date);
-      if (r.set.length) { done.push(it.id); setCount += r.set.length; } else r.unknown.forEach((k) => unknown.add(k));
+      if (r.set.length) setCount += r.set.length; else r.unknown.forEach((k) => unknown.add(k));
+      done.push(it.id); // alles quittieren, auch ungültige Werte (sonst bleiben sie ewig liegen)
+      if (q && !r.set.length && created.includes(q)) { /* leeres neues Feld behalten */ }
     }
+    if (created.length) save();
     if (done.length) await api("/inbox/ack", { ids: done });
+    if (items.length) { settings.shortcutDone = true; }
     settings.lastInbox = new Date().toISOString(); saveSettings();
     if (setCount) { toast(`${setCount} Wert${setCount > 1 ? "e" : ""} aus Kurzbefehlen übernommen`); render(); }
     else if (manual) toast(unknown.size ? `Kein passendes Health-Kürzel: ${[...unknown].join(", ")}` : "Keine neuen Werte");
@@ -1161,6 +1210,7 @@ function renderData() {
   const p = settings.push;
   const pushSupport = "serviceWorker" in navigator && "PushManager" in window && "Notification" in window;
   const standalone = window.matchMedia("(display-mode: standalone)").matches || navigator.standalone === true;
+  const hq = healthQuestions();
   const lastIn = settings.lastInbox ? new Date(settings.lastInbox).toLocaleString("de-DE", { day: "numeric", month: "numeric", hour: "2-digit", minute: "2-digit" }) : "noch nie";
 
   let pushBody;
@@ -1202,39 +1252,40 @@ function renderData() {
     </section>
 
     <section class="panel">
-      <h2>Kurzbefehle und Apple Health</h2>
-      <p class="muted">Kurzbefehle können Werte eintragen, z. B. die Schlafdauer aus Health. Dafür braucht die Frage oben unter „Fragen“ ein Health-Kürzel, z. B. <code>schlaf</code>.</p>
-      <details ${connected ? "" : ""}>
-        <summary><strong>Im Hintergrund senden</strong> (empfohlen)</summary>
-        ${connected ? `<ol class="steps small">
-          <li>In Kurzbefehle den Wert besorgen, z. B. die Schlafdauer (Schritte siehe „Schlafdauer aus Health“ unten, nur ohne „In Zwischenablage kopieren“).</li>
-          <li>Aktion <strong>Text</strong>: <code>mosaik;schlaf=</code> und dahinter die Variable mit dem Wert.</li>
-          <li>Aktion <strong>Inhalte von URL abrufen</strong> mit der Adresse <code>${SERVER}/in</code></li>
-          <li>Dort auf „Mehr anzeigen“: Methode <em>POST</em>, unter <em>Header</em> einen Eintrag <code>Authorization</code> mit dem Wert aus „Header kopieren“, unter <em>Haupttext anfragen</em> <em>Datei</em> und als Inhalt die Text-Variable.</li>
-          <li>Für jeden Tag automatisch: Kurzbefehle → <strong>Automation</strong> → <em>Tageszeit</em>, z. B. 9:00 → <em>Sofort ausführen</em> → diesen Kurzbefehl wählen.</li>
-        </ol>
-        <button class="btn ghost block" id="copyhdr" style="margin-top:8px">Header kopieren</button>
-        <p class="small muted" style="margin:10px 0 0">Die Werte liegen beim Dienst nur, bis Mosaik sie abholt (beim Öffnen), danach werden sie dort gelöscht. Zuletzt abgeholt: ${lastIn}</p>
-        <button class="btn ghost block" id="inboxnow" style="margin-top:8px">Jetzt abholen</button>`
-        : `<p class="muted small">Trag zuerst unten unter „Verbindung“ deinen Schlüssel ein.</p>`}
-      </details>
-      <details>
-        <summary><strong>Über die Zwischenablage</strong></summary>
-        <p class="small" style="margin-top:8px">Kurzbefehl endet mit <strong>In Zwischenablage kopieren</strong> (Text <code>mosaik;schlaf=7,4</code>). Danach Mosaik öffnen und unter „Tag“ auf „Werte aus Health einfügen“ tippen.</p>
-      </details>
-      <details>
-        <summary><strong>Schlafdauer aus Health</strong></summary>
+      <h2>Schnittstelle Apple Health</h2>
+      ${connected ? `
+      <p class="small hstatus ${settings.shortcutDone || hq.length ? "ok" : ""}">${hq.length
+        ? `<strong>Eingerichtet.</strong> Empfängt: ${hq.map((q) => esc(q.text)).join(", ")}. Zuletzt abgeholt: ${lastIn}`
+        : settings.shortcutDone ? "<strong>Kurzbefehl angelegt.</strong> Noch keine Werte empfangen." : "Noch nicht eingerichtet."}</p>
+      <p class="muted small">Ein Kurzbefehl schickt Werte aus Health an Mosaik, z. B. Schlaf und Schritte. Für jeden neuen Wert legt Mosaik automatisch ein Feld an, das unter „Tag“ erscheint und nicht abgefragt wird.</p>
+      <div class="stack">
+        <button class="btn ghost" id="copyhdr">Header kopieren</button>
+        <button class="btn ghost" id="inboxnow">Jetzt abholen</button>
+      </div>
+      <label class="switch row"><input type="checkbox" id="scdone" ${settings.shortcutDone ? "checked" : ""}><span>Ich habe den Kurzbefehl angelegt</span></label>
+      <details ${settings.shortcutDone ? "" : "open"}>
+        <summary><strong>Anleitung: Kurzbefehl anlegen</strong></summary>
+        <p class="small" style="margin:8px 0 4px">Der Kurzbefehl läuft morgens und schickt die Schritte von <em>gestern</em> (ganzer Tag, 0–24 Uhr) und den Schlaf der <em>letzten Nacht</em> (zählt für heute).</p>
+        <p class="small" style="margin:10px 0 4px"><strong>Schritte von gestern</strong></p>
         <ol class="steps small">
-          <li>Aktion <strong>Health-Stichproben suchen</strong>: Typ <em>Schlafanalyse</em>, Filter <em>Startdatum ist in den letzten 1 Tagen</em> und <em>Wert ist nicht Im Bett</em> und <em>Wert ist nicht Wach</em>.</li>
-          <li>Aktion <strong>Details von Health-Stichproben abrufen</strong>: <em>Dauer</em>.</li>
-          <li>Aktion <strong>Statistik berechnen</strong>: <em>Summe</em>.</li>
-          <li>Aktion <strong>Maßeinheit umwandeln</strong> in <em>Stunden</em> (falls angeboten), dann <strong>Zahl runden</strong> auf 1 Nachkommastelle.</li>
+          <li><strong>Health-Messungen suchen</strong>: Typ <em>Schritte</em>, Startdatum <em>ist in den letzten 2 Tage</em>, Gruppieren nach <em>Tag</em>, Sortieren nach <em>Startdatum</em>, <em>Neuestes zuerst</em>.</li>
+          <li><strong>Objekt aus Liste abrufen</strong>: <em>Objekt am Index</em> <code>2</code> (Index 1 wäre heute).</li>
         </ol>
-        <p class="small muted">Mehrere Werte gehen in einer Zeile: <code>mosaik;schlaf=7,4;schritte=9500</code>. Mit <code>datum=2026-10-14</code> landet der Wert an einem bestimmten Tag, sonst am heutigen.</p>
-      </details>
-      <p class="small" style="margin-top:12px">Zum Testen: Text einfügen und übernehmen.</p>
-      <textarea class="paste" id="pastebox" placeholder="mosaik;schlaf=7,5"></textarea>
-      <button class="btn ghost block" id="pastego" style="margin-top:8px">Text übernehmen</button>
+        <p class="small" style="margin:10px 0 4px"><strong>Schlaf der letzten Nacht</strong></p>
+        <ol class="steps small">
+          <li><strong>Health-Messungen suchen</strong>: Typ <em>Schlaf</em>, Startdatum <em>ist in den letzten 18 Stunden</em>, <em>Wert ist nicht Im Bett</em>, <em>Wert ist nicht Wach</em>.</li>
+          <li><strong>Details von Health-Messungen abrufen</strong>: <em>Dauer</em> → <strong>Statistik berechnen</strong>: <em>Summe</em>.</li>
+          <li>Falls Sekunden herauskommen: <strong>Berechnen</strong> <em>÷ 3600</em>. Dann <strong>Zahl runden</strong> auf 1 Nachkommastelle.</li>
+        </ol>
+        <p class="small" style="margin:10px 0 4px"><strong>Senden</strong></p>
+        <ol class="steps small">
+          <li><strong>Inhalte von URL abrufen</strong>: <code>${SERVER}/in</code>, Methode <em>POST</em>, Header <code>Authorization</code> = Wert aus „Header kopieren“.</li>
+          <li>Haupttext <em>JSON</em>, Felder vom Typ <em>Zahl</em>: <code>schritte_gestern</code> → Objekt aus Liste (dann antippen → <em>Wert</em>), <code>schlaf</code> → gerundete Zahl.</li>
+          <li>Kurzbefehle → <strong>Automation</strong> → <em>Tageszeit</em> (z. B. 10:00, täglich) oder <em>Wecker → wird gestoppt</em> → <em>Sofort ausführen</em> → diesen Kurzbefehl.</li>
+        </ol>
+        <p class="small muted">Weitere Werte gehen genauso, z. B. <code>ruhepuls</code> oder <code>kalorien_gestern</code>. Die Endung <code>_gestern</code> trägt den Wert beim Vortag ein. Werte liegen beim Dienst nur, bis Mosaik sie abholt.</p>
+      </details>`
+      : `<p class="muted small">Trag zuerst unten unter „Verbindung“ deinen Schlüssel ein.</p>`}
     </section>
 
     <section class="panel">
@@ -1255,7 +1306,7 @@ function renderData() {
   $("#backup").addEventListener("click", exportBackup);
   $("#restore").addEventListener("click", () => $("#restorefile").click());
   $("#restorefile").addEventListener("change", importBackup);
-  $("#pastego").addEventListener("click", () => applyHealthText($("#pastebox").value, true));
+  $("#scdone")?.addEventListener("change", (e) => { settings.shortcutDone = e.target.checked; saveSettings(); renderData(); });
 
   const msg = (id, t, bad) => { const el = $("#" + id); if (el) { el.textContent = t; el.style.color = bad ? "var(--danger)" : ""; } };
 
@@ -1472,7 +1523,7 @@ checkHash();
 // Tippen auf die Erinnerung: …/?quiz=2026-10-16 startet die Abfrage für diesen Tag
 function openQuizFromLink(date) {
   if (!/^\d{4}-\d{2}-\d{2}$/.test(date || "") || date > todayIso()) return;
-  if (!visibleQuestions(date).length) { current = date; tab = "day"; quiz = null; render(); return; }
+  if (!askQuestions(date).length) { current = date; tab = "day"; quiz = null; render(); return; }
   startQuiz(date);
 }
 {

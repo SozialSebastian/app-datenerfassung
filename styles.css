@@ -358,3 +358,14 @@ input.timein::-webkit-date-and-time-value { text-align: center; }
 #qpanel .qtext { font-size: 16px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 #qpanel .qmeta { font-size: 12px; }
 #qpanel .iconbtn { width: 34px; height: 34px; font-size: 16px; }
+
+/* ---------- Apple Health ---------- */
+.healthcard { border-left-color: var(--s3); }
+.hrow { display: flex; justify-content: space-between; align-items: center; gap: 12px; padding: 6px 0; border-top: 1px solid var(--line); }
+.hrow:first-of-type { border-top: 0; }
+.hval { display: flex; align-items: baseline; gap: 6px; }
+.hval input { width: 7ch; text-align: right; border: 0; background: transparent; font-size: 20px; font-weight: 700; color: var(--ink); font-variant-numeric: tabular-nums; padding: 2px 0; }
+.hval input:focus { outline: none; border-bottom: 2px solid var(--act); }
+.hval .unit { color: var(--ink-2); font-size: 14px; }
+.hstatus { margin: 0 0 8px; }
+.hstatus.ok strong { color: var(--s6); }
