@@ -1,0 +1,30 @@
+name: Tests
+
+on:
+  push:
+    branches: [main]
+    paths: ["js/**", "index.html", "styles.css", "sw.js", "vendor/**", "tests/**", ".github/workflows/tests.yml"]
+  workflow_dispatch:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - name: Abhängigkeiten
+        working-directory: tests
+        run: npm install --no-audit --no-fund && npx playwright install --with-deps chromium
+      - name: Tests ausführen
+        working-directory: tests
+        run: node run.mjs
+      - name: Bildschirmfotos (hell und dunkel) aufheben
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: bildschirmfotos
+          path: tests/screens
+          retention-days: 14
