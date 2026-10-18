@@ -741,6 +741,27 @@ test("Analyse: lange auf eine Karte drücken öffnet ihre Darstellung", async ()
   await ctx.close();
 });
 
+test("Trends: ruhig nach Art gruppiert, höchstens 5, Arten über das Zahnrad abschaltbar", async () => {
+  const { page, ctx, errors } = await open({ data: yearData() });
+  await page.waitForTimeout(400);
+  await page.evaluate(() => { const d = document.querySelector("#sheet"); if (d.open) d.close(); });
+  await page.click('[data-tab="analysis"]');
+  await page.selectOption("[data-range-sel]", "365");
+  assert.ok(await page.locator(".trends .trow").count() <= 5);
+  assert.equal(await page.locator(".trends .tmark").count(), 0); // keine bunten Quadrate mehr
+  const heads = await page.locator(".trends .tsub").allInnerTexts();
+  assert.ok(heads.length >= 2);
+  await page.click("#trendgear");
+  await page.locator('#sheet [data-tk="season"]').uncheck();
+  await page.locator('#sheet [data-tk="rel"]').uncheck();
+  await page.click("#tsdone");
+  const heads2 = (await page.locator(".trends .tsub").allInnerTexts()).join(" ");
+  assert.doesNotMatch(heads2, /JAHRESZEITEN|ZUSAMMENHÄNGE|Jahreszeiten|Zusammenhänge/i);
+  await page.locator(".trends").screenshot({ path: path.join(shots, "trends.png") });
+  assert.deepEqual(errors, []);
+  await ctx.close();
+});
+
 test("Fragen per Gedrückthalten verschieben", async () => {
   const data = { version: 1, lastBackup: null, answers: {}, questions: ["A", "B", "C"].map((x) => yesNo(x.toLowerCase(), x + "?")) };
   const { page, ctx, errors } = await open({ data });

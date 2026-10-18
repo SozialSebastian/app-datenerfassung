@@ -335,25 +335,58 @@ function numberInsights() {
   return out.sort((a, b) => b.score - a.score);
 }
 
-// Zuerst die auffälligsten je Art, der Rest aufklappbar
-const T_PREVIEW = { theme: 2, streak: 2, num: 3, season: 2, rel: 2 };
+// Ruhige Darstellung: nach Art gruppiert, ohne Farbquadrate; standardmäßig die auffälligsten 5 (je Art abwechselnd)
+const T_KINDS = [["theme", "Themen"], ["streak", "Serien"], ["num", "Zahlen & Muster"], ["season", "Jahreszeiten"], ["rel", "Zusammenhänge"]];
+const T_SHOW = 5;
 let showAllTrends = false;
+const trendKindOn = (k) => !(prefs.trendKinds && prefs.trendKinds[k] === false);
+function trendIcon(x, kind) {
+  if (kind === "num" && x.tone === " good") return `<span class="ticon up" title="besser">↑</span>`;
+  if (kind === "num" && x.tone === " bad") return `<span class="ticon down" title="schlechter">↓</span>`;
+  if (/in Folge/.test(x.html)) return `<span class="ticon" title="Serie">🔥</span>`;
+  return `<span class="ticon dot" aria-hidden="true">·</span>`;
+}
 function trendsPanel(days) {
-  const all = { theme: themeInsights(), streak: streakInsights(), num: numberInsights(), season: seasonInsights(), rel: relationInsights(days) };
-  const lim = (k) => (showAllTrends ? all[k] : all[k].slice(0, T_PREVIEW[k]));
-  const themes = lim("theme"), streaks = lim("streak"), nums = lim("num"), seasons = lim("season"), rel = lim("rel");
-  const hidden = Object.keys(all).reduce((n, k) => n + Math.max(all[k].length - T_PREVIEW[k], 0), 0);
-  const row = (x, kind) => `<li class="trow ${kind}${x.tone || ""}"><span class="tmark" aria-hidden="true"></span><span>${x.html}${x.note ? ` <span class="muted small">· ${x.note}</span>` : ""}</span></li>`;
+  const fns = { theme: themeInsights, streak: streakInsights, num: numberInsights, season: seasonInsights, rel: () => relationInsights(days) };
+  const all = {};
+  for (const [k] of T_KINDS) all[k] = trendKindOn(k) ? fns[k]() : [];
+  const total = T_KINDS.reduce((n, [k]) => n + all[k].length, 0);
+  // Auswahl: reihum je Art das Auffälligste, bis T_SHOW erreicht ist
+  const pick = Object.fromEntries(T_KINDS.map(([k]) => [k, []]));
+  if (showAllTrends) T_KINDS.forEach(([k]) => (pick[k] = all[k]));
+  else {
+    let n = 0;
+    for (let r = 0; n < T_SHOW && r < 50; r++) for (const [k] of T_KINDS) if (n < T_SHOW && all[k][r]) { pick[k].push(all[k][r]); n++; }
+  }
+  const shown = T_KINDS.reduce((n, [k]) => n + pick[k].length, 0);
+  const row = (x, kind) => `<li class="trow">${trendIcon(x, kind)}<span>${x.html}${x.note ? ` <span class="muted small">· ${x.note}</span>` : ""}</span></li>`;
+  const groups = T_KINDS.filter(([k]) => pick[k].length).map(([k, l]) => `<div class="tgroup">
+      <p class="tsub">${l}${k === "season" ? " <span class=\"muted\">(alle Daten)</span>" : ""}</p>
+      <ul class="tlist">${pick[k].map((x) => row(x, k)).join("")}</ul>
+    </div>`).join("");
   return `<section class="panel trends">
-    <h2 class="atitle">Trends</h2>
-    ${themes.length || streaks.length || rel.length || nums.length || seasons.length ? `
-      ${themes.length ? `<ul class="tlist" style="margin-bottom:10px">${themes.map((x) => row(x, "theme")).join("")}</ul>` : ""}
-      ${streaks.length ? `<ul class="tlist">${streaks.map((x) => row(x, "streak")).join("")}</ul>` : ""}
-      ${nums.length ? `<ul class="tlist" ${streaks.length ? 'style="margin-top:10px"' : ""}>${nums.map((x) => row(x, "num")).join("")}</ul>` : ""}
-      ${seasons.length ? `<p class="tsub small muted">Jahreszeiten (alle bisherigen Daten)</p><ul class="tlist">${seasons.map((x) => row(x, "season")).join("")}</ul>` : ""}
-      ${rel.length ? `<p class="tsub small muted">Auffällige Zusammenhänge im gewählten Zeitraum</p><ul class="tlist">${rel.map((x) => row(x, "rel")).join("")}</ul>` : ""}
-      ${hidden ? `<button class="btn ghost block" id="tmore" style="margin-top:12px">${showAllTrends ? "Weniger anzeigen" : `Alle Trends anzeigen (${hidden} weitere)`}</button>` : ""}
-      ${rel.length ? `<p class="small muted tfoot">Zeigt nur deutliche Unterschiede ab ${MIN_GROUP} Tagen je Gruppe. Ein Zusammenhang heißt nicht, dass das eine das andere verursacht.</p>` : ""}`
+    <div class="thead"><h2 class="atitle">Trends</h2><button type="button" class="gear" id="trendgear" aria-label="Trends einstellen">${GEAR}</button></div>
+    ${total ? `${groups}
+      ${total > T_SHOW ? `<button class="btn ghost block" id="tmore" style="margin-top:12px">${showAllTrends ? "Weniger anzeigen" : `Alle Trends anzeigen (${total - shown} weitere)`}</button>` : ""}
+      ${pick.rel.length ? `<p class="small muted tfoot">Zusammenhänge: nur deutliche Unterschiede ab ${MIN_GROUP} Tagen je Gruppe, keine Ursache.</p>` : ""}`
       : `<p class="muted small" style="margin:0">Noch nichts Auffälliges. Serien erscheinen ab 3 Tagen am Stück, Zusammenhänge meist nach ein paar Wochen Daten.</p>`}
   </section>`;
+}
+// Zahnrad der Trends-Kachel: welche Arten angezeigt werden
+function openTrendSettings() {
+  const dlg = $("#sheet");
+  const ex = { theme: "z. B. „5 Tage in Folge etwas bei Gesundheit“", streak: "Serien und Pausen einzelner Ja/Nein-Fragen", num: "Wochentage, diese Woche gegen sonst, Rekorde", season: "Sommer/Winter-Unterschiede über alle Daten", rel: "z. B. Stimmung an Tagen mit Sport, mit Orten und Wetter" };
+  dlg.innerHTML = `<div class="sheet-inner">
+    <div class="sheet-head"><span></span><h2>Trends</h2><button type="button" class="linkbtn" id="tsdone">Fertig</button></div>
+    ${T_KINDS.map(([k, l]) => `<section class="sq">
+      <div class="sq-head"><strong>${l}</strong><label class="switch"><input type="checkbox" data-tk="${k}" ${trendKindOn(k) ? "checked" : ""}><span>Anzeigen</span></label></div>
+      <p class="muted small" style="margin:6px 0 0">${ex[k]}</p>
+    </section>`).join("")}
+  </div>`;
+  $("#tsdone", dlg).addEventListener("click", () => dlg.close());
+  dlg.querySelectorAll("[data-tk]").forEach((i) => i.addEventListener("change", () => {
+    prefs.trendKinds = { ...(prefs.trendKinds || {}), [i.dataset.tk]: i.checked }; savePrefs(); renderAnalysis();
+  }));
+  if (!dlg.open) dlg.showModal();
+  document.activeElement?.blur();
 }

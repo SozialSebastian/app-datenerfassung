@@ -130,6 +130,7 @@ function renderAnalysis() {
   view.querySelectorAll("[data-th]").forEach((b) => b.addEventListener("click", () => { prefs.theme = b.dataset.th; savePrefs(); renderAnalysis(); }));
   $("#gmore")?.addEventListener("click", () => { showAllGoals = !showAllGoals; renderAnalysis(); });
   $("#tmore")?.addEventListener("click", () => { showAllTrends = !showAllTrends; renderAnalysis(); });
+  $("#trendgear")?.addEventListener("click", openTrendSettings);
   $("#pmore")?.addEventListener("click", () => { showAllPlaces = !showAllPlaces; renderAnalysis(); });
   $("#chessgames")?.addEventListener("click", () => openChessGames(days));
   $("#chessgear")?.addEventListener("click", () => openChessView(days));

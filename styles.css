@@ -332,11 +332,16 @@ label.switch input { width: 20px; height: 20px; accent-color: var(--act); }
 /* ---------- Trends ---------- */
 .trends .atitle { margin-bottom: 10px; }
 .tlist { list-style: none; padding: 0; margin: 0 0 4px; display: grid; gap: 10px; }
-.trow { display: grid; grid-template-columns: 14px 1fr; gap: 10px; align-items: start; font-size: 15px; line-height: 1.4; }
-.tmark { width: 12px; height: 12px; border-radius: 3px; margin-top: 4px; }
-.trow.streak .tmark { background: var(--hold); }
-.trow.rel .tmark { background: var(--ink); }
-.tsub { margin: 14px 0 8px; }
+.trow { display: grid; grid-template-columns: 18px 1fr; gap: 8px; align-items: start; font-size: 15px; line-height: 1.4; }
+.ticon { width: 18px; text-align: center; font-weight: 700; line-height: 1.4; }
+.ticon.up { color: var(--s6); } .ticon.down { color: var(--hold); } .ticon.dot { color: var(--ink-2); }
+.trends .thead { display: flex; justify-content: space-between; align-items: center; gap: 12px; margin-bottom: 4px; }
+.trends .thead .atitle { margin: 0; }
+.trends .thead .gear { border: 0; background: var(--bg); width: 36px; height: 36px; border-radius: 50%; display: grid; place-items: center; color: var(--ink); }
+.trends .thead .gear svg { width: 20px; height: 20px; }
+.tgroup + .tgroup { margin-top: 4px; }
+.tsub { margin: 12px 0 6px; font-size: 12px; font-weight: 700; letter-spacing: .04em; text-transform: uppercase; color: var(--ink-2); }
+.tsub .muted { text-transform: none; letter-spacing: 0; font-weight: 500; }
 .tfoot { margin: 12px 0 0; }
 
 /* ---------- Einstellungen ---------- */
@@ -373,7 +378,6 @@ input.timein::-webkit-date-and-time-value { text-align: center; }
 .hval input.wide { width: 9ch; }
 .seg.seg4 { grid-template-columns: repeat(5, 1fr); }
 .seg.seg4 button { font-size: 14px; padding: 9px 0; white-space: nowrap; }
-.trow.num .tmark { background: var(--s3); }
 
 /* ---------- Ziele ---------- */
 .headbtns { display: flex; align-items: center; gap: 8px; align-self: center; }
@@ -511,8 +515,6 @@ input.flabel { flex: 1; padding: 8px 10px; border-radius: var(--r-sm); border: 1
 .export-card .cbar { background: #FFFFFF; border-bottom: 1px solid var(--line); border-radius: 0; }
 .export-card .barrow[aria-pressed="true"], .export-card .lrow[aria-pressed="true"] { background: transparent; }
 .export-card .barrow[aria-pressed="true"] .bt { background: var(--bg); }
-.trow.season .tmark { background: var(--s4); }
-.trow.num.bad .tmark { background: var(--hold); }
 .wdir.good { color: var(--s6); }
 .wdir.bad { color: var(--hold); }
 .unitchips .chip { padding: 8px 14px; font-size: 15px; }
@@ -572,7 +574,6 @@ body.no-scroll { overflow: hidden; touch-action: none; }
 .tfilter::-webkit-scrollbar { display: none; }
 .tfilter button { flex: none; border: 1.5px solid var(--line); background: var(--surface); color: var(--ink); border-radius: 999px; padding: 7px 12px; font-size: 14px; font-weight: 600; }
 .tfilter button[aria-pressed="true"] { background: var(--act); color: var(--act-ink); border-color: var(--act); }
-.trow.theme .tmark { background: var(--s6); }
 .wlist li.wtheme { background: var(--bg); border-radius: 10px; padding: 9px 10px; margin-bottom: 4px; border-top: 0; }
 .wlist li.wtheme + li { border-top: 0; }
 

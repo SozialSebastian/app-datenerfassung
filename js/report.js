@@ -97,7 +97,7 @@ function reportHtml(mon) {
   const tr = [...themeInsights().slice(0, 2).map((x) => ({ ...x, k: "theme" })), ...streakInsights().slice(0, 3).map((x) => ({ ...x, k: "streak" })), ...numberInsights().slice(0, 3).map((x) => ({ ...x, k: "num" })), ...seasonInsights().slice(0, 1).map((x) => ({ ...x, k: "season" })), ...relationInsights(last30).slice(0, 2).map((x) => ({ ...x, k: "rel" }))];
   const trHtml = tr.length ? `<section class="sq">
       <div class="ghead"><h3 class="rh">Trends</h3><span class="small muted">aktueller Stand</span></div>
-      <ul class="tlist">${tr.slice(0, 8).map((x) => `<li class="trow ${x.k}"><span class="tmark" aria-hidden="true"></span><span>${x.html}</span></li>`).join("")}</ul>
+      <ul class="tlist">${tr.slice(0, 8).map((x) => `<li class="trow">${trendIcon(x, x.k)}<span>${x.html}</span></li>`).join("")}</ul>
     </section>` : "";
 
   return `
