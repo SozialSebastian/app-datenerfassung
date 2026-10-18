@@ -120,8 +120,8 @@ async function sendPush(env, sub, message) {
 function reminder(sub, date) {
   const open = sub.status_date === date ? sub.status_open : null;
   return {
-    title: "Mosaik",
-    body: open ? `Noch ${open} Frage${open === 1 ? "" : "n"} für heute offen. Tippen startet die Abfrage.` : "Zeit für die Abfrage von heute. Tippen zum Starten.",
+    title: open ? `Noch ${open} Frage${open === 1 ? "" : "n"} offen` : "Abfrage für heute", // iOS ergänzt selbst „from Mosaik“
+    body: open ? "Tippen startet die Abfrage für heute." : "Zeit für die Abfrage von heute. Tippen zum Starten.",
     date,
     url: `${APP_URL}?quiz=${date}`
   };
@@ -131,7 +131,7 @@ function reminder(sub, date) {
 function weeklyMessage(sub, date) {
   const teaser = sub.teaser && sub.teaser_week === mondayOf(date) ? sub.teaser : "";
   return {
-    title: "Mosaik · Wochenbericht",
+    title: "Dein Wochenbericht",
     body: `${teaser ? teaser + " " : ""}Tippen öffnet deinen Wochenbericht.`,
     report: "week",
     url: `${APP_URL}?report=week`
@@ -348,7 +348,7 @@ async function handle(request, env) {
     const sub = await env.DB.prepare(`SELECT * FROM ${table} WHERE endpoint = ?`).bind(b.endpoint || "").first();
     if (!sub) return json({ error: `${table === "goals" ? "Ziel-Erinnerung" : "Wochenbericht"} ist für dieses Gerät nicht aktiviert` }, 404);
     const date = localNow(sub.tz).date;
-    const msg = table === "goals" ? { title: "Mosaik · Ziele", body: "Test: So sieht die Ziel-Erinnerung aus.", open: "goals", url: `${APP_URL}?open=goals` } : weeklyMessage(sub, date);
+    const msg = table === "goals" ? { title: "Ziele", body: "Test: So sieht die Ziel-Erinnerung aus.", open: "goals", url: `${APP_URL}?open=goals` } : weeklyMessage(sub, date);
     const status = await sendPush(env, sub, msg);
     return json({ ok: status < 300, status });
   }
@@ -442,7 +442,7 @@ async function scheduled(env) {
     const r = dueGoalAlerts(sub, localNow(sub.tz));
     if (!r) continue;
     await env.DB.prepare("UPDATE goals SET last_sent = ? WHERE endpoint = ?").bind(JSON.stringify(r.sent), sub.endpoint).run();
-    const msg = { title: "Mosaik · Ziel in Gefahr", body: r.due.map((x) => x.t).join(" · ").slice(0, 300), open: "goals", url: `${APP_URL}?open=goals` };
+    const msg = { title: "Ziel in Gefahr", body: r.due.map((x) => x.t).join(" · ").slice(0, 300), open: "goals", url: `${APP_URL}?open=goals` };
     try { await sendPush(env, sub, msg); } catch (e) { console.error("Ziel-Erinnerung fehlgeschlagen", e); }
   }
   await env.DB.prepare("DELETE FROM inbox WHERE created < datetime('now', '-30 days')").run();

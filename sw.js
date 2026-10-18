@@ -1,5 +1,5 @@
 // Offline-Cache für die App. Bei jeder Änderung an den Dateien VERSION erhöhen.
-const VERSION = "mosaik-v64";
+const VERSION = "mosaik-v65";
 const FILES = [
   "./",
   "./index.html",
@@ -61,7 +61,7 @@ self.addEventListener("fetch", (e) => {
 self.addEventListener("push", (e) => {
   let d = {};
   try { d = e.data ? e.data.json() : {}; } catch (err) { /* ohne Inhalt */ }
-  e.waitUntil(self.registration.showNotification(d.title || "Mosaik", {
+  e.waitUntil(self.registration.showNotification(d.title || "Abfrage für heute", { // nicht „Mosaik“: iOS zeigt darunter schon „from Mosaik“
     body: d.body || "Zeit für die Abfrage von heute.",
     icon: "icons/icon-192.png",
     badge: "icons/icon-192.png",
