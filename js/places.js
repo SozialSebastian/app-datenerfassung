@@ -188,14 +188,13 @@ function placesPanel(days) {
   const shown = showAllPlaces ? rows : rows.slice(0, PLACE_PREVIEW);
   return `<section class="panel acard places">
     <h2 class="atitle">Orte</h2>
-    <p class="hero"><span class="big">${rows.length}</span><span class="muted">${rows.length === 1 ? "Ort" : "verschiedene Orte"} · Ort erfasst an ${withPlace} von ${days.length} Tagen</span></p>
+    <p class="hero"><span class="big">${rows.length}</span><span class="muted">${rows.length === 1 ? "Ort" : "verschiedene Orte"}</span></p>
     <div class="bars">${shown.map(([c, n]) => `<div class="barrow static">
       <span class="bl">${esc(c)}</span>
       <span class="bt"><span style="width:${(n / withPlace) * 100}%"></span></span>
       <span class="bv">${n} von ${withPlace}</span>
     </div>`).join("")}</div>
     ${rows.length > PLACE_PREVIEW ? `<button class="btn ghost block" id="pmore" style="margin-top:10px">${showAllPlaces ? "Weniger anzeigen" : `Alle Orte anzeigen (${rows.length - PLACE_PREVIEW} weitere)`}</button>` : ""}
-    <p class="small muted" style="margin:10px 0 0">Jeder Ort zählt pro Tag einmal, egal wie oft er erfasst wurde.</p>
   </section>`;
 }
 
