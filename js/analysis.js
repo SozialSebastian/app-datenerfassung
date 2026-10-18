@@ -229,7 +229,7 @@ function analysisCard(q, days) {
             return `<${tag} class="lrow"><span class="sw" style="background:${color}"></span><span class="ll">${esc(x.label)}</span><span class="lv">${fmtC(x.c, q.multi ? total : n)}</span></${tag.split(" ")[0]}>`;
           }).join("")}</div>
         </div>
-        ${q.multi ? `<p class="muted small">Kuchen bei Mehrfachauswahl: Anteil an allen ${total} Nennungen.</p>` : ""}`;
+`;
     } else {
       const max = Math.max(...dist.map((x) => x.c), 1);
       body = `${hero}
@@ -241,7 +241,7 @@ function analysisCard(q, days) {
             <span class="bv">${fmtC(x.c, n)}</span>
           </${tag.split(" ")[0]}>`;
         }).join("")}</div>
-        ${q.multi && set.unit === "pct" ? `<p class="muted small">Mehrfachauswahl: Prozent = Anteil der Tage, die Summe kann über 100 % liegen.</p>` : ""}`;
+`;
     }
 
     if (set.trend) {
