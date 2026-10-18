@@ -553,7 +553,7 @@ test("Vorlage „Gekocht“: Rezepte aus Notion, Umbenennen, Analyse zeigt was w
   await page.waitForSelector("#savebtn");
   await page.click("#savebtn");
   const q = await page.evaluate(() => state.questions.find((x) => x.notion));
-  assert.deepEqual(q.options, ["Brot", "Linseneintopf", "Pesto", "Rührteig", "Nichts gekocht"]);
+  assert.deepEqual(q.options, ["Brot", "Linseneintopf", "Pesto", "Rührteig", "Etwas anderes gekocht", "Nichts gekocht"]);
   assert.equal(q.multi, true); assert.equal(q.theme, "food");
   await page.evaluate((id) => {
     const t = todayIso();
@@ -576,6 +576,35 @@ test("Vorlage „Gekocht“: Rezepte aus Notion, Umbenennen, Analyse zeigt was w
   // Einstellungen zeigen den Stand
   await page.click('[data-tab="data"]');
   assert.match(await page.locator("#view").innerText(), /Schnittstelle Notion[\s\S]*Verbunden\. 4 Rezepte/);
+  assert.deepEqual(errors, []);
+  await ctx.close();
+});
+
+test("Abfrage fortsetzen springt nur zu offenen Fragen (inkl. neuer Folgefragen)", async () => {
+  const t = iso(new Date());
+  const qs = ["a", "b", "c", "d"].map((x) => yesNo(x, `Frage ${x.toUpperCase()}?`));
+  qs.push({ ...yesNo("b2", "Folge zu B?"), cond: { qid: "b", values: ["Ja"] } });
+  const data = { version: 1, lastBackup: null, answers: { [t]: { a: "Ja", c: "Nein" } }, questions: qs };
+  const { page, ctx, errors } = await open({ data });
+  await page.waitForTimeout(400);
+  await page.evaluate(() => { const d = document.querySelector("#sheet"); if (d.open) d.close(); });
+  assert.match(await page.locator("#startquiz").innerText(), /Abfrage fortsetzen/);
+  await page.click("#startquiz");
+  const title = () => page.locator(".quiz-title").innerText();
+  assert.equal(await title(), "Frage B?");
+  assert.match(await page.locator(".quiz-top").innerText(), /noch 2 offen/);
+  await page.locator(".quiz-q .chip", { hasText: "Ja" }).click();
+  await page.waitForTimeout(400);
+  assert.equal(await title(), "Folge zu B?"); // neue Folgefrage kommt dran
+  await page.locator(".quiz-q .chip", { hasText: "Nein" }).click();
+  await page.waitForTimeout(400);
+  assert.equal(await title(), "Frage D?"); // C war schon beantwortet
+  await page.click("#qback");
+  assert.equal(await title(), "Folge zu B?");
+  await page.click("#qnext");
+  await page.locator(".quiz-q .chip", { hasText: "Ja" }).click();
+  await page.waitForTimeout(400);
+  assert.match(await page.locator(".quiz-done").innerText(), /Fertig/);
   assert.deepEqual(errors, []);
   await ctx.close();
 });

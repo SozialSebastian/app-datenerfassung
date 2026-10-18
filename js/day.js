@@ -112,7 +112,9 @@ function startQuiz(date) {
   const qs = askQuestions(date);
   const a = state.answers[date] || {};
   const first = qs.findIndex((q) => !isAnswered(a[q.id]));
-  quiz = { date, idx: first < 0 ? 0 : first };
+  // „Abfrage fortsetzen“: nur noch die offenen Fragen (plus Folgefragen, die dabei neu erscheinen)
+  const done = qs.length - qs.filter((q) => !isAnswered(a[q.id])).length;
+  quiz = { date, idx: first < 0 ? 0 : first, only: done > 0 && first >= 0, hist: [] };
   render();
   window.scrollTo(0, 0);
 }
@@ -140,7 +142,7 @@ function renderQuiz() {
     </div>`;
     $("#qclose").addEventListener("click", endQuiz);
     $("#qfinish").addEventListener("click", endQuiz);
-    $("#qopen")?.addEventListener("click", () => { quiz.idx = qs.findIndex((q) => !isAnswered(a[q.id])); renderQuiz(); });
+    $("#qopen")?.addEventListener("click", () => { quiz.idx = qs.findIndex((q) => !isAnswered(a[q.id])); quiz.only = true; quiz.hist = []; renderQuiz(); });
     return;
   }
 
@@ -149,7 +151,7 @@ function renderQuiz() {
   const needsNext = q.type === "number" || (q.type === "choice" && q.multi);
   view.innerHTML = `<div class="quiz">
     <div class="quiz-top">
-      <span class="muted">${longDate(date)} · Frage ${quiz.idx + 1} von ${qs.length}</span>
+      <span class="muted">${longDate(date)} · ${quiz.only ? (() => { const n = qs.filter((x) => !isAnswered(a[x.id])).length; return n ? `noch ${n} offen` : "alle beantwortet"; })() : `Frage ${quiz.idx + 1} von ${qs.length}`}</span>
       <button class="linkbtn" id="qclose">Beenden</button>
     </div>
     <div class="bar"><span style="width:${(quiz.idx / qs.length) * 100}%"></span></div>
@@ -159,19 +161,26 @@ function renderQuiz() {
       ${answerInput(q, val)}
     </section>
     <div class="quiz-nav">
-      <button class="btn ghost" id="qback" ${quiz.idx === 0 ? "disabled" : ""}>Zurück</button>
+      <button class="btn ghost" id="qback" ${quiz.idx === 0 || (quiz.only && !quiz.hist.length) ? "disabled" : ""}>Zurück</button>
       <button class="btn ${needsNext || isAnswered(val) ? "" : "ghost"}" id="qnext">${isAnswered(val) || needsNext ? "Weiter" : "Überspringen"}</button>
     </div>
   </div>`;
 
   const sec = view.querySelector(".quiz-q");
-  const next = () => { quiz.idx++; renderQuiz(); window.scrollTo(0, 0); };
+  const next = () => {
+    quiz.hist.push(quiz.idx);
+    const qs2 = askQuestions(date), a2 = state.answers[date] || {};
+    let i = quiz.idx + 1;
+    if (quiz.only) while (i < qs2.length && isAnswered(a2[qs2[i].id])) i++; // schon Beantwortetes überspringen
+    quiz.idx = i;
+    renderQuiz(); window.scrollTo(0, 0);
+  };
   wireInput(sec, q, date, (kind) => {
     if (kind === "pick" || kind === "enter") { renderQuiz(); setTimeout(next, 220); } // kurz Auswahl zeigen, dann weiter
     else if (kind !== "input") renderQuiz();
   });
   $("#qclose").addEventListener("click", endQuiz);
-  $("#qback").addEventListener("click", () => { quiz.idx = Math.max(0, quiz.idx - 1); renderQuiz(); });
+  $("#qback").addEventListener("click", () => { quiz.idx = quiz.hist.length ? quiz.hist.pop() : Math.max(0, quiz.idx - 1); renderQuiz(); });
   $("#qnext").addEventListener("click", () => {
     if (sec._commit && sec._commit() === false) return;
     next();

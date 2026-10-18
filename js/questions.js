@@ -24,7 +24,7 @@ const TEMPLATES = [
       if (!recipeList().length) { toast(settings.notion.err || "Noch keine Rezepte – Notion unter Einstellungen → Schnittstelle Notion verbinden"); return false; }
       return true;
     },
-    make: () => [{ id: uid(), text: "Was hast du heute gekocht?", type: "choice", options: Array.from(new Set([...recipeNames(), "Nichts gekocht"])), extra: ["Nichts gekocht"], notion: { src: "recipes" }, multi: true, min: 1, max: 5, minLabel: "", maxLabel: "", unit: "", healthKey: "", archived: false, cond: null, theme: "food", template: "recipes" }] },
+    make: () => [{ id: uid(), text: "Was hast du heute gekocht?", type: "choice", options: Array.from(new Set([...recipeNames(), ...RECIPE_EXTRA])), extra: [...RECIPE_EXTRA], tplv: 2, notion: { src: "recipes" }, multi: true, min: 1, max: 5, minLabel: "", maxLabel: "", unit: "", healthKey: "", archived: false, cond: null, theme: "food", template: "recipes" }] },
   { k: "work", icon: "💼", title: "Arbeit", desc: "„Hast du heute gearbeitet?“ und bei Ja „Wie lange hast du gearbeitet?“. Mit Vertrag (Stunden und Stundenlohn) zeigt die Analyse deinen effektiven Stundenlohn.",
     make: () => {
       const p = { id: uid(), text: "Hast du heute gearbeitet?", type: "choice", options: ["Ja", "Nein"], multi: false, min: 1, max: 5, minLabel: "", maxLabel: "", unit: "", healthKey: "", archived: false, cond: null, theme: "work", template: "work" };

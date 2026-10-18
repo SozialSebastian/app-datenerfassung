@@ -3,6 +3,9 @@
 
 // Unterseiten, die keine Rezepte sind
 const NOTION_SKIP = /^rezeptideen$/i;
+// feste Zusatzantworten der Vorlage „Gekocht“
+const RECIPE_OTHER = "Etwas anderes gekocht";
+const RECIPE_EXTRA = [RECIPE_OTHER, "Nichts gekocht"];
 if (!settings.notion) settings.notion = { lastDay: "", err: "" };
 
 const recipeList = () => (state.recipes && Array.isArray(state.recipes.list) ? state.recipes.list : []);
@@ -13,6 +16,14 @@ function syncRecipeQuestions() {
   let changed = false;
   for (const q of state.questions) {
     if (!q.notion || q.type !== "choice") continue;
+    // ältere Fragen der Vorlage: „Etwas anderes gekocht“ ergänzen (vor „Nichts gekocht“)
+    if (!q.tplv) {
+      const ex = (q.extra || []).filter((x) => x !== RECIPE_OTHER);
+      const i = ex.indexOf("Nichts gekocht");
+      ex.splice(i < 0 ? ex.length : i, 0, RECIPE_OTHER);
+      q.extra = ex; q.tplv = 2; changed = true;
+      if (!recipeNames().length) q.options = Array.from(new Set([...q.options.filter((o) => !ex.includes(o)), ...ex]));
+    }
     const opts = Array.from(new Set([...recipeNames(), ...(q.extra || [])]));
     if (opts.length && JSON.stringify(opts) !== JSON.stringify(q.options)) { q.options = opts; changed = true; }
   }
@@ -87,3 +98,5 @@ function wireNotionSettings() {
     renderData();
   });
 }
+
+if (syncRecipeQuestions()) save();
