@@ -662,7 +662,7 @@ test("Sicherung enthält alles und lässt sich wiederherstellen", async () => {
   data.weather = { [daysAgo(1)]: { t: 14, r: 0, s: 3 } };
   const { page, ctx, errors } = await open({ data });
   // so baut die App die Sicherungsdatei
-  const backup = await page.evaluate(() => { prefs.range = "365"; return JSON.stringify({ ...state, prefs }); });
+  const backup = await page.evaluate(() => { prefs.range = "365"; settings.chess.user = "TestUser"; return JSON.stringify({ ...state, prefs, chessSettings: { user: settings.chess.user, on: false } }); });
   const b = JSON.parse(backup);
   for (const k of ["questions", "answers", "friends", "goals", "places", "weather", "prefs"]) assert.ok(b[k], `Sicherung enthält ${k}`);
   // Wiederherstellen in einer leeren App
@@ -672,8 +672,8 @@ test("Sicherung enthält alles und lässt sich wiederherstellen", async () => {
   await fresh.page.click('[data-tab="data"]');
   await fresh.page.setInputFiles("#restorefile", file);
   await fresh.page.waitForTimeout(300);
-  const r = await fresh.page.evaluate(() => [state.friends.list[0].name, state.goals.items.length, Object.keys(state.answers).length, prefs.range, "prefs" in state]);
-  assert.deepEqual(r, ["Anna", 1, 400, "365", false]);
+  const r = await fresh.page.evaluate(() => [state.friends.list[0].name, state.goals.items.length, Object.keys(state.answers).length, prefs.range, "prefs" in state, settings.chess.user, "chessSettings" in state]);
+  assert.deepEqual(r, ["Anna", 1, 400, "365", false, "TestUser", false]);
   assert.deepEqual([...errors, ...fresh.errors], []);
   await ctx.close(); await fresh.ctx.close();
 });

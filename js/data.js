@@ -75,7 +75,9 @@ async function exportExcel() {
 
 async function exportBackup() {
   // alles aus dem App-Speicher plus die Darstellung der Analyse (ohne Schlüssel und Geräte-Einstellungen)
-  const blob = new Blob([JSON.stringify({ ...state, prefs }, null, 1)], { type: "application/json" });
+  // dazu die chess.com-Einstellung (Benutzername, an/aus) – kein Geheimnis, damit sie auf einem anderen Gerät mitkommt
+  const chessSettings = settings.chess ? { user: settings.chess.user, on: settings.chess.on } : null;
+  const blob = new Blob([JSON.stringify({ ...state, prefs, chessSettings }, null, 1)], { type: "application/json" });
   if (await shareOrDownload(blob, `Mosaik_Sicherung_${todayIso()}.json`)) {
     state.lastBackup = new Date().toISOString();
     save(); renderData(); toast("Sicherung erstellt");
@@ -94,8 +96,14 @@ function importBackup(e) {
       if (!confirm(`Sicherung mit ${s.questions.length} Fragen und ${nd} Tagen laden? Die aktuellen Daten in der App werden dadurch ersetzt.`)) return;
       if (s.prefs && typeof s.prefs === "object") { prefs = { ...prefs, ...s.prefs }; savePrefs(); }
       delete s.prefs;
+      if (s.chessSettings && typeof s.chessSettings === "object") {
+        settings.chess = { ...settings.chess, user: String(s.chessSettings.user || ""), on: !!s.chessSettings.on, lastDay: "", err: "" };
+        saveSettings();
+      }
+      delete s.chessSettings;
       state = { ...empty(), ...s };
       save(); render(); toast("Sicherung wiederhergestellt");
+      if (settings.chess && settings.chess.on) syncChess(false); // fehlende neue Partien nachholen
     } catch (err) {
       toast("Diese Datei ist keine Mosaik-Sicherung");
     }
