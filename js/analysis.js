@@ -222,7 +222,7 @@ function analysisCard(q, days) {
     if (q.type === "scale" && set.chart === "count") {
       body = hero; // Kompakt: nur der Durchschnitt
     } else if (q.type === "scale" && set.chart === "pie") {
-      body = hero + scalePie(dist, set.unit);
+      body = hero + labeledPie(dist.map((x, i) => ({ label: String(x.key), c: x.c, color: `var(--s${(i % SERIES) + 1})` })), set.unit);
     } else if (yesNo && set.chart !== "pie") {
       // Ja/Nein: Kennzahlen statt Balken
       const c = vals.filter((x) => x.v === "Ja").length;
@@ -241,17 +241,7 @@ function analysisCard(q, days) {
       }
       const total = slices.reduce((s, x) => s + x.c, 0);
       const colorIdx = (k) => dist.findIndex((x) => x.key === k); // Farbe hängt an der Antwort, nicht am Rang
-      const center = q.type === "choice" ? (() => { const f = dist.find((x) => x.key === focusKey); return { v: fmtC(f.c, q.multi ? total : n), l: f.label }; })() : { v: String(n), l: "Tage" };
-      body = `${hero}
-        <div class="pie-wrap">
-          ${donut(slices.map((s) => ({ ...s, color: s.rest ? "var(--ink-2)" : `var(--s${(colorIdx(s.key) % SERIES) + 1})` })), total, center, focusKey)}
-          <div class="pie-legend">${dist.map((x) => {
-            const color = x.c && slices.some((s) => s.key === x.key) ? `var(--s${(colorIdx(x.key) % SERIES) + 1})` : "var(--ink-2)";
-            const tag = q.type === "choice" ? `button data-qid="${q.id}" data-focus="${esc(x.key)}" aria-pressed="${x.key === focusKey}"` : "div";
-            return `<${tag} class="lrow"><span class="sw" style="background:${color}"></span><span class="ll">${esc(x.label)}</span><span class="lv">${fmtC(x.c, q.multi ? total : n)}</span></${tag.split(" ")[0]}>`;
-          }).join("")}</div>
-        </div>
-`;
+      body = hero + labeledPie(slices.map((x) => ({ label: x.label, c: x.c, color: x.rest ? "var(--ink-2)" : `var(--s${(colorIdx(x.key) % SERIES) + 1})` })), set.unit);
     } else {
       const max = Math.max(...dist.map((x) => x.c), 1);
       body = `${hero}
@@ -342,12 +332,14 @@ function donut(slices, total, center, focusKey) {
   </svg>`;
 }
 
-// Skala als Kuchen: Beschriftung mit Linie direkt am Stück statt Legende
-function scalePie(dist, unit) {
-  const sl = dist.map((x, i) => ({ ...x, i })).filter((x) => x.c > 0);
+// Kuchen mit Beschriftung direkt am Stück (Name fett, darunter der Anteil), für alle Fragentypen
+function labeledPie(items, unit) {
+  const sl = items.filter((x) => x.c > 0);
   const total = sl.reduce((s, x) => s + x.c, 0);
   if (!total) return "";
-  const W = 320, H = 200, cx = W / 2, cy = H / 2, R = 62, w = 22;
+  const W = 360, R = 54, w = 20, cx = W / 2, LH = 32; // LH: Mindestabstand zweizeiliger Beschriftungen
+  // Höhe nach Anzahl der Beschriftungen je Seite
+  const H = Math.max(200, Math.ceil(sl.length / 2) * LH + 40), cy = H / 2;
   let a0 = -Math.PI / 2;
   const pt = (r, a) => [cx + r * Math.cos(a), cy + r * Math.sin(a)];
   const arcs = [], labs = [];
@@ -356,26 +348,31 @@ function scalePie(dist, unit) {
     const gap = sl.length > 1 ? 0.025 : 0;
     const [x0, y0] = pt(R, a0 + gap), [x1, y1] = pt(R, Math.max(a0 + gap, a1 - gap));
     const big = a1 - a0 > Math.PI ? 1 : 0;
-    arcs.push(sl.length === 1 ? `<circle cx="${cx}" cy="${cy}" r="${R}" fill="none" stroke="var(--s${(s.i % SERIES) + 1})" stroke-width="${w}"/>`
-      : `<path d="M${x0.toFixed(1)},${y0.toFixed(1)} A${R},${R} 0 ${big} 1 ${x1.toFixed(1)},${y1.toFixed(1)}" fill="none" stroke="var(--s${(s.i % SERIES) + 1})" stroke-width="${w}"/>`);
+    arcs.push(sl.length === 1 ? `<circle cx="${cx}" cy="${cy}" r="${R}" fill="none" stroke="${s.color}" stroke-width="${w}"/>`
+      : `<path d="M${x0.toFixed(1)},${y0.toFixed(1)} A${R},${R} 0 ${big} 1 ${x1.toFixed(1)},${y1.toFixed(1)}" fill="none" stroke="${s.color}" stroke-width="${w}"/>`);
     const am = (a0 + a1) / 2;
-    const right = Math.cos(am) >= 0;
-    const [ex, ey] = pt(R + w / 2 + 2, am), [kx, ky] = pt(R + w / 2 + 14, am);
-    labs.push({ s, right, ex, ey, kx, ky });
+    const [ex, ey] = pt(R + w / 2 + 2, am), [kx, ky] = pt(R + w / 2 + 12, am);
+    labs.push({ s, right: Math.cos(am) >= 0, ex, ey, kx, ky });
     a0 = a1;
   }
-  // Beschriftungen je Seite nicht überlappen lassen
+  // je Seite von oben nach unten sortieren und auseinanderschieben, damit nichts überlappt
   for (const side of [true, false]) {
     const xs = labs.filter((l) => l.right === side).sort((a, b) => a.ky - b.ky);
-    for (let i = 1; i < xs.length; i++) if (xs[i].ky - xs[i - 1].ky < 15) xs[i].ky = xs[i - 1].ky + 15;
-    const over = xs.length ? xs[xs.length - 1].ky - (H - 8) : 0;
+    xs.forEach((l, i) => { if (i && l.ky - xs[i - 1].ky < LH) l.ky = xs[i - 1].ky + LH; });
+    const over = xs.length ? xs[xs.length - 1].ky - (H - 18) : 0;
     if (over > 0) xs.forEach((l) => (l.ky -= over));
+    const under = xs.length ? 14 - xs[0].ky : 0;
+    if (under > 0) xs.forEach((l) => (l.ky += under));
   }
   const val = (c) => (unit === "pct" ? `${Math.round((c / total) * 100)} %` : `${c}×`);
+  const short = (t) => (t.length > 15 ? t.slice(0, 14) + "…" : t);
   const txt = labs.map(({ s, right, ex, ey, kx, ky }) => {
-    const tx = right ? cx + R + w / 2 + 24 : cx - R - w / 2 - 24;
+    const tx = right ? cx + R + w / 2 + 22 : cx - R - w / 2 - 22;
+    const anchor = right ? "start" : "end";
     return `<polyline points="${ex.toFixed(1)},${ey.toFixed(1)} ${kx.toFixed(1)},${ky.toFixed(1)} ${(tx + (right ? -4 : 4)).toFixed(1)},${ky.toFixed(1)}" class="pl"/>
-      <text x="${tx.toFixed(1)}" y="${(ky + 4).toFixed(1)}" text-anchor="${right ? "start" : "end"}" class="pt"><tspan class="pk">${esc(s.key)}</tspan> ${val(s.c)}</text>`;
+      <circle cx="${(tx + (right ? -4 : 4)).toFixed(1)}" cy="${ky.toFixed(1)}" r="2" fill="${s.color}"/>
+      <text x="${tx.toFixed(1)}" y="${(ky - 2).toFixed(1)}" text-anchor="${anchor}" class="pk">${esc(short(s.label))}<title>${esc(s.label)}</title></text>
+      <text x="${tx.toFixed(1)}" y="${(ky + 13).toFixed(1)}" text-anchor="${anchor}" class="pv">${val(s.c)}</text>`;
   }).join("");
   return `<svg class="spie" viewBox="0 0 ${W} ${H}" role="img" aria-label="Kuchendiagramm">${arcs.join("")}${txt}</svg>`;
 }
