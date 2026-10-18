@@ -652,7 +652,7 @@ test("Vertiefungsgespräche: anlegen, ausfüllen, Verlauf mit „Letztes Mal“,
   const data = { version: 1, lastBackup: null, answers: {}, questions: [], friends: { stichtag: daysAgo(30), labels: {}, history: [], list: [{ id: "a", name: "Anna", cat: "best", tags: {} }, { id: "b", name: "Ben", cat: "good", tags: {} }] } };
   const { page, ctx, errors } = await open({ data });
   await page.click('[data-tab="friends"]');
-  assert.match(await page.locator(".talks").innerText(), /Vertiefungsgespräche[\s\S]*Noch keine Gespräche/);
+  assert.match(await page.locator(".talks").innerText(), /Vertiefungsgespräche/);
   // erstes Gespräch (vor 3 Monaten)
   await page.click("#tnew");
   await page.selectOption("#tnf", "a");
@@ -682,16 +682,27 @@ test("Vertiefungsgespräche: anlegen, ausfüllen, Verlauf mit „Letztes Mal“,
   assert.match(await page.locator(".talks").innerText(), /Entwurf/i);
   // Fragebogen bearbeiten: gilt nur für neue Gespräche
   await page.click("#tform");
-  await page.fill('[data-qt="0.0"]', "Was war unser schönster Moment?");
+  assert.equal(await page.locator("#sheet .tftitle, #sheet [data-pt]").count(), 0); // Teile sind fest
+  await page.click('[data-edit="0.0"]');
+  await page.fill("#tfqt", "Was war unser schönster Moment?");
+  await page.click("#tfok");
   await page.click('[data-qadd="0"]');
-  await page.fill('[data-qt="0.4"]', "Neue Frage?");
-  await page.selectOption('[data-qty="0.4"]', "choice");
-  await page.fill('[data-qo="0.4"]', "Ja, Nein, Weiß nicht");
-  await page.locator('[data-qo="0.4"]').dispatchEvent("input");
+  await page.fill("#tfqt", "Neue Frage?");
+  await page.click('[data-ty="choice"]');
+  await page.click("#tfoadd");
+  await page.fill('[data-o="2"]', "Weiß nicht");
+  await page.click("#tfok");
+  // per Gedrückthalten: erste Frage hinter die zweite schieben
+  const r0 = await page.locator('[data-ti="0.0"]').boundingBox(), r1 = await page.locator('[data-ti="0.1"]').boundingBox();
+  await page.mouse.move(r0.x + 40, r0.y + r0.height / 2); await page.mouse.down(); await page.waitForTimeout(600);
+  for (let i = 1; i <= 6; i++) await page.mouse.move(r0.x + 40, r0.y + r0.height / 2 + (r1.y + r1.height * 0.9 - r0.y - r0.height / 2) * i / 6);
+  await page.mouse.up();
+  await page.waitForTimeout(100);
   await page.locator("#sheet .sheet-inner").screenshot({ path: path.join(shots, "fragebogen.png") });
   await page.click("#tfsave");
   const f = await page.evaluate(() => ({ t0: state.talkForm.parts[0].qs[0].text, n: state.talkForm.parts[0].qs.length, o: state.talkForm.parts[0].qs[4].options, old: state.talks[0].form.parts[0].qs[0].text }));
-  assert.deepEqual(f, { t0: "Was war unser schönster Moment?", n: 5, o: ["Ja", "Nein", "Weiß nicht"], old: "Was waren für dich die schönsten gemeinsamen Momente in den letzten sechs Monaten?" });
+  assert.deepEqual(f, { t0: "Wann habe ich dich (vielleicht unbewusst) besonders unterstützt oder dir gutgetan?", n: 5, o: ["Ja", "Nein", "Weiß nicht"], old: "Was waren für dich die schönsten gemeinsamen Momente in den letzten sechs Monaten?" });
+  assert.equal(await page.evaluate(() => state.talkForm.parts[0].qs[1].text), "Was war unser schönster Moment?");
   // Gespräch löschen
   await page.locator('[data-talk]').first().click();
   await page.click("#tdel");

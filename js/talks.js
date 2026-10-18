@@ -91,7 +91,7 @@ function talksPanel() {
         <span class="muted small">${a} von ${n} Fragen · ${agoText(t.date)}</span>
       </button></li>`; }).join("")}</ul>
       ${list.length > 6 ? `<button class="btn ghost block" id="tmoreh" style="margin-top:10px">${showAllTalks ? "Weniger anzeigen" : `Alle anzeigen (${list.length - 6} weitere)`}</button>` : ""}`
-    : `<p class="muted small" style="margin:12px 0 0">Noch keine Gespräche. Lege eins an, dann kommt der Fragebogen mit Antwortfeldern. Später siehst du hier den Verlauf und bei jeder Frage, was beim letzten Gespräch mit dieser Person war.</p>`}
+    : ""}
   </section>`;
 }
 function wireTalks() {
@@ -199,74 +199,139 @@ function openTalk(id) {
 }
 
 /* ---------- Fragebogen festlegen ---------- */
+// Teile sind fest; je Teil Fragen hinzufügen, ändern, löschen und per Gedrückthalten verschieben
+const talkTypeLabel = (q) => q.type === "scale" ? `Skala ${q.min}–${q.max}` : q.type === "choice" ? `Auswahl: ${q.options.join(" · ")}` : q.type === "multi" ? `Mehrfachauswahl: ${q.options.join(" · ")}` : q.type === "friends" ? "Freunde aus deiner Liste" : "Freitext";
 function openTalkForm() {
   const dlg = $("#sheet");
   const draft = clone(talkForm());
-  const draw = () => {
-    const keep = dlg.querySelector(".sheet-inner")?.scrollTop || 0;
+  let edit = null; // { pi, qi } der gerade bearbeiteten Frage
+  const inner = () => dlg.querySelector(".sheet-inner");
+
+  const drawList = () => {
+    const keep = inner()?.scrollTop || 0;
     dlg.innerHTML = `<div class="sheet-inner wide">
       <div class="sheet-head"><button type="button" class="linkbtn" id="tfcancel">Abbrechen</button><h2>Fragebogen</h2><button type="button" class="linkbtn" id="tfsave">Sichern</button></div>
-      <p class="muted small">Gilt für alle neuen Vertiefungsgespräche. Bereits geführte Gespräche behalten ihren Fragebogen von damals.</p>
-      ${draft.parts.map((p, pi) => `<section class="sq tfpart">
-        <div class="tfrow"><input class="tftitle" data-pt="${pi}" value="${esc(p.title)}" aria-label="Titel des Teils">
-          <button type="button" class="iconbtn" data-pmv="${pi}" data-dir="-1" ${pi === 0 ? "disabled" : ""} aria-label="Teil nach oben">↑</button>
-          <button type="button" class="iconbtn" data-pmv="${pi}" data-dir="1" ${pi === draft.parts.length - 1 ? "disabled" : ""} aria-label="Teil nach unten">↓</button>
-          <button type="button" class="iconbtn" data-pdel="${pi}" aria-label="Teil entfernen">✕</button></div>
-        ${p.qs.map((q, qi) => `<div class="tfq">
-          <div class="tfrow"><textarea data-qt="${pi}.${qi}" rows="2" placeholder="Frage" aria-label="Frage">${esc(q.text)}</textarea>
-            <button type="button" class="iconbtn" data-qmv="${pi}.${qi}" data-dir="-1" ${qi === 0 ? "disabled" : ""} aria-label="Nach oben">↑</button>
-            <button type="button" class="iconbtn" data-qmv="${pi}.${qi}" data-dir="1" ${qi === p.qs.length - 1 ? "disabled" : ""} aria-label="Nach unten">↓</button>
-            <button type="button" class="iconbtn" data-qdel="${pi}.${qi}" aria-label="Frage entfernen">✕</button></div>
-          <div class="tfrow tfopts">
-            <select data-qty="${pi}.${qi}" aria-label="Antwortart">${TALK_TYPES.map(([k, l]) => `<option value="${k}" ${q.type === k ? "selected" : ""}>${l}</option>`).join("")}</select>
-            ${q.type === "choice" || q.type === "multi" ? `<input data-qo="${pi}.${qi}" value="${esc(q.options.join(", "))}" placeholder="Antworten, mit Komma getrennt" aria-label="Antworten">` : ""}
-            ${q.type === "scale" ? `<span class="small">von</span><input class="tfnum" type="number" data-qmin="${pi}.${qi}" value="${q.min}"><span class="small">bis</span><input class="tfnum" type="number" data-qmax="${pi}.${qi}" value="${q.max}">` : ""}
-            ${q.type === "friends" ? `<span class="muted small">Namen aus deiner Freundesliste</span>` : ""}
-          </div>
-          <input class="tfhint" data-qh="${pi}.${qi}" value="${esc(q.hint || "")}" placeholder="Erklärung (optional)" aria-label="Erklärung">
-        </div>`).join("")}
-        <button type="button" class="linkbtn" data-qadd="${pi}">Frage hinzufügen</button>
+      <p class="muted small" style="margin:0 0 12px">Gilt für neue Gespräche. Antippen zum Ändern, gedrückt halten zum Verschieben.</p>
+      ${draft.parts.map((p, pi) => `<section class="tfpart">
+        <h3 class="tfhead">${esc(p.title)}</h3>
+        <ul class="qlist tflist" data-part="${pi}">${p.qs.map((q, qi) => `<li class="qrow tfrow2" data-ti="${pi}.${qi}">
+          <button type="button" class="qmain" data-edit="${pi}.${qi}"><span class="qtext">${esc(q.text || "Neue Frage")}</span><span class="qmeta">${esc(talkTypeLabel(q))}</span></button>
+        </li>`).join("")}</ul>
+        <button type="button" class="linkbtn" data-qadd="${pi}">+ Frage hinzufügen</button>
       </section>`).join("")}
-      <button type="button" class="btn ghost block" id="tfpadd">Teil hinzufügen</button>
-      <button type="button" class="linkbtn" id="tfreset" style="margin-top:14px">Auf Vorlage zurücksetzen</button>
+      <button type="button" class="linkbtn muted" id="tfreset" style="margin-top:6px">Auf Vorlage zurücksetzen</button>
     </div>`;
-    dlg.querySelector(".sheet-inner").scrollTop = keep;
-    const at = (s) => { const [pi, qi] = s.split(".").map(Number); return [draft.parts[pi], qi]; };
-    const q = (s) => { const [p, qi] = at(s); return p.qs[qi]; };
+    inner().scrollTop = keep;
     $("#tfcancel", dlg).addEventListener("click", () => dlg.close());
     $("#tfsave", dlg).addEventListener("click", () => {
-      for (const p of draft.parts) {
-        p.title = p.title.trim() || "Ohne Titel";
-        p.qs = p.qs.filter((x) => x.text.trim());
-        for (const x of p.qs) {
-          x.text = x.text.trim();
-          if ((x.type === "choice" || x.type === "multi") && x.options.length < 2) return toast(`„${x.text}“: mindestens zwei Antworten, mit Komma getrennt`);
-          if (x.type === "scale" && !(x.max > x.min)) return toast(`„${x.text}“: Skala „bis“ muss größer als „von“ sein`);
-        }
-      }
+      for (const p of draft.parts) p.qs = p.qs.filter((x) => x.text.trim());
       state.talkForm = draft; save(); dlg.close(); toast("Fragebogen gesichert");
     });
-    $("#tfreset", dlg).addEventListener("click", () => { if (confirm("Fragebogen auf die Vorlage zurücksetzen?")) { const d = TALK_DEFAULT(); draft.parts = d.parts; draw(); } });
-    $("#tfpadd", dlg).addEventListener("click", () => { draft.parts.push({ id: uid(), title: "Neuer Teil", qs: [{ id: uid(), ...tq("") }] }); draw(); });
-    dlg.querySelectorAll("[data-pt]").forEach((i) => i.addEventListener("input", () => { draft.parts[+i.dataset.pt].title = i.value; }));
-    dlg.querySelectorAll("[data-qt]").forEach((i) => i.addEventListener("input", () => { q(i.dataset.qt).text = i.value; }));
-    dlg.querySelectorAll("[data-qh]").forEach((i) => i.addEventListener("input", () => { q(i.dataset.qh).hint = i.value; }));
-    dlg.querySelectorAll("[data-qo]").forEach((i) => i.addEventListener("input", () => { q(i.dataset.qo).options = Array.from(new Set(i.value.split(",").map((x) => x.trim()).filter(Boolean))); }));
-    dlg.querySelectorAll("[data-qmin]").forEach((i) => i.addEventListener("input", () => { q(i.dataset.qmin).min = Math.round(+i.value || 0); }));
-    dlg.querySelectorAll("[data-qmax]").forEach((i) => i.addEventListener("input", () => { q(i.dataset.qmax).max = Math.round(+i.value || 0); }));
-    dlg.querySelectorAll("[data-qty]").forEach((s) => s.addEventListener("change", () => {
-      const x = q(s.dataset.qty); x.type = s.value;
-      if ((x.type === "choice" || x.type === "multi") && x.options.length < 2) x.options = ["Ja", "Nein"];
-      if (x.type === "scale" && !(x.max > x.min)) { x.min = 1; x.max = 10; }
-      draw();
+    $("#tfreset", dlg).addEventListener("click", () => { if (confirm("Fragebogen auf die Vorlage zurücksetzen?")) { draft.parts = TALK_DEFAULT().parts; drawList(); } });
+    dlg.querySelectorAll("[data-edit]").forEach((b) => b.addEventListener("click", () => { const [pi, qi] = b.dataset.edit.split(".").map(Number); edit = { pi, qi }; drawEdit(); }));
+    dlg.querySelectorAll("[data-qadd]").forEach((b) => b.addEventListener("click", () => {
+      const pi = +b.dataset.qadd; draft.parts[pi].qs.push({ id: uid(), ...tq("") });
+      edit = { pi, qi: draft.parts[pi].qs.length - 1, fresh: true }; drawEdit();
     }));
-    dlg.querySelectorAll("[data-qadd]").forEach((b) => b.addEventListener("click", () => { draft.parts[+b.dataset.qadd].qs.push({ id: uid(), ...tq("") }); draw(); dlg.querySelector(`[data-qt="${b.dataset.qadd}.${draft.parts[+b.dataset.qadd].qs.length - 1}"]`)?.focus(); }));
-    dlg.querySelectorAll("[data-qdel]").forEach((b) => b.addEventListener("click", () => { const [p, qi] = at(b.dataset.qdel); p.qs.splice(qi, 1); draw(); }));
-    dlg.querySelectorAll("[data-qmv]").forEach((b) => b.addEventListener("click", () => { const [p, qi] = at(b.dataset.qmv), j = qi + +b.dataset.dir; [p.qs[qi], p.qs[j]] = [p.qs[j], p.qs[qi]]; draw(); }));
-    dlg.querySelectorAll("[data-pmv]").forEach((b) => b.addEventListener("click", () => { const i = +b.dataset.pmv, j = i + +b.dataset.dir; [draft.parts[i], draft.parts[j]] = [draft.parts[j], draft.parts[i]]; draw(); }));
-    dlg.querySelectorAll("[data-pdel]").forEach((b) => b.addEventListener("click", () => { const p = draft.parts[+b.dataset.pdel]; if (p.qs.length && !confirm(`Teil „${p.title}“ mit ${p.qs.length} Fragen entfernen?`)) return; draft.parts.splice(+b.dataset.pdel, 1); draw(); }));
+    dlg.querySelectorAll(".tflist").forEach((ul) => wireListDrag(ul, (from, to) => {
+      const qs = draft.parts[+ul.dataset.part].qs; const [x] = qs.splice(from, 1); qs.splice(to, 0, x); drawList();
+    }));
   };
-  draw();
+
+  const drawEdit = () => {
+    const q = draft.parts[edit.pi].qs[edit.qi];
+    const choice = q.type === "choice" || q.type === "multi";
+    if (choice && q.options.length < 2) q.options = [...q.options, "", ""].slice(0, Math.max(2, q.options.length));
+    dlg.innerHTML = `<div class="sheet-inner wide">
+      <div class="sheet-head"><button type="button" class="linkbtn" id="tfback">Zurück</button><h2>Frage</h2><button type="button" class="linkbtn" id="tfok">Fertig</button></div>
+      <p class="muted small" style="margin:0 0 10px">${esc(draft.parts[edit.pi].title)}</p>
+      <label class="field">Frage<textarea id="tfqt" rows="3" placeholder="z. B. Was hat dich zuletzt beschäftigt?">${esc(q.text)}</textarea></label>
+      <div class="field" style="margin-bottom:8px;font-weight:600;font-size:15px">Antwort</div>
+      <div class="chips tftypes">${TALK_TYPES.map(([k, l]) => `<button type="button" class="chip" data-ty="${k}" aria-pressed="${q.type === k}">${l}</button>`).join("")}</div>
+      <div class="tfbody">
+        ${q.type === "text" ? `<p class="muted small">Ein Textfeld für die Antwort.</p>` : ""}
+        ${choice ? `${q.options.map((o, i) => `<div class="opt"><input value="${esc(o)}" data-o="${i}" aria-label="Antwort ${i + 1}" placeholder="Antwort ${i + 1}"><button type="button" class="iconbtn" data-odel="${i}" aria-label="Antwort entfernen" ${q.options.length <= 2 ? "disabled" : ""}>✕</button></div>`).join("")}
+          <button type="button" class="linkbtn" id="tfoadd">Antwort hinzufügen</button>
+          <p class="muted small">${q.type === "multi" ? "Mehrere Antworten gleichzeitig möglich." : "Eine Antwort."} Dazu gibt es immer ein Notizfeld.</p>` : ""}
+        ${q.type === "scale" ? `<div class="row2"><label class="field">Von<input type="number" inputmode="numeric" id="tfmin" value="${q.min}"></label><label class="field">Bis<input type="number" inputmode="numeric" id="tfmax" value="${q.max}"></label></div>` : ""}
+        ${q.type === "friends" ? `<p class="muted small">Namen aus deiner Freundesliste zum Antippen (ohne die Person, mit der du sprichst).</p>` : ""}
+      </div>
+      <button type="button" class="btn ghost block danger" id="tfqdel" style="margin-top:22px">Frage löschen</button>
+    </div>`;
+    const sync = () => {
+      q.text = $("#tfqt", dlg).value;
+      dlg.querySelectorAll("[data-o]").forEach((i) => { q.options[+i.dataset.o] = i.value; });
+      if ($("#tfmin", dlg)) { q.min = Math.round(+$("#tfmin", dlg).value || 0); q.max = Math.round(+$("#tfmax", dlg).value || 0); }
+    };
+    const back = () => { if (edit.fresh && !q.text.trim()) draft.parts[edit.pi].qs.splice(edit.qi, 1); edit = null; drawList(); };
+    $("#tfback", dlg).addEventListener("click", () => { sync(); back(); });
+    $("#tfok", dlg).addEventListener("click", () => {
+      sync();
+      q.text = q.text.trim();
+      if (!q.text) return toast("Bitte eine Frage eingeben");
+      if (q.type === "choice" || q.type === "multi") {
+        q.options = Array.from(new Set(q.options.map((o) => o.trim()).filter(Boolean)));
+        if (q.options.length < 2) return toast("Mindestens zwei Antworten nötig");
+      }
+      if (q.type === "scale" && !(q.max > q.min)) return toast("„Bis“ muss größer als „Von“ sein");
+      edit.fresh = false; back();
+    });
+    $("#tfqdel", dlg).addEventListener("click", () => { draft.parts[edit.pi].qs.splice(edit.qi, 1); edit = null; drawList(); });
+    dlg.querySelectorAll("[data-ty]").forEach((b) => b.addEventListener("click", () => {
+      sync(); q.type = b.dataset.ty;
+      if ((q.type === "choice" || q.type === "multi") && q.options.filter((o) => o.trim()).length < 2) q.options = ["Ja", "Nein"];
+      if (q.type === "scale" && !(q.max > q.min)) { q.min = 1; q.max = 10; }
+      drawEdit();
+    }));
+    $("#tfoadd", dlg)?.addEventListener("click", () => { sync(); q.options.push(""); drawEdit(); dlg.querySelector(`[data-o="${q.options.length - 1}"]`)?.focus(); });
+    dlg.querySelectorAll("[data-odel]").forEach((b) => b.addEventListener("click", () => { sync(); q.options.splice(+b.dataset.odel, 1); drawEdit(); }));
+    inner().scrollTop = 0;
+    if (edit.fresh) setTimeout(() => $("#tfqt", dlg)?.focus(), 50);
+  };
+
+  drawList();
   if (!dlg.open) dlg.showModal();
   document.activeElement?.blur();
+}
+
+// Zeilen einer Liste per Gedrückthalten verschieben (wie bei den Fragen); onDrop(von, nach)
+function wireListDrag(list, onDrop) {
+  const rows = () => [...list.querySelectorAll(":scope > li.qrow")];
+  rows().forEach((el) => {
+    let timer = null, drag = null, suppress = false;
+    el.addEventListener("pointerdown", (e) => {
+      const x0 = e.clientX, y0 = e.clientY;
+      timer = setTimeout(() => {
+        timer = null;
+        const marker = document.createElement("li"); marker.className = "qdrop";
+        drag = { from: rows().indexOf(el), to: null, marker };
+        el.classList.add("dragging"); document.body.classList.add("no-scroll");
+        if (navigator.vibrate) navigator.vibrate(15);
+      }, 450);
+      const move = (ev) => {
+        if (!drag) { if (Math.abs(ev.clientY - y0) > 8 || Math.abs(ev.clientX - x0) > 8) { clearTimeout(timer); timer = null; } return; }
+        ev.preventDefault();
+        el.style.transform = `translateY(${ev.clientY - y0}px)`;
+        const others = rows().filter((r) => r !== el);
+        let before = null;
+        for (const r of others) { const b = r.getBoundingClientRect(); if (ev.clientY < b.top + b.height / 2) { before = r; break; } }
+        drag.to = before ? others.indexOf(before) : others.length;
+        if (before) list.insertBefore(drag.marker, before); else if (others.length) others[others.length - 1].after(drag.marker);
+      };
+      const up = () => {
+        clearTimeout(timer); timer = null;
+        window.removeEventListener("pointermove", move); window.removeEventListener("pointerup", up); window.removeEventListener("pointercancel", up);
+        if (!drag) return;
+        const d = drag; drag = null;
+        d.marker.remove(); el.classList.remove("dragging"); el.style.transform = ""; document.body.classList.remove("no-scroll");
+        suppress = true; setTimeout(() => (suppress = false), 50);
+        if (d.to !== null && d.to !== d.from) onDrop(d.from, d.to);
+      };
+      window.addEventListener("pointermove", move, { passive: false });
+      window.addEventListener("pointerup", up);
+      window.addEventListener("pointercancel", up);
+    });
+    el.addEventListener("click", (e) => { if (suppress) { e.stopPropagation(); e.preventDefault(); } }, true);
+    el.addEventListener("contextmenu", (e) => e.preventDefault());
+  });
 }

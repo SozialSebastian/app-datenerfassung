@@ -648,18 +648,14 @@ svg.cline .mark { stroke: var(--hold); stroke-width: 1.5; }
 .tq .tscale .chip { min-width: 40px; justify-content: center; padding-left: 0; padding-right: 0; }
 .tta { width: 100%; box-sizing: border-box; padding: 10px 12px; border-radius: var(--r-sm); border: 1.5px solid var(--line); background: var(--bg); font-size: 16px; resize: vertical; }
 .tprev { margin: 6px 0 0; padding-left: 10px; border-left: 3px solid var(--line); }
-.tfpart { margin-bottom: 14px; }
-.tfrow { display: grid; grid-template-columns: minmax(0, 1fr) repeat(3, 34px); gap: 4px; align-items: center; }
-.tfrow .iconbtn { width: 34px; height: 34px; }
-.tfopts { grid-template-columns: auto minmax(0, 1fr); gap: 6px; }
-.tfopts:has(.tfnum) { grid-template-columns: auto auto 64px auto 64px; justify-content: start; }
-.tfopts:not(:has(input)) { grid-template-columns: auto minmax(0, 1fr); }
-.tfrow textarea { resize: vertical; line-height: 1.3; }
-.tfrow input, .tfrow select, .tfrow textarea, .tfhint { min-width: 0; width: 100%; box-sizing: border-box; font: inherit; font-size: 16px; padding: 9px 10px; border-radius: var(--r-sm); border: 1.5px solid var(--line); background: var(--surface); color: var(--ink); }
-.tftitle { font-weight: 700 !important; }
-.tfq { padding: 10px 0; border-top: 1px solid var(--line); margin-top: 10px; display: grid; grid-template-columns: minmax(0, 1fr); gap: 6px; }
-.tfopts select { width: auto; }
-.tfhint { width: 100%; box-sizing: border-box; font-size: 14px !important; }
+.tfpart { margin-bottom: 18px; }
+.tfhead { font-size: 15px; margin: 0 0 8px; }
+.tflist .qrow { background: var(--surface); padding: 2px 12px; margin-bottom: 6px; border-radius: var(--r-sm); -webkit-user-select: none; user-select: none; -webkit-touch-callout: none; }
+.tflist .qrow.dragging { position: relative; z-index: 5; box-shadow: 0 8px 24px rgba(0,0,0,.18); }
+.tflist .qtext { font-weight: 600; }
+.tftypes { margin-bottom: 14px; }
+.tfbody .opt input { flex: 1; min-width: 0; }
+#tfqt { resize: vertical; }
 
 .tabbar .subnav { display: none; } /* nur in der Desktop-Ansicht sichtbar */
 /* ================= Desktop-Ansicht (Safari am Mac: Maus/Trackpad) =================

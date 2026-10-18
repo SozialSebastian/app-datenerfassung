@@ -112,7 +112,6 @@ function meetsPanel() {
       <span class="mc small muted">${x.n ? `${x.n}× gesamt · ${x.n90}× in 90 Tagen` : "noch kein Treffen erfasst"}</span>
     </li>`).join("")}</ul>
     ${rows.length > MEET_PREVIEW ? `<button class="btn ghost block" id="mmore" style="margin-top:10px">${showAllMeets ? "Weniger anzeigen" : `Alle anzeigen (${rows.length - MEET_PREVIEW} weitere)`}</button>` : ""}
-    <p class="small muted" style="margin:10px 0 0">Ein Treffen ist ein Tag, an dem bei einer Frage mit Vorlage „Freunde“ jemand angekreuzt ist. Mehrere Freunde am selben Tag zählen als ein Treffen, aber in jeder ihrer Kategorien.</p>
   </section>`;
 }
 
