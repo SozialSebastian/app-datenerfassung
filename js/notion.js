@@ -78,17 +78,6 @@ function notionSettingsPanel() {
       <p class="small hstatus ${n ? "ok" : ""}">${n ? `<strong>Verbunden.</strong> ${n} Rezepte${state.recipes.at ? `, zuletzt geholt ${new Date(state.recipes.at).toLocaleString("de-DE", { day: "numeric", month: "numeric", hour: "2-digit", minute: "2-digit" })}` : ""}.${has ? "" : " Leg unter Fragen → + → Vorlage „Gekocht“ die Frage an."}` : "Noch nicht eingerichtet."}</p>
       ${settings.notion.err ? `<p class="small" style="margin:8px 0 0;color:var(--danger)">Letzter Fehler: ${esc(settings.notion.err)}</p>` : ""}
       ${settings.token ? `<button class="btn ghost block" id="notionnow" style="margin-top:12px">Rezepte jetzt holen</button>` : `<p class="muted small">Trag zuerst unten unter „Verbindung“ deinen Schlüssel ein.</p>`}
-      <details ${n ? "" : "open"} style="margin-top:10px">
-        <summary><strong>Anleitung: Notion verbinden</strong></summary>
-        <ol class="steps small">
-          <li>Am Mac <strong>notion.so/profile/integrations</strong> öffnen → <em>Neue Integration</em>: Name <em>Mosaik</em>, Typ <em>Intern</em>, dein Workspace.</li>
-          <li>Bei <em>Funktionen</em> nur <strong>Inhalte lesen</strong> anhaken (Inhalte aktualisieren/einfügen und Kommentare aus, Nutzerinformationen: keine). Speichern.</li>
-          <li>Den <strong>Internen Integrations-Token</strong> kopieren (beginnt mit <code>ntn_</code>). Nirgends einfügen außer im nächsten Schritt.</li>
-          <li>GitHub → Repository <em>app-datenerfassung</em> → <em>Settings → Secrets and variables → Actions → New repository secret</em>: Name <code>NOTION_TOKEN</code>, Wert = Token.</li>
-          <li>In Notion die Seite <strong>Rezepte</strong> öffnen → <em>•••</em> → <em>Verbindungen</em> → <em>Mosaik</em> hinzufügen. Damit sieht die Verbindung nur diese Seite und ihre Rezepte.</li>
-          <li>GitHub → <em>Actions → „Mosaik-Dienst veröffentlichen“ → Run workflow</em>. Danach hier „Rezepte jetzt holen“.</li>
-        </ol>
-      </details>
     </section>`;
 }
 function wireNotionSettings() {

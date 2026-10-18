@@ -35,7 +35,6 @@ function renderData() {
       <label class="switch row"><input type="checkbox" id="weekon" ${w.on ? "checked" : ""}><span>Jede Woche als Mitteilung</span></label>
       <div class="timerow"><span>Tag</span><select id="weekday" class="timein">${[0, 1, 2, 3, 4, 5, 6].map((i) => `<option value="${i}" ${w.day === i ? "selected" : ""}>${WDN[i]}</option>`).join("")}</select></div>
       <div class="timerow"><span>Uhrzeit</span><input type="time" id="weektime" value="${esc(w.time)}" class="timein"></div>
-      <p class="muted small" style="margin:8px 0 0">Tippen auf die Mitteilung öffnet den Bericht in der App.</p>
       <p class="small" id="weekmsg" style="margin:8px 0 0"></p>`;
   else if (!connected) weeklyBody = `<p class="muted small" style="margin-top:10px">Für die wöchentliche Mitteilung zuerst unten unter „Verbindung“ den Schlüssel eintragen.</p>`;
 
@@ -65,8 +64,7 @@ function renderData() {
     <section class="panel">
       <h2>Orte</h2>
       <label class="switch row" style="margin-top:0"><input type="checkbox" id="placeson" ${settings.places.on ? "checked" : ""}><span>Stadt beim Öffnen erfassen</span></label>
-      <p class="muted small" style="margin:8px 0 0">Mosaik merkt sich beim Öffnen die Stadt, höchstens alle 20 Minuten, z. B. „Wedel → Hamburg → Wedel“. Gespeichert wird nur der Ortsname, auf dem iPhone. Für den Namen werden die auf ca. 1 km gerundeten Koordinaten an BigDataCloud geschickt, ersatzweise an OpenStreetMap. Orte lassen sich unter „Tag“ antippen und von Hand ergänzen.</p>
-      <p class="muted small" style="margin:8px 0 0">Zusätzlich holt Mosaik für jeden Tag mit Standort das Wetter (Höchsttemperatur, Regen, Sonnenstunden, über Open-Meteo). Es wird nur in den Trends als Faktor für Zusammenhänge genutzt.${settings.places.on ? ` Wetter vorhanden für ${Object.keys(state.weather || {}).length} Tage.` : ""}</p>
+      <p class="muted small" style="margin:8px 0 0">Beim Öffnen (höchstens alle 20 Minuten) wird die Stadt gespeichert, nur der Name und nur auf dem iPhone. Dafür gehen auf ca. 1 km gerundete Koordinaten an BigDataCloud bzw. OpenStreetMap. Dazu kommt das Wetter des Tages von Open-Meteo, genutzt nur für Zusammenhänge in den Trends.${settings.places.on ? ` Wetter für ${Object.keys(state.weather || {}).length} Tage.` : ""}</p>
       ${settings.places.on ? `<details style="margin-top:8px"><summary class="small"><strong>Nicht jedes Mal nach Erlaubnis fragen</strong></summary>
         <ol class="steps small" style="margin:6px 0 0">
           <li>iPhone-Einstellungen → <strong>Apps → Safari</strong> → ganz unten <strong>Standort</strong> → <strong>Erlauben</strong>.</li>
