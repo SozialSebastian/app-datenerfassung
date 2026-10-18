@@ -220,6 +220,7 @@ document.querySelectorAll(".tabbar button").forEach((b) =>
 
 function render() {
   document.body.classList.toggle("in-quiz", !!quiz);
+  document.body.dataset.tab = quiz ? "quiz" : tab; // nur für die Desktop-Ansicht (Spalten je Bereich)
   document.querySelectorAll(".tabbar button").forEach((b) => {
     if (b.dataset.tab === tab) b.setAttribute("aria-current", "page");
     else b.removeAttribute("aria-current");

@@ -609,6 +609,29 @@ test("Abfrage fortsetzen springt nur zu offenen Fragen (inkl. neuer Folgefragen)
   await ctx.close();
 });
 
+test("Desktop-Ansicht nur im breiten Fenster mit Maus, iPhone unverändert", async () => {
+  // iPhone: Leiste unten
+  const m = await open({ data: yearData() });
+  const mb = await m.page.locator(".tabbar").boundingBox();
+  assert.ok(mb.y > 500 && mb.width > 300);
+  await m.ctx.close();
+  // Mac-Fenster: Leiste links, Analyse in zwei Spalten
+  const ctx = await browser.newContext({ viewport: { width: 1440, height: 900 } });
+  const page = await ctx.newPage();
+  const errors = []; page.on("pageerror", (e) => errors.push(e.message));
+  await page.route(/workers\.dev|bigdatacloud|open-meteo|nominatim/, (r) => json(r, {}));
+  await page.addInitScript((d) => { if (!sessionStorage.getItem("s")) { sessionStorage.setItem("s", "1"); localStorage.setItem("taeglich.v1", JSON.stringify(d)); } }, yearData());
+  await page.goto(BASE);
+  const tb = await page.locator(".tabbar").boundingBox();
+  assert.ok(tb.x === 0 && tb.width < 300 && tb.height > 800);
+  await page.evaluate(() => { const d = document.querySelector("#sheet"); if (d.open) d.close(); });
+  await page.click('[data-tab="analysis"]');
+  const xs = await page.locator("main > .acard[data-qid]").evaluateAll((els) => [...new Set(els.map((e) => Math.round(e.getBoundingClientRect().x)))]);
+  assert.equal(xs.length, 2);
+  assert.deepEqual(errors, []);
+  await ctx.close();
+});
+
 test("Fragen per Gedrückthalten verschieben", async () => {
   const data = { version: 1, lastBackup: null, answers: {}, questions: ["A", "B", "C"].map((x) => yesNo(x.toLowerCase(), x + "?")) };
   const { page, ctx, errors } = await open({ data });
