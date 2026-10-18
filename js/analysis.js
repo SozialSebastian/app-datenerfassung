@@ -109,7 +109,23 @@ function renderAnalysis() {
     </div>` : ""}
     ${qs.length ? qs.map((q) => analysisCard(q, days)).join("") : prefs.theme ? `<p class="muted">Keine Fragen in diesem Thema.</p>` : `<p class="muted">${all.length ? "Alle Fragen sind über das Zahnrad ausgeblendet." : "Noch keine Fragen angelegt."}</p>`}`;
 
-  $("#asettings")?.addEventListener("click", openAnalysisSettings);
+  $("#asettings")?.addEventListener("click", () => openAnalysisSettings());
+  // lange auf eine Fragen-Karte drücken (oder Rechtsklick): Darstellung nur dieser Frage anpassen
+  view.querySelectorAll(".acard[data-qid]").forEach((card) => {
+    let timer = null, fired = false;
+    const stop = () => { clearTimeout(timer); timer = null; };
+    card.addEventListener("pointerdown", (e) => {
+      if (e.button > 0) return;
+      fired = false;
+      const x0 = e.clientX, y0 = e.clientY;
+      const move = (ev) => { if (Math.abs(ev.clientX - x0) > 8 || Math.abs(ev.clientY - y0) > 8) stop(); };
+      const end = () => { stop(); window.removeEventListener("pointermove", move); window.removeEventListener("pointerup", end); window.removeEventListener("pointercancel", end); };
+      window.addEventListener("pointermove", move); window.addEventListener("pointerup", end); window.addEventListener("pointercancel", end);
+      timer = setTimeout(() => { timer = null; fired = true; if (navigator.vibrate) navigator.vibrate(15); openAnalysisSettings(card.dataset.qid); }, 550);
+    });
+    card.addEventListener("click", (e) => { if (fired) { e.stopPropagation(); e.preventDefault(); fired = false; } }, true);
+    card.addEventListener("contextmenu", (e) => { e.preventDefault(); if (!fired) openAnalysisSettings(card.dataset.qid); });
+  });
   view.querySelectorAll("[data-th]").forEach((b) => b.addEventListener("click", () => { prefs.theme = b.dataset.th; savePrefs(); renderAnalysis(); }));
   $("#gmore")?.addEventListener("click", () => { showAllGoals = !showAllGoals; renderAnalysis(); });
   $("#tmore")?.addEventListener("click", () => { showAllTrends = !showAllTrends; renderAnalysis(); });
@@ -391,9 +407,10 @@ function lineChart(q, days, vals, avg) {
 }
 
 // Zahnrad: Darstellung pro Frage einstellen
-function openAnalysisSettings() {
+// onlyQid: nur die Darstellung dieser einen Frage (lange auf eine Karte drücken)
+function openAnalysisSettings(onlyQid) {
   const dlg = $("#sheet");
-  const qs = analysisQuestions(rangeDays());
+  const qs = analysisQuestions(rangeDays()).filter((q) => !onlyQid || q.id === onlyQid);
   const seg = (q, field, opts, cur) => `<div class="seg seg-${opts.length}" role="group">${opts.map(([v, l]) =>
     `<button type="button" data-q="${q.id}" data-f="${field}" data-v="${v}" aria-pressed="${cur === v}">${l}</button>`).join("")}</div>`;
   const draw = () => {
@@ -404,6 +421,7 @@ function openAnalysisSettings() {
         <h2>Darstellung</h2>
         <button type="button" class="linkbtn" id="adone">Fertig</button>
       </div>
+      ${onlyQid ? "" : `
       <section class="sq">
         <div class="sq-head"><strong>Trends</strong>
           <label class="switch"><input type="checkbox" data-f="trends" ${prefs.trends !== false ? "checked" : ""}><span>Anzeigen</span></label>
@@ -430,6 +448,7 @@ function openAnalysisSettings() {
         ${prefs.chess !== false ? `<label class="switch row"><input type="checkbox" data-f="chessElo" ${prefs.chessElo !== false ? "checked" : ""}><span>Elo über die Zeit</span></label>
         <label class="switch row"><input type="checkbox" data-f="chessAcc" ${prefs.chessAcc !== false ? "checked" : ""}><span>Genauigkeit über die Zeit</span></label>` : ""}
       </section>` : ""}
+      `}
       ${qs.map((q) => {
         const s = qset(q);
         const dist = q.type === "choice" || q.type === "scale";

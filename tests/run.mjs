@@ -711,6 +711,29 @@ test("Vertiefungsgespräche: anlegen, ausfüllen, Verlauf mit „Letztes Mal“,
   await ctx.close();
 });
 
+test("Analyse: lange auf eine Karte drücken öffnet ihre Darstellung", async () => {
+  const { page, ctx, errors } = await open({ data: yearData() });
+  await page.waitForTimeout(400);
+  await page.evaluate(() => { const d = document.querySelector("#sheet"); if (d.open) d.close(); });
+  await page.click('[data-tab="analysis"]');
+  const card = page.locator('.acard[data-qid="b"]');
+  await card.scrollIntoViewIfNeeded();
+  const bb = await card.boundingBox();
+  await page.mouse.move(bb.x + 40, bb.y + 20); await page.mouse.down(); await page.waitForTimeout(750); await page.mouse.up();
+  await page.waitForSelector("#sheet[open]");
+  assert.equal(await page.locator("#sheet .sq").count(), 1); // nur diese Frage, ohne Trends/Ziele
+  assert.match(await page.locator("#sheet").innerText(), /Heute bouldern/);
+  const before = await page.locator('.acard[data-qid="b"] .vcols').count();
+  await page.locator('#sheet [data-q="b"][data-f="trend"]').click();
+  assert.notEqual(await page.locator('.acard[data-qid="b"] .vcols').count(), before);
+  await page.click("#adone");
+  // Zahnrad zeigt weiterhin alles
+  await page.click("#asettings");
+  assert.ok(await page.locator("#sheet .sq").count() > 3);
+  assert.deepEqual(errors, []);
+  await ctx.close();
+});
+
 test("Fragen per Gedrückthalten verschieben", async () => {
   const data = { version: 1, lastBackup: null, answers: {}, questions: ["A", "B", "C"].map((x) => yesNo(x.toLowerCase(), x + "?")) };
   const { page, ctx, errors } = await open({ data });
