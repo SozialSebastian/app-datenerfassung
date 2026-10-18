@@ -666,8 +666,10 @@ svg.cline .mark { stroke: var(--hold); stroke-width: 1.5; }
 .vb.cur .cbar { opacity: 1; box-shadow: 0 0 0 2px var(--surface), 0 0 0 3.5px var(--hold); }
 .vb.sel .cbar { opacity: 1; box-shadow: 0 0 0 2px var(--surface), 0 0 0 3.5px var(--ink); }
 .vavg { position: absolute; left: 0; right: 0; border-top: 1.5px dashed var(--ink-2); opacity: .7; pointer-events: none; }
-.vleg { display: flex; align-items: center; gap: 6px; color: var(--ink-2); margin: 8px 0 0; }
-.vleg .avg-key { margin-left: 0; border-top-color: var(--ink-2); }
+.vavg b { position: absolute; right: 0; top: -9px; font-size: 10px; line-height: 16px; font-weight: 700; color: var(--ink-2); background: var(--surface); border: 1px solid var(--line); border-radius: 8px; padding: 0 5px; }
+.plot { position: relative; min-width: 0; }
+.yax { position: relative; }
+.avgtag { position: absolute; right: 0; transform: translateY(-50%); font-size: 11px; line-height: 16px; font-weight: 700; color: var(--ink-2); background: var(--surface); padding: 0 2px; pointer-events: none; }
 .vlabs { display: grid; grid-template-columns: repeat(var(--n), minmax(0, 1fr)); gap: 5px; margin-top: 6px; font-size: 11px; color: var(--ink-2); }
 .vlabs span { text-align: center; white-space: nowrap; overflow: visible; }
 .kpi { display: flex; flex-wrap: wrap; gap: 8px 22px; margin: 2px 0 4px; }

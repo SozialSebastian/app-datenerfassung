@@ -343,14 +343,16 @@ function chessLineChart(series, days, { fmt = (v) => String(Math.round(v)), avg 
   series.forEach((s) => s.pts.forEach((p) => { (byDay[p.d] ||= []).push(`${s.name ? s.name + " " : ""}${fmt(p.v)}`); }));
   const tips = Object.entries(byDay).map(([d, t]) => ({ d, x: +xi(d).toFixed(1), t: `${shortDate(d)}: ${t.join(" · ")}` }));
   return `<div class="chart">
-      <div class="yax small muted"><span>${fmt(hi)}</span><span>${fmt(lo)}</span></div>
-      <svg class="cline" viewBox="0 0 ${W} ${H}" data-tips='${esc(JSON.stringify(tips))}' role="img" aria-label="${esc(label)}">
-        ${avg !== null ? `<line x1="0" x2="${W}" y1="${yi(avg)}" y2="${yi(avg)}" class="avg"/>` : ""}
-        ${lines}
-        <line class="mark" y1="0" y2="${H}" style="display:none"/>
-      </svg>
+      <div class="yax small muted"><span>${fmt(hi)}</span><span>${fmt(lo)}</span>${avg !== null ? `<span class="avgtag" style="top:${(yi(avg) / H) * 100}%" title="Durchschnitt">Ø</span>` : ""}</div>
+      <div class="plot">
+        <svg class="cline" viewBox="0 0 ${W} ${H}" data-tips='${esc(JSON.stringify(tips))}' role="img" aria-label="${esc(label)}">
+          ${avg !== null ? `<line x1="0" x2="${W}" y1="${yi(avg)}" y2="${yi(avg)}" class="avg"/>` : ""}
+          ${lines}
+          <line class="mark" y1="0" y2="${H}" style="display:none"/>
+        </svg>
+      </div>
     </div>
-    <p class="legend small">${series.map((s, k) => s.name ? `<span class="ln-key" style="border-color:var(--s${(k % 8) + 1})"></span>${esc(s.name)}` : `<span class="ln-key"></span>Werte`).join(" ")}${avg !== null ? ` <span class="avg-key"></span>Durchschnitt` : ""}</p>
+    ${series.length > 1 ? `<p class="legend small">${series.map((s, k) => `<span class="ln-key" style="border-color:var(--s${(k % 8) + 1})"></span>${esc(s.name)}`).join(" ")}</p>` : ""}
     <p class="ccap small muted" aria-live="polite"></p>`;
 }
 // Elo je Bedenkzeit: Wert nach der letzten gewerteten Partie des Tages
@@ -386,7 +388,8 @@ function wireChessCharts(root) {
       for (const t of tips) if (Math.abs(t.x - x) < Math.abs(best.x - x)) best = t;
       mark.setAttribute("x1", best.x); mark.setAttribute("x2", best.x); mark.style.display = "";
       // passende Beschriftung direkt unter diesem Diagramm
-      const c = svg.closest(".chart").nextElementSibling?.nextElementSibling;
+      let c = svg.closest(".chart").nextElementSibling;
+      if (c && !c.classList.contains("ccap")) c = c.nextElementSibling;
       (c && c.classList.contains("ccap") ? c : cap).textContent = best.t;
     };
     svg.addEventListener("pointerdown", pick);

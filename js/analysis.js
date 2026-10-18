@@ -354,10 +354,9 @@ function columnChart(q, days, focusKey, unit) {
         ${buckets.map((b, i) => `<button type="button" class="col vb ${i === buckets.length - 1 ? "cur" : ""}" data-cap="${esc(`${capName(b)}: ${unit === "pct" ? Math.round(val(b)) + " %" : b.hit + "×"} „${focusKey}“ (${b.n} Tag${b.n === 1 ? "" : "e"} beantwortet)`)}">
           ${many ? "" : `<em>${unit === "pct" && buckets.length > 8 ? Math.round(val(b)) : fmtV(b)}</em>`}<span class="cbar" style="height:${Math.max(val(b) > 0 ? 3 : 0, (val(b) / max) * H)}px"></span>
         </button>`).join("")}
-        ${avg > 0 && mode !== "day" ? `<div class="vavg" style="bottom:${(avg / max) * H}px"></div>` : ""}
+        ${avg > 0 && mode !== "day" ? `<div class="vavg" style="bottom:${(avg / max) * H}px" title="Durchschnitt ${unit === "pct" ? Math.round(avg) + " %" : fmt1(avg) + "× pro " + (mode === "week" ? "Woche" : "Monat")}"><b>Ø ${unit === "pct" ? Math.round(avg) + " %" : fmt1(avg)}</b></div>` : ""}
       </div>
       <div class="vlabs">${buckets.map((b, i) => `<span>${i % every === 0 || i === buckets.length - 1 && !many ? lab(b) : ""}</span>`).join("")}</div>
-      ${avg > 0 && mode !== "day" ? `<p class="vleg small"><span class="avg-key"></span>Ø ${unit === "pct" ? Math.round(avg) + " %" : fmt1(avg) + "×"} pro ${mode === "week" ? "Woche" : "Monat"}</p>` : ""}
     </div>`;
 }
 
@@ -378,15 +377,17 @@ function lineChart(q, days, vals, avg) {
   });
   const dots = pts.length <= 40 ? pts.map((p) => `<circle cx="${p.x}" cy="${p.y}" r="3" class="dot"/>`).join("") : "";
   return `<div class="chart">
-    <div class="yax small muted"><span>${q.format ? fmtQ(q, hi) : fmt1(hi)}</span><span>${q.format ? fmtQ(q, lo) : fmt1(lo)}</span></div>
+    <div class="yax small muted"><span>${q.format ? fmtQ(q, hi) : fmt1(hi)}</span><span>${q.format ? fmtQ(q, lo) : fmt1(lo)}</span><span class="avgtag" style="top:${(yi(avg) / H) * 100}%" title="Durchschnitt">Ø</span></div>
+    <div class="plot">
     <svg class="line" viewBox="0 0 ${W} ${H}" data-pts='${JSON.stringify(pts)}' role="img" aria-label="Verlauf von ${esc(q.text)}">
       <line x1="0" x2="${W}" y1="${yi(avg)}" y2="${yi(avg)}" class="avg"/>
       <path d="${path}" class="ln"/>
       ${dots}
       <circle class="hover" r="5" style="display:none"/>
     </svg>
+    </div>
   </div>
-  <p class="legend small"><span class="ln-key"></span>Werte <span class="avg-key"></span>Durchschnitt</p>`;
+  `;
 }
 
 // Zahnrad: Darstellung pro Frage einstellen
