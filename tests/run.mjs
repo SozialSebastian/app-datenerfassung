@@ -213,6 +213,9 @@ test("Ziel über das Zahnrad anlegen und in der Analyse sehen", async () => {
   await page.dispatchEvent("#gn", "change");
   await page.click("#gsave");
   await page.click("#gdone");
+  // je nach Wochentag meldet die App kurz darauf „nicht mehr zu schaffen“ – Hinweis schließen
+  await page.waitForTimeout(700);
+  await page.evaluate(() => { const d = document.querySelector("#sheet"); if (d.open) d.close(); });
   await page.click('[data-tab="analysis"]');
   assert.match(await page.locator(".goals").innerText(), /mindestens 2× „Ja“ pro Woche/);
   assert.deepEqual(errors, []);
@@ -287,17 +290,20 @@ test("Grafik erstellen liefert ein PNG", async () => {
 
 test("Ziel-Erinnerung: Plan, ab wann ein Ziel kippt", async () => {
   const { page, ctx } = await open({ data: yearData() });
-  const plan = await page.evaluate(() => {
-    G().items = [{ id: "w", qid: "b", kind: "count", key: "Ja", op: "min", n: 3, period: "week", repeat: true }];
-    // Woche ohne „Ja“ bisher: Plan muss den letzten möglichen Tag nennen
-    const per = periodOf("week", todayIso());
+  // Monatsziel „mindestens 2×“, bisher 0×, heute noch offen → kippt am vorletzten Tag des Monats (oder heute)
+  const r = await page.evaluate(() => {
+    G().items = [{ id: "m", qid: "b", kind: "count", key: "Ja", op: "min", n: 2, period: "month", repeat: true }];
+    const per = periodOf("month", todayIso());
     for (let d = per.start; d <= todayIso(); d = addDays(d, 1)) if (state.answers[d]) state.answers[d].b = "Nein";
-    return { plan: goalAlertPlan(), end: per.end };
+    delete (state.answers[todayIso()] || {}).b;
+    const last = addDays(per.end, -1);
+    const possible = dayCount(todayIso(), per.end) >= 2;
+    return { plan: goalAlertPlan(), expected: last < todayIso() ? todayIso() : last, possible };
   });
-  assert.equal(plan.plan.length, 1);
-  const expected = await page.evaluate((end) => { const x = addDays(end, -2); return x < todayIso() ? todayIso() : x; }, plan.end);
-  assert.equal(plan.plan[0].d, expected);
-  assert.match(plan.plan[0].t, /Heute bouldern: ab heute an jedem Tag nötig \(noch 3× bis/);
+  if (!r.possible) { assert.equal(r.plan.length, 0); await ctx.close(); return; } // letzter Monatstag: schon verloren
+  assert.equal(r.plan.length, 1);
+  assert.equal(r.plan[0].d, r.expected);
+  assert.match(r.plan[0].t, /Heute bouldern: ab heute an jedem Tag nötig \(noch 2× bis/);
   await ctx.close();
 });
 

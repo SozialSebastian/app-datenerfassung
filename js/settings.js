@@ -67,6 +67,13 @@ function renderData() {
       <label class="switch row" style="margin-top:0"><input type="checkbox" id="placeson" ${settings.places.on ? "checked" : ""}><span>Stadt beim Öffnen erfassen</span></label>
       <p class="muted small" style="margin:8px 0 0">Mosaik merkt sich beim Öffnen die Stadt, höchstens alle 20 Minuten, z. B. „Wedel → Hamburg → Wedel“. Gespeichert wird nur der Ortsname, auf dem iPhone. Für den Namen werden die auf ca. 1 km gerundeten Koordinaten an BigDataCloud geschickt, ersatzweise an OpenStreetMap. Orte lassen sich unter „Tag“ antippen und von Hand ergänzen.</p>
       <p class="muted small" style="margin:8px 0 0">Zusätzlich holt Mosaik für jeden Tag mit Standort das Wetter (Höchsttemperatur, Regen, Sonnenstunden, über Open-Meteo). Es wird nur in den Trends als Faktor für Zusammenhänge genutzt.${settings.places.on ? ` Wetter vorhanden für ${Object.keys(state.weather || {}).length} Tage.` : ""}</p>
+      ${settings.places.on ? `<details style="margin-top:8px"><summary class="small"><strong>Nicht jedes Mal nach Erlaubnis fragen</strong></summary>
+        <ol class="steps small" style="margin:6px 0 0">
+          <li>iPhone-Einstellungen → <strong>Apps → Safari</strong> → ganz unten <strong>Standort</strong> → <strong>Erlauben</strong>.</li>
+          <li>Einstellungen → <strong>Datenschutz & Sicherheit → Ortungsdienste → Safari-Websites</strong> → <strong>Beim Verwenden der App</strong>, „Genauer Standort“ darf aus sein.</li>
+        </ol>
+        <p class="muted small" style="margin:6px 0 0">Ohne diese Einstellung fragt iOS bei Web-Apps immer wieder. Mosaik fragt dann von sich aus höchstens einmal am Tag.</p>
+      </details>` : ""}
       ${settings.places.on && settings.places.err ? `<p class="small" style="margin:8px 0 0;color:var(--danger)">Letzter Fehler ${esc(settings.places.err)}</p>` : ""}
       ${settings.places.on ? `<button class="btn ghost block" id="placenow" style="margin-top:12px">Standort jetzt erfassen</button>` : ""}
     </section>

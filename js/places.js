@@ -53,6 +53,16 @@ async function capturePlace(manual) {
   if (!settings.places || !settings.places.on || !("geolocation" in navigator)) return;
   if (placeBusy) return;
   if (!manual && settings.places.last && Date.now() - settings.places.last < PLACE_MIN_GAP) return;
+  // Ohne dauerhafte Erlaubnis fragt iOS jedes Mal nach → automatisch höchstens einmal am Tag nachfragen
+  if (!manual) {
+    let state = "unknown";
+    try { if (navigator.permissions) state = (await navigator.permissions.query({ name: "geolocation" })).state; } catch (e) { /* nicht unterstützt */ }
+    if (state === "denied") return;
+    if (state !== "granted") {
+      if (settings.places.askedDay === todayIso()) return;
+      settings.places.askedDay = todayIso(); saveSettings();
+    }
+  }
   placeBusy = true;
   try {
     const get = (high) => new Promise((res, rej) => navigator.geolocation.getCurrentPosition(res, rej, { enableHighAccuracy: high, timeout: high ? 30000 : 15000, maximumAge: manual ? 0 : 10 * 60 * 1000 }));
