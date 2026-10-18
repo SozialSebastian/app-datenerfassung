@@ -198,8 +198,19 @@ function analysisCard(q, days) {
     } else {
       focusKey = dist.some((x) => x.key === prefs.focus[q.id]) ? prefs.focus[q.id] : dist[0].key;
     }
+    const yesNo = q.type === "choice" && !q.multi && q.options.length === 2 && q.options.includes("Ja") && q.options.includes("Nein");
+    if (yesNo) focusKey = "Ja";
 
-    if (set.chart === "pie") {
+    if (yesNo && set.chart !== "pie") {
+      // Ja/Nein: Kennzahlen statt Balken
+      const c = vals.filter((x) => x.v === "Ja").length;
+      const perWeek = c / (days.length / 7);
+      body = `<div class="kpi">
+          <div><strong>${c}</strong><span>${c === 1 ? "Tag" : "Tage"} mit „Ja“</span></div>
+          ${days.length >= 7 ? `<div><strong>${fmt1(perWeek)}</strong><span>Ø pro Woche</span></div>` : ""}
+          <div><strong>${pct(c, n)} %</strong><span>der Tage</span></div>
+        </div>`;
+    } else if (set.chart === "pie") {
       // Kuchen: Anteile an allen Nennungen (bei Mehrfachauswahl ≠ Anteil der Tage)
       let slices = dist.filter((x) => x.c > 0);
       if (slices.length > SERIES) {
@@ -235,7 +246,7 @@ function analysisCard(q, days) {
 
     if (set.trend) {
       body += q.type === "scale" ? (n >= 2 ? lineChart(q, days, vals, vals.reduce((s, x) => s + x.v, 0) / n) : "")
-        : columnChart(q, days, focusKey, set.unit);
+        : columnChart(q, days, focusKey, yesNo ? "abs" : set.unit);
     }
   } else {
     const nums = vals.map((x) => x.v);
@@ -323,19 +334,30 @@ function columnChart(q, days, focusKey, unit) {
     if (isAnswered(v)) { b.n++; if (Array.isArray(v) ? v.includes(focusKey) : v === focusKey) b.hit++; }
   }
   const val = (b) => (unit === "pct" ? (b.n ? (b.hit / b.n) * 100 : 0) : b.hit);
-  const max = unit === "pct" ? 100 : Math.max(1, ...buckets.map(val));
+  const fmtV = (b) => (unit === "pct" ? `${Math.round(val(b))} %` : String(b.hit));
+  const vs = buckets.map(val);
+  const max = Math.max(unit === "pct" ? 1 : 1, ...vs);
+  // Ø: bei Anzahlen auf volle Wochen/Monate gerechnet (angefangene Abschnitte am Rand verzerren sonst), bei % Mittel der Abschnitte
+  const avg = unit === "pct" ? vs.reduce((s, x) => s + x, 0) / (vs.length || 1)
+    : buckets.reduce((s, b) => s + b.hit, 0) / (span / (mode === "week" ? 7 : mode === "month" ? 365.25 / 12 : 1));
+  const H = 96;
+  const many = buckets.length > 16 || mode === "day" && unit !== "pct"; // Tageswerte 0/1 brauchen keine Zahl
+  const every = Math.ceil(buckets.length / (many ? 8 : 16));
   const lab = (b) => {
     const d = parseIso(b.first);
-    return mode === "day" ? WD_SHORT[d.getDay()] : mode === "week" ? `${parseIso(b.k).getDate()}.${parseIso(b.k).getMonth() + 1}.` : MON_SHORT[d.getMonth()];
+    return mode === "day" ? WD_SHORT[d.getDay()] : mode === "week" ? `${parseIso(b.k).getDate()}.${parseIso(b.k).getMonth() + 1}.` : buckets.length > 13 ? `${MON_SHORT[d.getMonth()]} ${String(d.getFullYear()).slice(2)}` : MON_SHORT[d.getMonth()];
   };
-  const name = mode === "day" ? "Tag" : mode === "week" ? "Woche ab" : "";
-  const every = Math.ceil(buckets.length / 7); // nicht jede Beschriftung, sonst zu eng
-  return `<div class="cols-head small muted">„${esc(focusKey)}“ pro ${mode === "day" ? "Tag" : mode === "week" ? "Woche" : "Monat"}</div>
-    <div class="cols" style="grid-template-columns:repeat(${buckets.length}, 1fr)">
-      ${buckets.map((b, i) => `<button class="col" data-cap="${esc(`${name ? name + " " : ""}${lab(b)}: ${unit === "pct" ? Math.round(val(b)) + " %" : b.hit + "×"} „${focusKey}“ (${b.n} Tag${b.n === 1 ? "" : "e"} beantwortet)`)}">
-        <span class="cbar"><span style="height:${(val(b) / max) * 100}%"></span></span>
-        <span class="clab">${i % every === 0 ? lab(b) : ""}</span>
-      </button>`).join("")}
+  const name = mode === "day" ? "" : mode === "week" ? "Woche ab " : "";
+  const capName = (b) => (mode === "month" ? `${MON_SHORT[parseIso(b.first).getMonth()]} ${parseIso(b.first).getFullYear()}` : `${name}${lab(b)}`);
+  return `<div class="vcols" style="--n:${buckets.length}">
+      <div class="vbars" style="height:${H + (many ? 4 : 20)}px">
+        ${buckets.map((b, i) => `<button type="button" class="col vb ${i === buckets.length - 1 ? "cur" : ""}" data-cap="${esc(`${capName(b)}: ${unit === "pct" ? Math.round(val(b)) + " %" : b.hit + "×"} „${focusKey}“ (${b.n} Tag${b.n === 1 ? "" : "e"} beantwortet)`)}">
+          ${many ? "" : `<em>${unit === "pct" && buckets.length > 8 ? Math.round(val(b)) : fmtV(b)}</em>`}<span class="cbar" style="height:${Math.max(val(b) > 0 ? 3 : 0, (val(b) / max) * H)}px"></span>
+        </button>`).join("")}
+        ${avg > 0 && mode !== "day" ? `<div class="vavg" style="bottom:${(avg / max) * H}px"></div>` : ""}
+      </div>
+      <div class="vlabs">${buckets.map((b, i) => `<span>${i % every === 0 || i === buckets.length - 1 && !many ? lab(b) : ""}</span>`).join("")}</div>
+      ${avg > 0 && mode !== "day" ? `<p class="vleg small"><span class="avg-key"></span>Ø ${unit === "pct" ? Math.round(avg) + " %" : fmt1(avg) + "×"} pro ${mode === "week" ? "Woche" : "Monat"} · antippen für Details</p>` : `<p class="vleg small">antippen für Details</p>`}
     </div>`;
 }
 
