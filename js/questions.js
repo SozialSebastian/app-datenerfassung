@@ -18,6 +18,13 @@ function withThemeHeads(list, keyOf, render, head) {
 
 /* ---------- Neue Frage: eigene oder aus Vorlage ---------- */
 const TEMPLATES = [
+  { k: "recipes", icon: "🍳", title: "Gekocht (Rezepte aus Notion)", desc: "„Was hast du heute gekocht?“ mit deinen Rezepten von der Notion-Seite als Antworten, bleibt automatisch aktuell. Die Analyse zeigt, was du wie oft gekocht hast.",
+    needs: async () => {
+      if (!recipeList().length) await syncRecipes(true);
+      if (!recipeList().length) { toast(settings.notion.err || "Noch keine Rezepte – Notion unter Einstellungen → Schnittstelle Notion verbinden"); return false; }
+      return true;
+    },
+    make: () => [{ id: uid(), text: "Was hast du heute gekocht?", type: "choice", options: Array.from(new Set([...recipeNames(), "Nichts gekocht"])), extra: ["Nichts gekocht"], notion: { src: "recipes" }, multi: true, min: 1, max: 5, minLabel: "", maxLabel: "", unit: "", healthKey: "", archived: false, cond: null, theme: "food", template: "recipes" }] },
   { k: "work", icon: "💼", title: "Arbeit", desc: "„Hast du heute gearbeitet?“ und bei Ja „Wie lange hast du gearbeitet?“. Mit Vertrag (Stunden und Stundenlohn) zeigt die Analyse deinen effektiven Stundenlohn.",
     make: () => {
       const p = { id: uid(), text: "Hast du heute gearbeitet?", type: "choice", options: ["Ja", "Nein"], multi: false, min: 1, max: 5, minLabel: "", maxLabel: "", unit: "", healthKey: "", archived: false, cond: null, theme: "work", template: "work" };
@@ -35,8 +42,9 @@ function openNewQuestion() {
   </div>`;
   $("#ncancel", dlg).addEventListener("click", () => dlg.close());
   $("#nown", dlg).addEventListener("click", () => openEditor(null));
-  dlg.querySelectorAll("[data-tpl]").forEach((b) => b.addEventListener("click", () => {
+  dlg.querySelectorAll("[data-tpl]").forEach((b) => b.addEventListener("click", async () => {
     const t = TEMPLATES.find((x) => x.k === b.dataset.tpl);
+    if (t.needs && !(await t.needs())) return;
     if (state.questions.some((q) => q.template === t.k && !q.archived) && !confirm(`Die Vorlage „${t.title}“ ist schon angelegt. Trotzdem noch einmal anlegen?`)) return;
     const qs = t.make();
     state.questions.push(...qs);
@@ -64,7 +72,7 @@ function questionsPanel() {
     return `<li class="qrow ${q.archived ? "archived" : ""}" data-qrow="${q.id}" style="margin-left:${q.archived ? 0 : depth * 18}px">
       <button class="qmain" data-edit="${q.id}">
         <span class="qtext">${q.cond && !q.archived ? "↳ " : ""}${esc(q.text)}</span>
-        <span class="qmeta">${q.friends ? "Vorlage Freunde · " : ""}${esc(describe(q))}${q.healthKey ? " · Health: " + esc(q.healthKey) : ""}</span>
+        <span class="qmeta">${q.friends ? "Vorlage Freunde · " : q.notion ? "Rezepte aus Notion · " : ""}${esc(describe(q))}${q.healthKey ? " · Health: " + esc(q.healthKey) : ""}</span>
         ${q.cond ? `<span class="qmeta">${esc(condText(q))}</span>` : ""}
       </button>
       ${q.archived ? "" : `
@@ -204,7 +212,7 @@ function openEditor(id) {
     : { id: uid(), text: "", type: "choice", options: ["Ja", "Nein"], multi: false, min: 1, max: 5, minLabel: "", maxLabel: "", unit: "", healthKey: "", archived: false, cond: null };
   if (draft.multi === undefined) draft.multi = false;
   if (!draft.friends) draft.friends = null;
-  if (draft.friends) draft.options = [...(draft.extra || [])]; // bei Vorlage „Freunde“ nur Zusatzantworten bearbeiten
+  if (draft.friends || draft.notion) draft.options = [...(draft.extra || [])]; // bei Vorlage „Freunde“/„Rezepte“ nur Zusatzantworten bearbeiten
   if (draft.cond === undefined) draft.cond = null;
 
   const dlg = $("#sheet");
@@ -226,13 +234,15 @@ function openEditor(id) {
     if (draft.type === "choice") {
       const fnames = draft.friends ? friendsOrdered(draft.friends.cats).map((x) => x.name) : [];
       typeFields = `<div class="field" style="margin-bottom:8px;font-weight:600;font-size:15px">Antwortmöglichkeiten</div>
-        <label class="check" style="margin-top:0"><input type="checkbox" id="fsync" ${draft.friends ? "checked" : ""}> Vorlage „Freunde“: Namen aus deiner Freundesliste, bleibt automatisch aktuell</label>
+        ${draft.notion ? `<p class="small" style="margin:0 0 4px"><strong>Rezepte aus Notion</strong>, bleiben automatisch aktuell.</p>
+          <p class="muted small" style="margin:0 0 12px">${recipeList().length} Rezepte: ${esc(recipeNames().slice(0, 8).join(", "))}${recipeList().length > 8 ? " …" : ""}</p>
+          <div class="field" style="margin-bottom:8px;font-weight:600;font-size:15px">Zusätzliche Antworten (optional)</div>` : `<label class="check" style="margin-top:0"><input type="checkbox" id="fsync" ${draft.friends ? "checked" : ""}> Vorlage „Freunde“: Namen aus deiner Freundesliste, bleibt automatisch aktuell</label>`}
         ${draft.friends ? `<div class="chips" style="margin:4px 0 8px">${FCATS.map(([c, l]) => `<button type="button" class="chip" data-fsc="${c}" aria-pressed="${draft.friends.cats.includes(c)}">${l}</button>`).join("")}</div>
           <p class="muted small" style="margin:0 0 12px">${fnames.length ? `${fnames.length} Namen: ${esc(fnames.slice(0, 8).join(", "))}${fnames.length > 8 ? " …" : ""}` : "Noch keine Freunde in diesen Kategorien. Leg sie im Bereich „Freunde“ an."}</p>
           <div class="field" style="margin-bottom:8px;font-weight:600;font-size:15px">Zusätzliche Antworten (optional)</div>` : ""}
         ${draft.options.map((o, i) => `<div class="opt">
-          <input value="${esc(o)}" data-opt="${i}" aria-label="Antwort ${i + 1}" ${draft.friends ? 'placeholder="z. B. Familie"' : ""}>
-          <button type="button" class="iconbtn" data-delopt="${i}" aria-label="Antwort entfernen" ${!draft.friends && draft.options.length <= 2 ? "disabled" : ""}>✕</button>
+          <input value="${esc(o)}" data-opt="${i}" aria-label="Antwort ${i + 1}" ${draft.friends ? 'placeholder="z. B. Familie"' : draft.notion ? 'placeholder="z. B. Essen gegangen"' : ""}>
+          <button type="button" class="iconbtn" data-delopt="${i}" aria-label="Antwort entfernen" ${!draft.friends && !draft.notion && draft.options.length <= 2 ? "disabled" : ""}>✕</button>
         </div>`).join("")}
         <button type="button" class="linkbtn" id="addopt">Antwort hinzufügen</button>
         <label class="check"><input type="checkbox" id="multi" ${draft.multi ? "checked" : ""} ${typeLocked ? "disabled" : ""}> Mehrere Antworten gleichzeitig erlauben</label>
@@ -392,7 +402,11 @@ function openEditor(id) {
       sync();
       draft.text = draft.text.trim();
       if (!draft.text) return toast("Bitte eine Frage eingeben");
-      if (draft.type === "choice" && draft.friends) {
+      if (draft.type === "choice" && draft.notion) {
+        draft.extra = Array.from(new Set(draft.options.map((o) => o.trim()).filter(Boolean)));
+        draft.options = Array.from(new Set([...recipeNames(), ...draft.extra]));
+        if (draft.options.length < 2) { draft.options = [...draft.extra]; return toast("Mindestens zwei Antworten nötig – Rezepte aus Notion fehlen noch"); }
+      } else if (draft.type === "choice" && draft.friends) {
         draft.extra = Array.from(new Set(draft.options.map((o) => o.trim()).filter(Boolean)));
         draft.options = Array.from(new Set([...friendsOrdered(draft.friends.cats).map((x) => x.name), ...draft.extra]));
         if (draft.options.length < 2) { draft.options = [...draft.extra]; return toast("Mindestens zwei Antworten nötig – leg zuerst Freunde an"); }

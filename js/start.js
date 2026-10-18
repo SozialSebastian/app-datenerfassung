@@ -46,7 +46,9 @@ setTimeout(goalNotices, 600);
 capturePlace(false);
 syncWeather(false);
 syncChess(false);
-document.addEventListener("visibilitychange", () => { if (document.visibilityState === "visible") { fetchInbox(false); reportStatus(); setTimeout(goalNotices, 600); capturePlace(false); syncChess(false); } });
+const recipesBg = () => syncRecipes(false).then((changed) => { if (changed) render(); });
+recipesBg();
+document.addEventListener("visibilitychange", () => { if (document.visibilityState === "visible") { fetchInbox(false); reportStatus(); setTimeout(goalNotices, 600); capturePlace(false); syncChess(false); recipesBg(); } });
 
 if ("serviceWorker" in navigator && location.protocol !== "file:") {
   const hadController = !!navigator.serviceWorker.controller;

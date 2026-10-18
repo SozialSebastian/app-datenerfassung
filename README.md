@@ -12,6 +12,7 @@ Web-App (PWA) fürs iPhone: eigene Fragen anlegen, jeden Tag beantworten, auswer
 - **Grafik erstellen:** Übersichten als PNG; **Excel** mit allen Daten; **Sicherung** als JSON-Datei
 - **Apple Health** über einen Kurzbefehl, der Werte an den Mosaik-Dienst (`worker/`) schickt
 - **chess.com:** Benutzername eintragen; holt beim Einschalten alle Partien (Elo je Bedenkzeit, Partien, Spielzeit, Punktequote, Genauigkeit, Eröffnungen), danach einmal am Tag
+- **Notion:** Vorlage „Gekocht“ – Rezepte der Notion-Seite als Antworten, täglich aktualisiert (über den Mosaik-Dienst, Secret `NOTION_TOKEN`)
 
 ## Aufbau
 | Datei | Inhalt |
@@ -24,6 +25,7 @@ Web-App (PWA) fürs iPhone: eigene Fragen anlegen, jeden Tag beantworten, auswer
 | `js/export.js` | Grafik erstellen (PNG) |
 | `js/places.js`, `js/weather.js` | Orte und Wetter |
 | `js/chess.js` | Schnittstelle chess.com |
+| `js/notion.js` | Schnittstelle Notion (Rezepte) |
 | `js/questions.js`, `js/friends.js` | Fragen-Editor und Freunde |
 | `js/service.js`, `js/settings.js`, `js/data.js` | Mosaik-Dienst, Einstellungen, Excel/Sicherung |
 | `js/start.js` | Start, Updates, Links aus Mitteilungen |

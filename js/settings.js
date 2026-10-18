@@ -138,6 +138,8 @@ function renderData() {
 
     ${chessSettingsPanel()}
 
+    ${notionSettingsPanel()}
+
     <section class="panel">
       <h2>Verbindung</h2>
       <p class="muted small">Der Mosaik-Dienst verschickt die Erinnerung und nimmt Werte von Kurzbefehlen an. Deine Antworten bleiben auf dem iPhone.</p>
@@ -213,6 +215,7 @@ function renderData() {
   });
   $("#placenow")?.addEventListener("click", async () => { await capturePlace(true); renderData(); });
   wireChessSettings();
+  wireNotionSettings();
   $("#exportopen").addEventListener("click", openExport);
   const weekSave = async () => {
     const day = Number($("#weekday").value), time = $("#weektime").value || "19:00";

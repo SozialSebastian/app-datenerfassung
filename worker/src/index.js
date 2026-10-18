@@ -376,6 +376,28 @@ async function handle(request, env) {
     return text(`Gespeichert – ${Object.entries(byKey).map(([k, xs]) => `${k}: ${xs.join(", ")}`).join(" | ")}. Mosaik übernimmt das beim nächsten Öffnen.`);
   }
 
+  // Notion: Titel der Unterseiten der Rezepte-Seite (nur lesen; Schlüssel als Secret NOTION_TOKEN)
+  if (path === "/notion/recipes" && request.method === "GET") {
+    if (!env.NOTION_TOKEN) return json({ error: "Notion ist im Mosaik-Dienst noch nicht eingerichtet (GitHub-Secret NOTION_TOKEN fehlt)" }, 503);
+    const page = String(env.NOTION_RECIPES || "").replace(/-/g, "");
+    if (!/^[0-9a-f]{32}$/i.test(page)) return json({ error: "Rezepte-Seite nicht eingestellt" }, 503);
+    const out = [];
+    let cursor = null, rounds = 0;
+    do {
+      const r = await fetch(`https://api.notion.com/v1/blocks/${page}/children?page_size=100${cursor ? `&start_cursor=${encodeURIComponent(cursor)}` : ""}`, {
+        headers: { Authorization: `Bearer ${env.NOTION_TOKEN}`, "Notion-Version": "2022-06-28" }
+      });
+      if (!r.ok) {
+        const msg = r.status === 401 ? "Der Notion-Schlüssel ist ungültig" : r.status === 404 || r.status === 403 ? "Die Rezepte-Seite ist nicht für die Verbindung „Mosaik“ freigegeben" : `Notion meldet Fehler ${r.status}`;
+        return json({ error: msg }, 502);
+      }
+      const d = await r.json();
+      for (const b of d.results || []) if (b.type === "child_page" && b.child_page) out.push({ id: b.id, title: b.child_page.title || "" });
+      cursor = d.has_more ? d.next_cursor : null;
+    } while (cursor && ++rounds < 20);
+    return json({ recipes: out });
+  }
+
   if (path === "/inbox" && request.method === "GET") {
     const { results } = await env.DB.prepare("SELECT id, created, date, key, value FROM inbox ORDER BY id").all();
     return json({ items: results });

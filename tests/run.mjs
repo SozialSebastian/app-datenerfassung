@@ -539,6 +539,47 @@ test("Zeitraum: 1 Tag, Mehr-Auswahl und eigener Zeitraum (Analyse und Grafik)", 
   await ctx.close();
 });
 
+test("Vorlage „Gekocht“: Rezepte aus Notion, Umbenennen, Analyse zeigt was wie oft", async () => {
+  const data = { version: 1, lastBackup: null, answers: {}, questions: [yesNo("b", "Heute bouldern?")] };
+  const { page, ctx, errors } = await open({ data, settings: { token: "test" } });
+  let recipes = [
+    { id: "r-brot", title: "Brot" }, { id: "r-ideen", title: "Rezeptideen" }, { id: "r-linsen", title: "Linseneintopf" },
+    { id: "r-pesto", title: "Pesto" }, { id: "r-ruehr", title: "Rührteig " }
+  ];
+  await page.route(/workers\.dev\/notion\/recipes/, (r) => json(r, { recipes }));
+  await page.click('[data-tab="data"]');
+  await page.click("#newq");
+  await page.click('[data-tpl="recipes"]');
+  await page.waitForSelector("#savebtn");
+  await page.click("#savebtn");
+  const q = await page.evaluate(() => state.questions.find((x) => x.notion));
+  assert.deepEqual(q.options, ["Brot", "Linseneintopf", "Pesto", "Rührteig", "Nichts gekocht"]);
+  assert.equal(q.multi, true); assert.equal(q.theme, "food");
+  await page.evaluate((id) => {
+    const t = todayIso();
+    [["Brot", "Linseneintopf"], ["Linseneintopf"], ["Linseneintopf", "Pesto"], ["Brot"]].forEach((v, i) => { state.answers[addDays(t, -i)] = { [id]: v }; });
+    save();
+  }, q.id);
+  // Umbenennen in Notion: gleiche Seite, neuer Titel → auch alte Antworten
+  recipes = recipes.map((r) => (r.id === "r-brot" ? { ...r, title: "Sauerteigbrot" } : r));
+  await page.evaluate(() => syncRecipes(true));
+  const after = await page.evaluate((id) => ({ opts: qById(id).options, a: state.answers[todayIso()][id] }), q.id);
+  assert.equal(after.opts.includes("Brot"), false);
+  assert.ok(after.opts.includes("Sauerteigbrot"));
+  assert.deepEqual(after.a, ["Sauerteigbrot", "Linseneintopf"]);
+  // Analyse: nur Gekochtes, am häufigsten zuerst, als Anzahl
+  await page.click('[data-tab="analysis"]');
+  await page.click('[data-range="7"]');
+  const card = await page.locator(`.acard[data-qid="${q.id}"]`).innerText();
+  assert.match(card, /Linseneintopf\s*3×[\s\S]*Sauerteigbrot\s*2×[\s\S]*Pesto\s*1×/);
+  assert.doesNotMatch(card, /Rührteig|Nichts gekocht/);
+  // Einstellungen zeigen den Stand
+  await page.click('[data-tab="data"]');
+  assert.match(await page.locator("#view").innerText(), /Schnittstelle Notion[\s\S]*Verbunden\. 4 Rezepte/);
+  assert.deepEqual(errors, []);
+  await ctx.close();
+});
+
 test("Fragen per Gedrückthalten verschieben", async () => {
   const data = { version: 1, lastBackup: null, answers: {}, questions: ["A", "B", "C"].map((x) => yesNo(x.toLowerCase(), x + "?")) };
   const { page, ctx, errors } = await open({ data });

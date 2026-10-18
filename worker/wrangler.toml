@@ -7,6 +7,10 @@ workers_dev = true
 [triggers]
 crons = ["* * * * *"]
 
+# Notion-Seite „Rezepte“ (nur die Kennung, der Schlüssel liegt als Secret NOTION_TOKEN)
+[vars]
+NOTION_RECIPES = "28e9d856995e800f93dbc9933a5abece"
+
 [[d1_databases]]
 binding = "DB"
 database_name = "mosaik"

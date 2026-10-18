@@ -8,7 +8,7 @@ try { const p = JSON.parse(localStorage.getItem(PREF_KEY) || "{}"); prefs = { ..
 const savePrefs = () => { try { localStorage.setItem(PREF_KEY, JSON.stringify(prefs)); } catch (e) { /* egal */ } };
 
 // Einstellungen pro Frage, mit sinnvollen Vorgaben
-const qset = (q) => ({ chart: "bars", unit: "pct", trend: q.type !== "choice", hidden: false, ...(prefs.q[q.id] || {}) });
+const qset = (q) => ({ chart: "bars", unit: q.notion ? "abs" : "pct", trend: q.type !== "choice", hidden: false, ...(prefs.q[q.id] || {}) });
 const setQ = (qid, patch) => { prefs.q[qid] = { ...(prefs.q[qid] || {}), ...patch }; savePrefs(); };
 
 const RANGES = [["1", "1 Tag"], ["7", "7 Tage"], ["30", "30 Tage"], ["ytd", "Seit 1.1."], ["365", "12 Monate"], ["all", "Alles"], ["custom", "Eigener Zeitraum"]];
@@ -161,7 +161,10 @@ function distribution(q, vals) {
   const keys = [...q.options];
   // ältere Antworttexte (z. B. nach Umbenennen) trotzdem zählen
   vals.forEach((x) => (Array.isArray(x.v) ? x.v : [x.v]).forEach((v) => { if (!keys.includes(v)) keys.push(v); }));
-  return keys.map((k) => ({ key: k, label: k, c: vals.filter((x) => (Array.isArray(x.v) ? x.v.includes(k) : x.v === k)).length }));
+  const out = keys.map((k) => ({ key: k, label: k, c: vals.filter((x) => (Array.isArray(x.v) ? x.v.includes(k) : x.v === k)).length }));
+  // Rezepte: nur Gekochtes, am häufigsten zuerst
+  if (q.notion) return out.filter((x) => x.c > 0).sort((a, b) => b.c - a.c || a.label.localeCompare(b.label, "de"));
+  return out;
 }
 
 function analysisCard(q, days) {

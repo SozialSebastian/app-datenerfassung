@@ -44,6 +44,15 @@ jobs:
           else
             echo "::warning title=Schlüssel fehlt::Secret MOSAIK_TOKEN ist noch nicht in GitHub hinterlegt"
           fi
+      - name: Notion-Schlüssel hinterlegen
+        env:
+          NOTION_TOKEN: ${{ secrets.NOTION_TOKEN }}
+        run: |
+          if [ -n "$NOTION_TOKEN" ]; then
+            printf '%s' "$NOTION_TOKEN" | npx --yes wrangler@4 secret put NOTION_TOKEN
+          else
+            echo "::notice title=Notion::Secret NOTION_TOKEN ist (noch) nicht in GitHub hinterlegt"
+          fi
       - name: Prüfen
         env:
           MOSAIK_TOKEN: ${{ secrets.MOSAIK_TOKEN }}
