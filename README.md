@@ -4,7 +4,7 @@ Web-App (PWA) fürs iPhone: eigene Fragen anlegen, jeden Tag beantworten, auswer
 
 ## Funktionen
 - **Tag:** Fragen beantworten (einzeln oder per „Abfrage starten“), Ort und Wetter des Tages, Werte aus Apple Health
-- **Fragen:** Auswahl (auch mehrere), Skala, Zahl (mit Einheit, Dauer h:mm oder Uhrzeit), Folgefragen, Vorlage „Freunde“, „Was ist besser?“, Sortieren per Gedrückthalten
+- **Fragen:** Auswahl (auch mehrere), Skala, Zahl (mit Einheit, Dauer h:mm oder Uhrzeit), Folgefragen, Vorlagen „Arbeit“ (mit Vertrag → effektiver Stundenlohn in der Analyse) und „Freunde“, „Was ist besser?“, Sortieren per Gedrückthalten
 - **Ziele:** je Ziel Woche/Monat/Jahr, wiederholen oder einmalig; Stand in der Analyse, Hinweis bei verfehlten Zielen
 - **Analyse:** Zeitraum wählbar; Trends (Serien, Normalwert, Wochentage, Rekorde, Jahreszeiten, Zusammenhänge inkl. Orte und Wetter), Ziele, Orte, eine Karte je Frage
 - **Freunde:** Kategorien, Labels und Quoten, Stichtage mit Veränderung, Treffen (wen wann zuletzt)

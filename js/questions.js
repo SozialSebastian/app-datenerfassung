@@ -16,6 +16,43 @@ function withThemeHeads(list, keyOf, render, head) {
   }).join("");
 }
 
+/* ---------- Neue Frage: eigene oder aus Vorlage ---------- */
+const TEMPLATES = [
+  { k: "work", icon: "💼", title: "Arbeit", desc: "„Hast du heute gearbeitet?“ und bei Ja „Wie lange hast du gearbeitet?“. Mit Vertrag (Stunden und Stundenlohn) zeigt die Analyse deinen effektiven Stundenlohn.",
+    make: () => {
+      const p = { id: uid(), text: "Hast du heute gearbeitet?", type: "choice", options: ["Ja", "Nein"], multi: false, min: 1, max: 5, minLabel: "", maxLabel: "", unit: "", healthKey: "", archived: false, cond: null, theme: "work", template: "work" };
+      const c = { id: uid(), text: "Wie lange hast du gearbeitet?", type: "number", options: [], multi: false, min: 1, max: 5, minLabel: "", maxLabel: "", unit: "", format: "duration", healthKey: "", archived: false, cond: { qid: p.id, values: ["Ja"] }, better: "none", template: "work-hours" };
+      return [p, c];
+    } }
+];
+function openNewQuestion() {
+  const dlg = $("#sheet");
+  dlg.innerHTML = `<div class="sheet-inner">
+    <div class="sheet-head"><button type="button" class="linkbtn" id="ncancel">Abbrechen</button><h2>Neue Frage</h2><span></span></div>
+    <button type="button" class="newopt" id="nown"><span class="ni">✏️</span><span><strong>Eigene Frage</strong><span class="muted small">Text, Antworten und Thema selbst festlegen</span></span></button>
+    <div class="field" style="margin:18px 0 8px;font-weight:600;font-size:15px">Aus Vorlage</div>
+    ${TEMPLATES.map((t) => `<button type="button" class="newopt" data-tpl="${t.k}"><span class="ni">${t.icon}</span><span><strong>${esc(t.title)}</strong><span class="muted small">${esc(t.desc)}</span></span></button>`).join("")}
+  </div>`;
+  $("#ncancel", dlg).addEventListener("click", () => dlg.close());
+  $("#nown", dlg).addEventListener("click", () => openEditor(null));
+  dlg.querySelectorAll("[data-tpl]").forEach((b) => b.addEventListener("click", () => {
+    const t = TEMPLATES.find((x) => x.k === b.dataset.tpl);
+    if (state.questions.some((q) => q.template === t.k && !q.archived) && !confirm(`Die Vorlage „${t.title}“ ist schon angelegt. Trotzdem noch einmal anlegen?`)) return;
+    const qs = t.make();
+    state.questions.push(...qs);
+    save(); render();
+    toast(`Vorlage „${t.title}“ angelegt`);
+    openEditor(qs[0].id); // gleich Vertrag usw. einstellen
+  }));
+  if (!dlg.open) dlg.showModal();
+  document.activeElement?.blur();
+}
+
+// Arbeitszeit: Ja/Nein-Frage mit einer Zahl-Folgefrage (Stunden) – nur dann gibt es einen Vertrag
+const hoursChildOf = (p) => p && p.type === "choice" && p.options.includes("Ja") ? childrenOf(p.id).find((c) => c.type === "number" && !c.archived) : null;
+// Wert der Stunden-Frage in Stunden
+const asHours = (q, v) => (typeof v !== "number" ? null : q.format === "duration" ? v : /^min/i.test(q.unit || "") ? v / 60 : v);
+
 function questionsPanel() {
   const all = ordered();
   const act = all.filter((o) => !o.q.archived);
@@ -121,7 +158,7 @@ function wireDrag(root) {
 
 function wireQuestions(root) {
   wireDrag(root);
-  $("#newq", root)?.addEventListener("click", () => openEditor(null));
+  $("#newq", root)?.addEventListener("click", openNewQuestion);
   $("#qmore", root)?.addEventListener("click", () => { showAllQuestions = !showAllQuestions; refreshQuestions(); });
   root.querySelectorAll("[data-edit]").forEach((b) => b.addEventListener("click", () => openEditor(b.dataset.edit)));
   root.querySelectorAll("[data-move]").forEach((b) => b.addEventListener("click", () => {
@@ -259,6 +296,13 @@ function openEditor(id) {
         <p class="muted small">Schickt der Kurzbefehl einen Wert mit diesem Kürzel, wird er hier eingetragen. Anleitung unter Einstellungen → Schnittstelle Apple Health.</p>
         ${draft.type === "number" ? `<label class="check" style="margin-top:4px"><input type="checkbox" id="hsrc" ${draft.source === "health" ? "checked" : ""}> Nur aus Apple Health füllen (unter „Tag“ als Health-Feld, wird nicht abgefragt)</label>` : ""}
       </details>` : ""}
+      ${existing && hoursChildOf(draft) ? `<details class="adv" ${draft.contract || draft.template === "work" ? "open" : ""}>
+        <summary>Vertrag (für den effektiven Stundenlohn)</summary>
+        <div class="gline"><span>Vertraglich</span><input id="ch" class="gin" type="text" inputmode="decimal" value="${esc(draft.contract ? fmtNum(draft.contract.h) : "")}" placeholder="20"><span>Stunden</span></div>
+        <div class="seg seg-2" role="group" style="margin-top:10px">${[["week", "pro Woche"], ["month", "pro Monat"]].map(([v, l]) => `<button type="button" data-cper="${v}" aria-pressed="${(draft.contract?.per || "week") === v}">${l}</button>`).join("")}</div>
+        <div class="gline" style="margin-top:0"><span>Stundenlohn</span><input id="cw" class="gin wide" type="text" inputmode="decimal" value="${esc(draft.contract ? fmtNum(draft.contract.wage) : "")}" placeholder="15,00"><span>€</span></div>
+        <p class="muted small">Bezahlt wird nach Vertrag. Die Analyse der Frage „${esc(hoursChildOf(draft).text)}“ vergleicht das mit deinen tatsächlichen Stunden.</p>
+      </details>` : ""}
       ${existing ? `<div class="stack">
         <button type="button" class="btn ghost" id="archive">${existing.archived ? "Wieder einblenden" : "Ausblenden (Daten bleiben)"}</button>
         <button type="button" class="btn danger" id="delete">Frage und ${used} Antworten löschen</button>
@@ -268,6 +312,11 @@ function openEditor(id) {
     // Eingaben im Entwurf mitschreiben, damit Neuzeichnen nichts verliert
     const sync = () => {
       draft.text = $("#qtext", dlg).value;
+      if ($("#ch", dlg)) {
+        const h = parseNum($("#ch", dlg).value), w = parseNum($("#cw", dlg).value);
+        const per = draft._cper || draft.contract?.per || "week";
+        draft.contract = h > 0 && w > 0 ? { h, wage: w, per } : (h > 0 || w > 0 ? { h: h || 0, wage: w || 0, per } : null);
+      }
       dlg.querySelectorAll("[data-opt]").forEach((inp) => (draft.options[+inp.dataset.opt] = inp.value));
       if ($("#multi", dlg)) draft.multi = $("#multi", dlg).checked;
       if ($("#smin", dlg)) { draft.min = parseInt($("#smin", dlg).value, 10); draft.max = parseInt($("#smax", dlg).value, 10); draft.minLabel = $("#sminl", dlg).value; draft.maxLabel = $("#smaxl", dlg).value; }
@@ -281,6 +330,7 @@ function openEditor(id) {
     };
 
     dlg.querySelectorAll("[data-type]").forEach((b) => b.addEventListener("click", () => { sync(); draft.type = b.dataset.type; draw(); }));
+    dlg.querySelectorAll("[data-cper]").forEach((b) => b.addEventListener("click", () => { draft._cper = b.dataset.cper; sync(); draw(); }));
     dlg.querySelectorAll("[data-theme]").forEach((b) => b.addEventListener("click", () => { sync(); draft.theme = b.dataset.theme; draw(); }));
     dlg.querySelectorAll("[data-fmt]").forEach((b) => b.addEventListener("click", () => { sync(); draft.format = draft.format === b.dataset.fmt ? null : b.dataset.fmt; draft.unit = ""; if (!draft.better || draft.better === "none") draft.better = draft.format === "clock" ? "none" : draft.better; draw(); }));
     dlg.querySelectorAll("[data-unit]").forEach((b) => b.addEventListener("click", () => { sync(); const u = b.dataset.unit; draft.unit = draft.unit === u && !draft.format ? "" : u; draft.format = null; draw(); }));
@@ -361,6 +411,8 @@ function openEditor(id) {
       if (draft.cond && !draft.cond.values.length) return toast("Wähle mindestens eine Antwort, bei der die Folgefrage kommt");
       if (draft.healthKey && state.questions.some((q) => q.id !== draft.id && q.healthKey === draft.healthKey)) return toast("Dieses Health-Kürzel ist schon vergeben");
       if (!draft.cond && !draft.theme) draft.theme = guessTheme(draft);
+      delete draft._cper;
+      if (draft.contract && !(draft.contract.h > 0 && draft.contract.wage > 0)) return toast("Vertrag: bitte Stunden und Stundenlohn eintragen (oder beide leeren)");
       if (existing) Object.assign(existing, draft);
       else state.questions.push(draft);
       save(); dlg.close(); render();

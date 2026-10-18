@@ -209,8 +209,37 @@ function analysisCard(q, days) {
   return `<section class="panel acard" data-qid="${q.id}">
     ${title}
     ${body}
+    ${contractBlock(q, days)}
     <p class="acap small" aria-live="polite"></p>
   </section>`;
+}
+
+// Vertrag bei der Stunden-Frage: vertragliche gegen tatsächliche Stunden, effektiver Stundenlohn
+function contractBlock(q, days) {
+  const p = q.cond ? qById(q.cond.qid) : null;
+  if (!p || !p.contract || !(p.contract.h > 0 && p.contract.wage > 0) || hoursChildOf(p) !== q) return "";
+  // Zeitraum erst ab der ersten Antwort zur Arbeitsfrage zählen
+  const firstAns = Object.keys(state.answers).sort().find((d) => isAnswered(state.answers[d][p.id]));
+  if (!firstAns) return "";
+  const t = todayIso();
+  const ds = days.filter((d) => d >= firstAns && d <= t);
+  if (!ds.length) return "";
+  const actual = ds.reduce((s, d) => s + (asHours(q, (state.answers[d] || {})[q.id]) || 0), 0);
+  const perDay = p.contract.per === "month" ? p.contract.h / (365.25 / 12) : p.contract.h / 7;
+  const contracted = perDay * ds.length;
+  const pay = contracted * p.contract.wage;
+  const eff = actual > 0 ? pay / actual : null;
+  const diff = actual - contracted;
+  const euro = (x) => x.toLocaleString("de-DE", { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + " €";
+  const tone = eff === null ? "" : eff >= p.contract.wage ? "good" : "bad";
+  return `<div class="contract">
+    <div class="cgrid">
+      <div><span class="muted small">Effektiver Stundenlohn</span><strong class="${tone}">${eff === null ? "–" : euro(eff)}</strong><span class="muted small">vertraglich ${euro(p.contract.wage)}</span></div>
+      <div><span class="muted small">Gearbeitet</span><strong>${fmtDur(actual)}</strong><span class="muted small">vertraglich ${fmtDur(contracted)}</span></div>
+    </div>
+    <p class="small" style="margin:8px 0 0">${Math.abs(diff) < 1 / 60 ? "Genau im Soll." : diff > 0 ? `<strong>${fmtDur(diff)} mehr</strong> als vereinbart` : `<strong>${fmtDur(-diff)} weniger</strong> als vereinbart`} · Lohn im Zeitraum ${euro(pay)}</p>
+    <p class="muted small" style="margin:6px 0 0">Vertrag: ${fmtNum(p.contract.h)} h ${p.contract.per === "month" ? "pro Monat" : "pro Woche"}, anteilig für ${ds.length} Tag${ds.length === 1 ? "" : "e"} ab ${shortDate(ds[0])}</p>
+  </div>`;
 }
 
 // Ring mit 2px Lücke zwischen den Stücken; ausgewählte Antwort etwas dicker

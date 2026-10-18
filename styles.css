@@ -575,3 +575,16 @@ body.no-scroll { overflow: hidden; touch-action: none; }
 .trow.theme .tmark { background: var(--s6); }
 .wlist li.wtheme { background: var(--bg); border-radius: 10px; padding: 9px 10px; margin-bottom: 4px; border-top: 0; }
 .wlist li.wtheme + li { border-top: 0; }
+
+/* ---------- Neue Frage / Vorlagen ---------- */
+.newopt { display: flex; gap: 12px; align-items: flex-start; width: 100%; text-align: left; border: 1.5px solid var(--line); background: var(--surface); color: var(--ink); border-radius: var(--r-lg); padding: 14px; margin-bottom: 10px; font-size: 16px; }
+.newopt .ni { font-size: 24px; line-height: 1; }
+.newopt strong { display: block; margin-bottom: 2px; }
+.newopt .small { display: block; line-height: 1.4; }
+/* ---------- Vertrag ---------- */
+.contract { margin-top: 14px; padding-top: 12px; border-top: 1px solid var(--line); }
+.cgrid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+.cgrid > div { display: grid; gap: 2px; }
+.cgrid strong { font-size: 22px; font-variant-numeric: tabular-nums; }
+.cgrid strong.good { color: var(--s6); }
+.cgrid strong.bad { color: var(--hold); }

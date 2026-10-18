@@ -79,7 +79,7 @@ function renderDay() {
   view.querySelectorAll("[data-week]").forEach((b) => b.addEventListener("click", () => { current = addDays(current, +b.dataset.week); renderDay(); }));
   view.querySelectorAll("[data-date]").forEach((b) => b.addEventListener("click", () => { current = b.dataset.date; renderDay(); }));
   $("#gotoday")?.addEventListener("click", () => { current = todayIso(); renderDay(); });
-  $("#firstq")?.addEventListener("click", () => openEditor(null));
+  $("#firstq")?.addEventListener("click", openNewQuestion);
   $("#goalsbtn").addEventListener("click", openGoals);
   $("#placeedit")?.addEventListener("click", () => openPlaces(current));
   if (isToday) refreshNowWeather();

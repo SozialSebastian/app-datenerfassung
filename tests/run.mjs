@@ -106,6 +106,7 @@ test("Leerer Start zeigt „Noch keine Fragen“", async () => {
 test("Frage anlegen, beantworten, Fortschritt und Abfrage", async () => {
   const { page, ctx, errors } = await open();
   await page.click("#firstq");
+  await page.click("#nown"); // zuerst: eigene Frage oder Vorlage
   await page.waitForTimeout(100);
   await page.fill("#qtext", "Heute bouldern?");
   await page.click("#savebtn");
@@ -355,6 +356,40 @@ test("Themen: Zuordnung, Überschriften, Filter und Themen-Trends", async () => 
   await page.click('[data-tab="data"]'); await page.click("#qmore"); await page.click('[data-edit="al"]');
   await page.click('[data-theme="mood"]'); await page.click("#savebtn");
   assert.equal(await page.evaluate(() => qById("al").theme), "mood");
+  assert.deepEqual(errors, []);
+  await ctx.close();
+});
+
+test("Neue Frage aus Vorlage „Arbeit“ mit Vertrag und effektivem Stundenlohn", async () => {
+  const data = { version: 1, lastBackup: null, answers: {}, questions: [] };
+  const { page, ctx, errors } = await open({ data });
+  await page.click("#firstq");
+  await page.waitForSelector('[data-tpl="work"]');
+  await page.click('[data-tpl="work"]');
+  // Editor der Arbeitsfrage ist offen, Vertrag eintragen
+  await page.waitForSelector("#ch");
+  await page.fill("#ch", "20"); await page.fill("#cw", "15");
+  await page.click('[data-cper="week"]');
+  await page.click("#savebtn");
+  const qs = await page.evaluate(() => state.questions.map((q) => ({ t: q.text, type: q.type, f: q.format, c: q.cond, k: q.contract, th: q.theme })));
+  assert.equal(qs.length, 2);
+  assert.equal(qs[0].t, "Hast du heute gearbeitet?");
+  assert.deepEqual(qs[0].k, { h: 20, wage: 15, per: "week" });
+  assert.equal(qs[0].th, "work");
+  assert.equal(qs[1].f, "duration");
+  // 7 Tage: 5× gearbeitet je 5 h = 25 h; Vertrag 20 h → Lohn 300 €, effektiv 12,00 €
+  await page.evaluate(() => {
+    const [p, c] = state.questions;
+    for (let i = 0; i < 7; i++) { const d = addDays(todayIso(), -i); state.answers[d] = i < 5 ? { [p.id]: "Ja", [c.id]: 5 } : { [p.id]: "Nein" }; }
+    save();
+  });
+  await page.click('[data-tab="analysis"]');
+  await page.click('[data-range="7"]');
+  const txt = await page.locator(".contract").innerText();
+  assert.match(txt, /Effektiver Stundenlohn\s*12,00 €/);
+  assert.match(txt, /5 h 00 min mehr/);
+  assert.match(txt, /Lohn im Zeitraum 300,00 €/);
+  await page.locator(".contract").screenshot({ path: path.join(shots, "vertrag.png") });
   assert.deepEqual(errors, []);
   await ctx.close();
 });
