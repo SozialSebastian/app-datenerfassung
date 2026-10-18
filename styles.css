@@ -629,11 +629,11 @@ svg.cline .mark { stroke: var(--hold); stroke-width: 1.5; }
 .ccap { margin: 4px 0 0; }
 .export-card svg.cline { background: #FFFFFF; }
 
-/* ================= Desktop-Ansicht (breites Fenster mit Maus, z. B. Safari am Mac) =================
-   Greift nur ab 1000 px Breite und bei feinem Zeiger: auf iPhone und in der App ändert sich nichts. */
-@media (min-width: 1000px) and (pointer: fine) {
-  body { --side: 220px; }
-  /* Bereiche als Seitenleiste links */
+/* ================= Desktop-Ansicht (Safari am Mac: Maus/Trackpad) =================
+   Greift nur bei feinem Zeiger (Maus, Trackpad), unabhängig von der Fensterform; auf dem iPhone ändert sich nichts. */
+@media (hover: hover) and (pointer: fine) and (min-width: 640px) {
+  body { --side: 220px; --wide: 1560px; }
+  /* Bereiche immer als Seitenleiste links */
   .tabbar {
     inset: 0 auto 0 0; width: var(--side); box-sizing: border-box;
     grid-template-columns: none; grid-auto-rows: max-content; align-content: start; gap: 4px;
@@ -641,38 +641,49 @@ svg.cline .mark { stroke: var(--hold); stroke-width: 1.5; }
     padding: 28px 14px;
   }
   .tabbar::before { content: "Mosaik"; font-size: 22px; font-weight: 800; letter-spacing: -0.01em; color: var(--ink); padding: 0 12px 18px; }
-  .tabbar button { display: flex; align-items: center; gap: 12px; justify-items: start; font-size: 15px; padding: 10px 12px; border-radius: var(--r-sm); text-align: left; }
-  .tabbar button:hover { background: var(--surface); }
-  .tabbar button[aria-current="page"] { background: var(--surface); }
+  .tabbar button { display: flex; align-items: center; gap: 12px; font-size: 15px; padding: 10px 12px; border-radius: var(--r-sm); text-align: left; }
+  .tabbar button:hover, .tabbar button[aria-current="page"] { background: var(--surface); }
   .tabbar svg { width: 22px; height: 22px; }
 
-  main { max-width: 1120px; margin: 0 0 0 var(--side); padding: 32px 40px 48px; box-sizing: border-box; }
-  body:not([data-tab="quiz"]) main { margin-left: calc(var(--side) + max(0px, (100vw - var(--side) - 1120px) / 2)); }
+  main { max-width: var(--wide); margin: 0 0 0 calc(var(--side) + max(0px, (100vw - var(--side) - var(--wide)) / 2)); padding: 32px 40px 48px; box-sizing: border-box; }
   body.in-quiz main { max-width: 640px; margin: 0 auto; padding-bottom: 48px; }
   #toast { bottom: 28px; left: calc(50% + var(--side) / 2); }
   body.in-quiz #toast { left: 50%; }
-
-  /* Tag und Freunde: eine Spalte, etwas breiter */
-  body[data-tab="day"] main { max-width: 760px; }
-  body[data-tab="day"]:not(.in-quiz) main { margin-left: calc(var(--side) + max(0px, (100vw - var(--side) - 760px) / 2)); }
-
-  /* Analyse und Einstellungen: zwei Spalten, Kopfbereich und große Blöcke über die volle Breite */
-  body[data-tab="analysis"] main, body[data-tab="data"] main, body[data-tab="friends"] main {
-    display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); column-gap: 24px; align-items: start;
-  }
-  body[data-tab="analysis"] main > *, body[data-tab="data"] main > *, body[data-tab="friends"] main > * { grid-column: 1 / -1; }
-  body[data-tab="analysis"] main > .acard[data-qid], body[data-tab="analysis"] main > .acard.places, body[data-tab="analysis"] main > .acard.chess { grid-column: auto; }
-  body[data-tab="analysis"] main > .seg { max-width: 520px; }
-  body[data-tab="analysis"] main > .rcustom { max-width: 520px; }
-  body[data-tab="data"] main > .panel:not(#qpanel) { grid-column: auto; }
-  body[data-tab="friends"] main > .panel.fcat, body[data-tab="friends"] main > .panel.meets, body[data-tab="friends"] main > .panel.fchg { grid-column: auto; }
   .panel { margin-bottom: 20px; }
+
+  /* Tag: eine Spalte */
+  body[data-tab="day"] main { max-width: 760px; margin-left: calc(var(--side) + max(0px, (100vw - var(--side) - 760px) / 2)); }
+
+  /* Analyse und Einstellungen: Kacheln fließen lückenlos in Spalten (so viele, wie Platz ist) */
+  body[data-tab="analysis"] main, body[data-tab="data"] main { columns: 3 360px; column-gap: 20px; }
+  body[data-tab="analysis"] main > *, body[data-tab="data"] main > * { column-span: all; }
+  body[data-tab="analysis"] main > .acard[data-qid], body[data-tab="data"] main > .panel:not(#qpanel) { column-span: none; break-inside: avoid; display: inline-block; width: 100%; box-sizing: border-box; }
+  body[data-tab="analysis"] main > .seg, body[data-tab="analysis"] main > .rcustom { max-width: 520px; }
+
+  /* breite Blöcke innen in Spalten */
+  .trends .tlist { grid-template-columns: repeat(auto-fill, minmax(420px, 1fr)); column-gap: 32px; }
+  .goals .glist { grid-template-columns: repeat(auto-fill, minmax(380px, 1fr)); column-gap: 32px; }
+  .acard.places .bars { columns: 3 280px; column-gap: 32px; }
+  .acard.places .barrow { break-inside: avoid; }
+  .acard.chess { columns: 3 300px; column-gap: 36px; }
+  .acard.chess > .atitle, .acard.chess > .hero, .acard.chess > .wdl, .acard.chess > .wdl + p, .acard.chess > #chessgames, .acard.chess > p:last-child { column-span: all; }
+  .acard.chess > #chessgames { max-width: 420px; }
+  .acard.chess .csub { break-after: avoid; margin-top: 14px; }
+  .acard.chess .chart, .acard.chess .ctable, .acard.chess .cavg, .acard.chess .legend, .acard.chess .crow { break-inside: avoid; }
+  .acard.chess .legend, .acard.chess .ccap { break-before: avoid; }
+
+  /* Freunde: Listen in mehreren Spalten über die volle Breite */
+  .meets .mmonth { grid-template-columns: 1fr 1fr; }
+  .meets .mlist { columns: 3 280px; column-gap: 32px; }
+  .meets .mlist li { break-inside: avoid; }
+  .meets .mlist li { border-top: 0; border-bottom: 1px solid var(--line); }
+  .fcat .flist { columns: 3 240px; column-gap: 32px; }
+  .fcat .flist li { break-inside: avoid; border-top: 0; border-bottom: 1px solid var(--line); }
+  body[data-tab="friends"] main > .fsum, body[data-tab="friends"] main > .fchg { max-width: none; }
 
   /* Fenster (Editor, Ziele, Partien …) mittig statt von unten */
   dialog#sheet { margin: auto; max-width: 640px; border-radius: 22px; max-height: 86vh; }
   .sheet-inner { max-height: 86vh; padding: 22px 24px 24px; }
   .sheet-head { margin: -22px -24px 14px; padding: 16px 24px 12px; top: -22px; }
-
-  /* Maus: Hover für Schaltflächen */
   .btn:hover, .chip:hover { filter: brightness(0.97); }
 }

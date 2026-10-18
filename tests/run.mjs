@@ -609,7 +609,7 @@ test("Abfrage fortsetzen springt nur zu offenen Fragen (inkl. neuer Folgefragen)
   await ctx.close();
 });
 
-test("Desktop-Ansicht nur im breiten Fenster mit Maus, iPhone unverändert", async () => {
+test("Desktop-Ansicht am Mac (Maus/Trackpad), iPhone unverändert", async () => {
   // iPhone: Leiste unten
   const m = await open({ data: yearData() });
   const mb = await m.page.locator(".tabbar").boundingBox();
@@ -627,7 +627,11 @@ test("Desktop-Ansicht nur im breiten Fenster mit Maus, iPhone unverändert", asy
   await page.evaluate(() => { const d = document.querySelector("#sheet"); if (d.open) d.close(); });
   await page.click('[data-tab="analysis"]');
   const xs = await page.locator("main > .acard[data-qid]").evaluateAll((els) => [...new Set(els.map((e) => Math.round(e.getBoundingClientRect().x)))]);
-  assert.equal(xs.length, 2);
+  assert.ok(xs.length >= 2); // Kacheln fließen in mehrere Spalten
+  // auch im schmalen Mac-Fenster bleibt die Seitenleiste links
+  await page.setViewportSize({ width: 800, height: 900 });
+  const tb2 = await page.locator(".tabbar").boundingBox();
+  assert.ok(tb2.x === 0 && tb2.height > 800);
   assert.deepEqual(errors, []);
   await ctx.close();
 });
