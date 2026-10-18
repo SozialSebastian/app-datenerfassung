@@ -60,6 +60,7 @@ function renderAnalysis() {
     ${all.length && prefs.trends !== false ? trendsPanel(days) : ""}
     ${all.length && prefs.goals !== false ? goalsPanel() : ""}
     ${prefs.places !== false && (Object.keys(state.places || {}).length || (settings.places && settings.places.on)) ? placesPanel(days) : ""}
+    ${prefs.chess !== false && (settings.chess.on || Object.keys(chessData().months).length) ? chessPanel(days) : ""}
     ${usedThemes.length > 1 ? `<div class="tfilter" role="group" aria-label="Thema">
       <button data-th="" aria-pressed="${!prefs.theme}">Alle</button>
       ${usedThemes.map((t) => `<button data-th="${t.k}" aria-pressed="${prefs.theme === t.k}">${t.i} ${esc(t.l)}</button>`).join("")}
@@ -351,6 +352,12 @@ function openAnalysisSettings() {
         </div>
         <p class="muted small" style="margin:6px 0 0">Wo du im Zeitraum warst, je Ort die Anzahl Tage.</p>
       </section>
+      ${settings.chess.on || Object.keys(chessData().months).length ? `<section class="sq">
+        <div class="sq-head"><strong>Schach</strong>
+          <label class="switch"><input type="checkbox" data-f="chess" ${prefs.chess !== false ? "checked" : ""}><span>Anzeigen</span></label>
+        </div>
+        <p class="muted small" style="margin:6px 0 0">Überblick von chess.com: Bilanz, Elo, Eröffnungen. Elo, Partien, Spielzeit, Punktequote und Genauigkeit stehen außerdem unten als eigene Karten.</p>
+      </section>` : ""}
       ${qs.map((q) => {
         const s = qset(q);
         const dist = q.type === "choice" || q.type === "scale";
@@ -376,6 +383,7 @@ function openAnalysisSettings() {
       if (i.dataset.f === "trends") { prefs.trends = i.checked; savePrefs(); }
       else if (i.dataset.f === "goals") { prefs.goals = i.checked; savePrefs(); }
       else if (i.dataset.f === "places") { prefs.places = i.checked; savePrefs(); }
+      else if (i.dataset.f === "chess") { prefs.chess = i.checked; savePrefs(); }
       else if (i.dataset.f === "show") setQ(i.dataset.q, { hidden: !i.checked });
       else setQ(i.dataset.q, { trend: i.checked });
       draw(); renderAnalysis();

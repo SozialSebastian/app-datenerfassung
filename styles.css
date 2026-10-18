@@ -588,3 +588,18 @@ body.no-scroll { overflow: hidden; touch-action: none; }
 .cgrid strong { font-size: 22px; font-variant-numeric: tabular-nums; }
 .cgrid strong.good { color: var(--s6); }
 .cgrid strong.bad { color: var(--hold); }
+/* ---------- Schach ---------- */
+.wdl { display: flex; height: 10px; border-radius: 5px; overflow: hidden; gap: 2px; margin-top: 10px; }
+.wdl .w { background: var(--s6); } .wdl .d { background: var(--line); } .wdl .l { background: var(--hold); }
+.csub { font-size: 15px; margin: 16px 0 6px; }
+.ctable { display: grid; gap: 6px; }
+.crow { display: grid; grid-template-columns: minmax(0, 1fr) auto auto; gap: 4px 12px; align-items: baseline; }
+.crow strong { font-size: 18px; font-variant-numeric: tabular-nums; }
+.crow > .small { grid-column: 1 / -1; margin-top: -4px; }
+.crow .up { color: var(--s6); font-weight: 600; } .crow .down { color: var(--hold); font-weight: 600; }
+.olist { display: grid; gap: 10px; }
+.orow { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 4px 12px; font-size: 15px; }
+.orow .on { overflow-wrap: anywhere; }
+.orow .ov { font-variant-numeric: tabular-nums; color: var(--ink-2); }
+.orow .ob { grid-column: 1 / -1; height: 8px; border-radius: 4px; background: var(--line); overflow: hidden; }
+.orow .ob span { display: block; height: 100%; background: var(--s6); border-radius: 4px; }

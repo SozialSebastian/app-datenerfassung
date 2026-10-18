@@ -29,13 +29,13 @@ function renderDay() {
   const done = qs.filter((q) => isAnswered(a[q.id])).length;
   // nur Health-Werte zeigen, die für den Tag vorliegen
   const hq = healthQuestions().filter((q) => isAnswered(a[q.id]));
-  const healthHtml = hq.length ? `<section class="q healthcard">
+  const healthHtml = (hq.length ? `<section class="q healthcard">
       <p class="q-title">Apple Health</p>
       ${hq.map((q) => `<label class="hrow" data-hq="${q.id}"><span>${esc(q.text)}</span><span class="hval"><input type="text" inputmode="${q.format ? "text" : "decimal"}" autocomplete="off" value="${esc(q.format ? fmtQ(q, a[q.id]) : fmtNum(a[q.id]))}" placeholder="${q.format === "clock" ? "hh:mm" : q.format === "duration" ? "h:mm" : "–"}" aria-label="${esc(q.text)}" class="${q.format ? "wide" : ""}">${q.unit && !q.format ? `<span class="unit">${esc(q.unit)}</span>` : ""}</span></label>`).join("")}
-    </section>` : "";
+    </section>` : "") + chessDayCard(current);
 
   let body;
-  if (!qs.length && hq.length) {
+  if (!qs.length && healthHtml) {
     body = healthHtml + `<p class="muted small">Leg unter Einstellungen → Fragen deine erste Frage an.</p>`;
   } else if (!qs.length) {
     body = `<div class="empty-state">

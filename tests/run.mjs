@@ -394,6 +394,92 @@ test("Neue Frage aus Vorlage „Arbeit“ mit Vertrag und effektivem Stundenlohn
   await ctx.close();
 });
 
+// chess.com nachbilden: zwei Monatsarchive mit Partien relativ zu heute
+function chessMock(cors) {
+  const now = new Date(); now.setHours(12, 0, 0, 0);
+  const at = (daysBack, h) => { const d = new Date(now); d.setDate(d.getDate() - daysBack); d.setHours(h, 0, 0, 0); return Math.floor(d / 1000); };
+  const me = (rating, result) => ({ username: "TestUser", rating, result });
+  const op = (result) => ({ username: "Gegner", rating: 1300, result });
+  const pgn = (s, e, eco) => `[Event "Live Chess"]\n[ECOUrl "https://www.chess.com/openings/${eco}"]\n[StartTime "${s}"]\n[EndTime "${e}"]\n\n1. e4 e5`;
+  const games = [
+    { end_time: at(10, 12), time_class: "blitz", rules: "chess", rated: true, white: me(1100, "agreed"), black: op("agreed"), pgn: pgn("11:00:00", "11:05:00", "Sicilian-Defense-Open-2...Nc6") },
+    { end_time: at(1, 10), time_class: "rapid", rules: "chess", rated: true, white: me(1210, "win"), black: op("checkmated"), accuracies: { white: 80, black: 60 }, pgn: pgn("10:00:00", "10:15:00", "Italian-Game-Two-Knights-Defense-4.d3") },
+    { end_time: at(1, 11), time_class: "rapid", rules: "chess", rated: true, black: me(1200, "resigned"), white: op("win"), pgn: pgn("11:00:00", "11:20:00", "Sicilian-Defense-Open-2...Nc6") },
+    { end_time: at(0, 9), time_class: "rapid", rules: "chess", rated: true, white: me(1220, "win"), black: op("timeout"), pgn: pgn("08:50:00", "09:00:00", "Italian-Game") }
+  ];
+  const ym = (t) => { const d = new Date(t * 1000); return `${d.getUTCFullYear()}/${String(d.getUTCMonth() + 1).padStart(2, "0")}`; };
+  const months = {};
+  games.forEach((g) => (months[ym(g.end_time)] ||= []).push(g));
+  const base = "https://api.chess.com/pub/player/testuser";
+  const calls = [];
+  const handler = (r) => {
+    const u = new URL(r.request().url());
+    calls.push(u.pathname + u.search);
+    let body = null;
+    if (u.pathname.endsWith("/stats")) body = { chess_rapid: { last: { rating: 1220 }, best: { rating: 1250, date: at(200, 12) }, record: { win: 5, loss: 3, draw: 1 } }, tactics: { highest: { rating: 1800, date: at(50, 12) } }, puzzle_rush: { best: { score: 21 } } };
+    else if (u.pathname.endsWith("/archives")) body = { archives: Object.keys(months).sort().map((m) => `${base}/games/${m}`) };
+    else { const m = u.pathname.match(/games\/(\d{4}\/\d{2})$/); if (m) body = { games: months[m[1]] || [] }; }
+    if (!body) return r.fulfill({ status: 404, body: "" });
+    const cb = u.searchParams.get("callback");
+    if (cb) return r.fulfill({ status: 200, contentType: "application/javascript", body: `${cb}(${JSON.stringify(body)})` });
+    return r.fulfill({ status: 200, contentType: "application/json", headers: cors ? { "access-control-allow-origin": "*" } : {}, body: JSON.stringify(body) });
+  };
+  return { handler, calls };
+}
+
+for (const cors of [true, false]) test(`chess.com: Einschalten lädt alles, Werte in Tag und Analyse (${cors ? "direkt" : "über JSONP"})`, async () => {
+  const data = { version: 1, lastBackup: null, answers: {}, questions: [yesNo("b", "Heute bouldern?")] };
+  const { page, ctx, errors } = await open({ data });
+  const mock = chessMock(cors);
+  await page.route(/api\.chess\.com/, mock.handler);
+  await page.click('[data-tab="data"]');
+  await page.fill("#chessuser", "TestUser");
+  await page.locator("#chessuser").dispatchEvent("change");
+  await page.click("#chesson");
+  await page.waitForFunction(() => /Verbunden/.test(document.querySelector("#chessmsg")?.textContent || ""), null, { timeout: 15000 });
+  const r = await page.evaluate(() => {
+    const y = addDays(todayIso(), -1);
+    const byKey = (k) => state.questions.find((q) => q.chessKey === k);
+    const v = (k, d) => (state.answers[d] || {})[byKey(k)?.id];
+    return { games: v("games", y), time: v("time", y), score: v("score", y), acc: v("acc", y), rapid: v("elo:rapid", y), rapidToday: v("elo:rapid", todayIso()), blitz: v("elo:blitz", addDays(todayIso(), -10)), src: state.questions.filter((q) => q.source === "chess").length, ask: askQuestions(todayIso()).length, user: state.chess.user };
+  });
+  assert.equal(r.games, 2); assert.ok(Math.abs(r.time - 35 / 60) < 0.01); assert.equal(r.score, 50); assert.equal(r.acc, 80);
+  assert.equal(r.rapid, 1200); assert.equal(r.rapidToday, 1220); assert.equal(r.blitz, 1100);
+  assert.equal(r.src, 6); // Partien, Spielzeit, Punktequote, Genauigkeit, Elo Rapid, Elo Blitz
+  assert.equal(r.ask, 1); // Schach wird nicht abgefragt
+  assert.equal(r.user, "testuser");
+  // Tag zeigt die Werte von gestern
+  await page.click('[data-tab="day"]');
+  await page.evaluate(() => { current = addDays(todayIso(), -1); renderDay(); });
+  const day = await page.locator("#view").innerText();
+  assert.match(day, /chess\.com[\s\S]*Elo Rapid[\s\S]*1200/);
+  // Analyse: Überblick
+  await page.click('[data-tab="analysis"]');
+  await page.click('[data-range="30"]');
+  const txt = await page.locator(".chess").innerText();
+  assert.match(txt, /^Schach\s*4\s*Partien an 3 von 30 Tagen/m);
+  assert.match(txt, /2 Siege \(50 %\) · 1 Remis \(25 %\) · 1 Niederlage \(25 %\) · Punktequote 62,5 %/);
+  assert.match(txt, /Rapid\s*1220\s*\+20\s*Bestwert 1250/);
+  assert.match(txt, /Blitz\s*1100\s*±0/);
+  assert.match(txt, /Ø Genauigkeit 80 % \(1 analysierte Partie\)/);
+  assert.match(txt, /Sicilian Defense\s*2× · 25 %\s*Italian Game\s*2× · 100 %/);
+  assert.match(txt, /Siege: Matt 1×, Zeit 1×|Siege: Zeit 1×, Matt 1×/);
+  assert.match(txt, /Niederlagen: Aufgabe 1×/);
+  assert.match(txt, /Taktik-Bestwert 1800 · Puzzle-Rush-Rekord 21/);
+  assert.ok(await page.locator('.acard').filter({ hasText: "Schach: Elo Rapid" }).count() >= 1);
+  if (cors) await page.locator(".chess").screenshot({ path: path.join(shots, "schach.png") });
+  // zweites Öffnen am selben Tag ruft nichts erneut ab
+  const n = mock.calls.length;
+  await page.evaluate(() => syncChess(false));
+  assert.equal(mock.calls.length, n);
+  // tägliche Aktualisierung lädt nur nicht abgeschlossene Monate
+  await page.evaluate(() => { settings.chess.lastDay = ""; return syncChess(false); });
+  const monthCalls = mock.calls.slice(n).filter((c) => /games\/\d{4}\/\d{2}/.test(c));
+  assert.ok(monthCalls.length >= 1 && monthCalls.length <= 2);
+  assert.deepEqual(errors, []);
+  await ctx.close();
+});
+
 test("Fragen per Gedrückthalten verschieben", async () => {
   const data = { version: 1, lastBackup: null, answers: {}, questions: ["A", "B", "C"].map((x) => yesNo(x.toLowerCase(), x + "?")) };
   const { page, ctx, errors } = await open({ data });

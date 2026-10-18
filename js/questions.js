@@ -326,7 +326,7 @@ function openEditor(id) {
       }
       if ($("#hkey", dlg)) draft.healthKey = $("#hkey", dlg).value.trim().toLowerCase().replace(/[^a-z0-9_äöüß-]/g, "");
       if ($("#hsrc", dlg)) draft.source = $("#hsrc", dlg).checked ? "health" : null;
-      if (draft.type !== "number" || !draft.healthKey) draft.source = null;
+      if (draft.source !== "chess" && (draft.type !== "number" || !draft.healthKey)) draft.source = null;
     };
 
     dlg.querySelectorAll("[data-type]").forEach((b) => b.addEventListener("click", () => { sync(); draft.type = b.dataset.type; draw(); }));

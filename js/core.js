@@ -128,10 +128,10 @@ const visibleQuestions = (date) => {
   return ordered().map((o) => o.q).filter((q) => !q.archived && condMet(q, a));
 };
 
-// Health-Felder werden automatisch gefüllt und nicht abgefragt
-const isHealthQ = (q) => q.source === "health";
+// Health- und Schach-Felder werden automatisch gefüllt und nicht abgefragt (vollständig ist erst der Vortag)
+const isHealthQ = (q) => q.source === "health" || q.source === "chess";
 const askQuestions = (date) => visibleQuestions(date).filter((q) => !isHealthQ(q));
-const healthQuestions = () => ordered().map((o) => o.q).filter((q) => isHealthQ(q) && !q.archived);
+const healthQuestions = () => ordered().map((o) => o.q).filter((q) => q.source === "health" && !q.archived);
 
 function setAnswer(date, qid, value) {
   if (!state.answers[date]) state.answers[date] = {};
