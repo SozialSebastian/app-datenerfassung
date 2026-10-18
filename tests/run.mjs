@@ -473,6 +473,19 @@ for (const cors of [true, false]) test(`chess.com: Einschalten lädt alles, Wert
   assert.match(txt, /Taktik-Bestwert 1800 · Puzzle-Rush-Rekord 21/);
   assert.ok(await page.locator('.acard').filter({ hasText: "Schach: Elo Rapid" }).count() >= 1);
   if (cors) await page.locator(".chess").screenshot({ path: path.join(shots, "schach.png") });
+  // Elo und Genauigkeit im Verlauf, abschaltbar über das Zahnrad
+  assert.equal(await page.locator(".chess svg.cline").count(), 2);
+  assert.match(txt, /Elo im Verlauf[\s\S]*Rapid[\s\S]*Blitz/);
+  assert.match(txt, /Genauigkeit im Verlauf/);
+  await page.locator(".chess svg.cline").first().scrollIntoViewIfNeeded();
+  const box = await page.locator(".chess svg.cline").first().boundingBox();
+  await page.mouse.click(box.x + box.width - 3, box.y + box.height / 2);
+  assert.match(await page.locator(".chess .ccap").first().innerText(), /: Rapid 1220/);
+  await page.click("#asettings");
+  await page.locator('#sheet [data-f="chessElo"]').uncheck();
+  await page.evaluate(() => document.querySelector("#sheet").close());
+  assert.equal(await page.locator(".chess svg.cline").count(), 1);
+  await page.evaluate(() => { prefs.chessElo = true; savePrefs(); renderAnalysis(); });
   // Partienliste: neueste zuerst, Details je Partie
   await page.click("#chessgames");
   assert.equal(await page.locator("#sheet .cgame").count(), 4);

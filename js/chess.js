@@ -302,6 +302,7 @@ function chessPanel(days) {
     </div>
     <p class="small" style="margin:6px 0 0">${sum.w} ${sum.w === 1 ? "Sieg" : "Siege"} (${pct(sum.w)}) · ${sum.dr} Remis (${pct(sum.dr)}) · ${sum.l} ${sum.l === 1 ? "Niederlage" : "Niederlagen"} (${pct(sum.l)}) · Punktequote ${fmtNum(score)} %</p>
     ${eloRows ? `<h3 class="csub">Elo am Ende des Zeitraums</h3><div class="ctable">${eloRows}</div>` : ""}
+    ${prefs.chessElo !== false ? chessEloChart(days) : ""}
     <h3 class="csub">Im Durchschnitt</h3>
     <div class="cavg">
       ${live.length ? `<div><span class="muted small">Dauer je Partie</span><strong>${fmtSec(live.reduce((s, g) => s + g.dur, 0) / live.length)}</strong></div>` : ""}
@@ -309,6 +310,7 @@ function chessPanel(days) {
       ${sum.an ? `<div><span class="muted small">Genauigkeit</span><strong>${fmtNum(Math.round((sum.a / sum.an) * 10) / 10)} %</strong><span class="muted small">${sum.an} analysiert</span></div>` : ""}
       ${live.length ? `<div><span class="muted small">Spielzeit je Spieltag</span><strong>${fmtSec(sum.s / ds.length)}</strong></div>` : ""}
     </div>
+    ${prefs.chessAcc !== false ? chessAccChart(days) : ""}
     ${tcList.length ? `<p class="small" style="margin:10px 0 0"><strong>Bedenkzeit:</strong> ${tcList.slice(0, 4).map(([tc, n]) => `${esc(fmtTc(tc))} ${n}×`).join(" · ")}</p>` : ""}
     <h3 class="csub">Wie entschieden</h3>
     ${howRows("w", "Siege")}${howRows("d", "Remis")}${howRows("l", "Niederlagen")}
@@ -316,6 +318,74 @@ function chessPanel(days) {
     <button type="button" class="btn ghost block" id="chessgames" style="margin-top:14px">Alle ${games.length} ${games.length === 1 ? "Partie" : "Partien"} im Zeitraum</button>
     <p class="muted small" style="margin:10px 0 0">Daten von chess.com (${esc(chessData().user)}), aktualisiert ${settings.chess.last ? new Date(settings.chess.last).toLocaleDateString("de-DE") : "–"}.</p>
   </section>`;
+}
+
+// Verlauf mit mehreren Linien (z. B. Elo je Bedenkzeit), Punkte über Lücken hinweg verbunden
+function chessLineChart(series, days, { fmt = (v) => String(Math.round(v)), avg = null, label = "" } = {}) {
+  const W = 300, H = 120, P = 8;
+  const nums = series.flatMap((s) => s.pts.map((p) => p.v));
+  if (!nums.length) return "";
+  let lo = Math.min(...nums), hi = Math.max(...nums);
+  if (hi === lo) { hi += 1; lo -= 1; }
+  const idx = new Map(days.map((d, i) => [d, i]));
+  const xi = (d) => (days.length === 1 ? W / 2 : P + (idx.get(d) / (days.length - 1)) * (W - 2 * P));
+  const yi = (v) => H - P - ((v - lo) / (hi - lo)) * (H - 2 * P);
+  const total = series.reduce((s, x) => s + x.pts.length, 0);
+  const lines = series.map((s, k) => {
+    const path = s.pts.map((p, i) => `${i ? "L" : "M"}${xi(p.d).toFixed(1)},${yi(p.v).toFixed(1)}`).join("");
+    const dots = total <= 60 || s.pts.length === 1 ? s.pts.map((p) => `<circle cx="${xi(p.d).toFixed(1)}" cy="${yi(p.v).toFixed(1)}" r="2.6" style="fill:var(--s${(k % 8) + 1})"/>`).join("") : "";
+    return `<path d="${path}" class="ln" style="stroke:var(--s${(k % 8) + 1})"/>${dots}`;
+  }).join("");
+  // zum Antippen: je Tag die Werte aller Linien
+  const byDay = {};
+  series.forEach((s) => s.pts.forEach((p) => { (byDay[p.d] ||= []).push(`${s.name ? s.name + " " : ""}${fmt(p.v)}`); }));
+  const tips = Object.entries(byDay).map(([d, t]) => ({ d, x: +xi(d).toFixed(1), t: `${shortDate(d)}: ${t.join(" · ")}` }));
+  return `<div class="chart">
+      <div class="yax small muted"><span>${fmt(hi)}</span><span>${fmt(lo)}</span></div>
+      <svg class="cline" viewBox="0 0 ${W} ${H}" data-tips='${esc(JSON.stringify(tips))}' role="img" aria-label="${esc(label)}">
+        ${avg !== null ? `<line x1="0" x2="${W}" y1="${yi(avg)}" y2="${yi(avg)}" class="avg"/>` : ""}
+        ${lines}
+        <line class="mark" y1="0" y2="${H}" style="display:none"/>
+      </svg>
+    </div>
+    <p class="legend small">${series.map((s, k) => s.name ? `<span class="ln-key" style="border-color:var(--s${(k % 8) + 1})"></span>${esc(s.name)}` : `<span class="ln-key" style="border-color:var(--s1)"></span>Werte`).join(" ")}${avg !== null ? ` <span class="avg-key"></span>Durchschnitt` : ""} · antippen für Details</p>
+    <p class="ccap small muted" aria-live="polite"></p>`;
+}
+// Elo je Bedenkzeit: Wert nach der letzten gewerteten Partie des Tages
+function chessEloChart(days) {
+  const all = chessDays();
+  const ord = (c) => { const i = Object.keys(CHESS_CLS).indexOf(c); return i < 0 ? 99 : i; };
+  const cls = [...new Set(days.flatMap((d) => (all[d] ? Object.keys(all[d].r) : [])))].sort((a, b) => ord(a) - ord(b));
+  if (!cls.length) return "";
+  const series = cls.map((c) => ({ name: chessClsName(c), pts: days.filter((d) => all[d] && all[d].r[c]).map((d) => ({ d, v: all[d].r[c][0] })) }));
+  return `<h3 class="csub">Elo im Verlauf</h3>${chessLineChart(series, days, { label: "Elo im Verlauf" })}`;
+}
+// Genauigkeit: Ø der analysierten Partien je Tag
+function chessAccChart(days) {
+  const all = chessDays();
+  const pts = days.filter((d) => all[d] && all[d].an).map((d) => ({ d, v: all[d].a / all[d].an }));
+  if (!pts.length) return "";
+  const a = pts.reduce((s, p) => s + p.v, 0) / pts.length;
+  return `<h3 class="csub">Genauigkeit im Verlauf</h3>${chessLineChart([{ name: "", pts }], days, { fmt: (v) => `${fmtNum(Math.round(v * 10) / 10)} %`, avg: a, label: "Genauigkeit im Verlauf" })}`;
+}
+function wireChessCharts(root) {
+  root.querySelectorAll("svg.cline").forEach((svg) => {
+    const tips = JSON.parse(svg.dataset.tips);
+    const cap = svg.closest(".chart").parentElement.querySelector(".ccap");
+    const mark = svg.querySelector(".mark");
+    const pick = (ev) => {
+      const r = svg.getBoundingClientRect();
+      const x = ((ev.clientX - r.left) / r.width) * 300;
+      let best = tips[0];
+      for (const t of tips) if (Math.abs(t.x - x) < Math.abs(best.x - x)) best = t;
+      mark.setAttribute("x1", best.x); mark.setAttribute("x2", best.x); mark.style.display = "";
+      // passende Beschriftung direkt unter diesem Diagramm
+      const c = svg.closest(".chart").nextElementSibling?.nextElementSibling;
+      (c && c.classList.contains("ccap") ? c : cap).textContent = best.t;
+    };
+    svg.addEventListener("pointerdown", pick);
+    svg.addEventListener("pointermove", (e) => { if (e.buttons || e.pointerType === "mouse") pick(e); });
+  });
 }
 
 // Liste aller Partien im Zeitraum, je Partie aufklappbar

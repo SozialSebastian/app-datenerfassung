@@ -115,6 +115,7 @@ function renderAnalysis() {
   $("#tmore")?.addEventListener("click", () => { showAllTrends = !showAllTrends; renderAnalysis(); });
   $("#pmore")?.addEventListener("click", () => { showAllPlaces = !showAllPlaces; renderAnalysis(); });
   $("#chessgames")?.addEventListener("click", () => openChessGames(days));
+  wireChessCharts(view);
   wireRange(view, "range", (k) => { prefs.range = k; savePrefs(); renderAnalysis(); });
   view.querySelectorAll("[data-focus]").forEach((b) => b.addEventListener("click", () => {
     prefs.focus[b.dataset.qid] = b.dataset.focus; savePrefs(); renderAnalysis();
@@ -400,6 +401,8 @@ function openAnalysisSettings() {
           <label class="switch"><input type="checkbox" data-f="chess" ${prefs.chess !== false ? "checked" : ""}><span>Anzeigen</span></label>
         </div>
         <p class="muted small" style="margin:6px 0 0">Überblick von chess.com: Bilanz, Elo, Durchschnitte und alle Partien. Elo, Partien, Spielzeit, Punktequote und Genauigkeit stehen außerdem unten als eigene Karten.</p>
+        ${prefs.chess !== false ? `<label class="switch row"><input type="checkbox" data-f="chessElo" ${prefs.chessElo !== false ? "checked" : ""}><span>Elo über die Zeit</span></label>
+        <label class="switch row"><input type="checkbox" data-f="chessAcc" ${prefs.chessAcc !== false ? "checked" : ""}><span>Genauigkeit über die Zeit</span></label>` : ""}
       </section>` : ""}
       ${qs.map((q) => {
         const s = qset(q);
@@ -427,6 +430,7 @@ function openAnalysisSettings() {
       else if (i.dataset.f === "goals") { prefs.goals = i.checked; savePrefs(); }
       else if (i.dataset.f === "places") { prefs.places = i.checked; savePrefs(); }
       else if (i.dataset.f === "chess") { prefs.chess = i.checked; savePrefs(); }
+      else if (i.dataset.f === "chessElo" || i.dataset.f === "chessAcc") { prefs[i.dataset.f] = i.checked; savePrefs(); }
       else if (i.dataset.f === "show") setQ(i.dataset.q, { hidden: !i.checked });
       else setQ(i.dataset.q, { trend: i.checked });
       draw(); renderAnalysis();

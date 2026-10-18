@@ -621,3 +621,10 @@ body.no-scroll { overflow: hidden; touch-action: none; }
 .cdet { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 4px 12px; margin: 0 0 8px 40px; }
 .cdet dt { color: var(--ink-2); } .cdet dd { margin: 0; overflow-wrap: anywhere; }
 .cgame a { display: inline-block; margin: 0 0 12px 40px; color: var(--ink); font-weight: 600; }
+svg.cline { width: 100%; height: auto; display: block; touch-action: pan-y; background: var(--bg); border-radius: 8px; }
+svg.cline .ln { fill: none; stroke-width: 2; stroke-linejoin: round; stroke-linecap: round; }
+svg.cline .avg { stroke: var(--act); stroke-width: 1.5; stroke-dasharray: 4 4; }
+svg.cline .mark { stroke: var(--hold); stroke-width: 1.5; }
+.ccap:empty { display: none; }
+.ccap { margin: 4px 0 0; }
+.export-card svg.cline { background: #FFFFFF; }
