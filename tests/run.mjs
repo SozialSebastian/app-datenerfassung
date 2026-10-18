@@ -474,13 +474,13 @@ for (const cors of [true, false]) test(`chess.com: Einschalten lädt alles, Wert
   assert.ok(await page.locator('.acard').filter({ hasText: "Schach: Elo Rapid" }).count() >= 1);
   if (cors) await page.locator(".chess").screenshot({ path: path.join(shots, "schach.png") });
   // Elo und Genauigkeit im Verlauf, abschaltbar über das Zahnrad
-  assert.equal(await page.locator(".chess svg.cline").count(), 2);
+  assert.equal(await page.locator(".chess svg.cline").count(), 3); // Elo Rapid, Elo Blitz, Genauigkeit
   assert.match(txt, /Elo im Verlauf[\s\S]*Rapid[\s\S]*Blitz/);
   assert.match(txt, /Genauigkeit im Verlauf/);
   await page.locator(".chess svg.cline").first().scrollIntoViewIfNeeded();
   const box = await page.locator(".chess svg.cline").first().boundingBox();
   await page.mouse.click(box.x + box.width - 3, box.y + box.height / 2);
-  assert.match(await page.locator(".chess .ccap").first().innerText(), /: Rapid 1220/);
+  assert.match(await page.locator(".chess .ccap").first().innerText(), /: 1220$/);
   await page.click("#asettings");
   await page.locator('#sheet [data-f="chessElo"]').uncheck();
   await page.evaluate(() => document.querySelector("#sheet").close());

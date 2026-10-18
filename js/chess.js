@@ -322,7 +322,7 @@ function chessPanel(days) {
 
 // Verlauf mit mehreren Linien (z. B. Elo je Bedenkzeit), Punkte über Lücken hinweg verbunden
 function chessLineChart(series, days, { fmt = (v) => String(Math.round(v)), avg = null, label = "" } = {}) {
-  const W = 300, H = 120, P = 8;
+  const W = 300, H = 110, P = 8;
   const nums = series.flatMap((s) => s.pts.map((p) => p.v));
   if (!nums.length) return "";
   let lo = Math.min(...nums), hi = Math.max(...nums);
@@ -331,10 +331,12 @@ function chessLineChart(series, days, { fmt = (v) => String(Math.round(v)), avg 
   const xi = (d) => (days.length === 1 ? W / 2 : P + (idx.get(d) / (days.length - 1)) * (W - 2 * P));
   const yi = (v) => H - P - ((v - lo) / (hi - lo)) * (H - 2 * P);
   const total = series.reduce((s, x) => s + x.pts.length, 0);
+  // eine Linie: gleiche Optik wie die Verläufe der Fragen (z. B. Schritte); mehrere: farbig
+  const col = (k) => (series.length === 1 ? "var(--ink)" : `var(--s${(k % 8) + 1})`);
   const lines = series.map((s, k) => {
     const path = s.pts.map((p, i) => `${i ? "L" : "M"}${xi(p.d).toFixed(1)},${yi(p.v).toFixed(1)}`).join("");
-    const dots = total <= 60 || s.pts.length === 1 ? s.pts.map((p) => `<circle cx="${xi(p.d).toFixed(1)}" cy="${yi(p.v).toFixed(1)}" r="2.6" style="fill:var(--s${(k % 8) + 1})"/>`).join("") : "";
-    return `<path d="${path}" class="ln" style="stroke:var(--s${(k % 8) + 1})"/>${dots}`;
+    const dots = total <= 40 || s.pts.length === 1 ? s.pts.map((p) => `<circle cx="${xi(p.d).toFixed(1)}" cy="${yi(p.v).toFixed(1)}" r="3" style="fill:${col(k)}"/>`).join("") : "";
+    return `<path d="${path}" class="ln" style="stroke:${col(k)}"/>${dots}`;
   }).join("");
   // zum Antippen: je Tag die Werte aller Linien
   const byDay = {};
@@ -348,7 +350,7 @@ function chessLineChart(series, days, { fmt = (v) => String(Math.round(v)), avg 
         <line class="mark" y1="0" y2="${H}" style="display:none"/>
       </svg>
     </div>
-    <p class="legend small">${series.map((s, k) => s.name ? `<span class="ln-key" style="border-color:var(--s${(k % 8) + 1})"></span>${esc(s.name)}` : `<span class="ln-key" style="border-color:var(--s1)"></span>Werte`).join(" ")}${avg !== null ? ` <span class="avg-key"></span>Durchschnitt` : ""}</p>
+    <p class="legend small">${series.map((s, k) => s.name ? `<span class="ln-key" style="border-color:var(--s${(k % 8) + 1})"></span>${esc(s.name)}` : `<span class="ln-key"></span>Werte`).join(" ")}${avg !== null ? ` <span class="avg-key"></span>Durchschnitt` : ""}</p>
     <p class="ccap small muted" aria-live="polite"></p>`;
 }
 // Elo je Bedenkzeit: Wert nach der letzten gewerteten Partie des Tages
@@ -357,8 +359,12 @@ function chessEloChart(days) {
   const ord = (c) => { const i = Object.keys(CHESS_CLS).indexOf(c); return i < 0 ? 99 : i; };
   const cls = [...new Set(days.flatMap((d) => (all[d] ? Object.keys(all[d].r) : [])))].sort((a, b) => ord(a) - ord(b));
   if (!cls.length) return "";
-  const series = cls.map((c) => ({ name: chessClsName(c), pts: days.filter((d) => all[d] && all[d].r[c]).map((d) => ({ d, v: all[d].r[c][0] })) }));
-  return `<h3 class="csub">Elo im Verlauf</h3>${chessLineChart(series, days, { label: "Elo im Verlauf" })}`;
+  // je Bedenkzeit ein eigener Verlauf mit Durchschnitt, wie bei den Fragen
+  return `<h3 class="csub">Elo im Verlauf</h3>${cls.map((c) => {
+    const pts = days.filter((d) => all[d] && all[d].r[c]).map((d) => ({ d, v: all[d].r[c][0] }));
+    const a = pts.reduce((s, p) => s + p.v, 0) / pts.length;
+    return `<div class="celo-c">${cls.length > 1 ? `<p class="small" style="margin:8px 0 2px;font-weight:600">${esc(chessClsName(c))}</p>` : ""}${chessLineChart([{ name: "", pts }], days, { avg: a, label: `Elo ${chessClsName(c)} im Verlauf` })}</div>`;
+  }).join("")}`;
 }
 // Genauigkeit: Ø der analysierten Partien je Tag
 function chessAccChart(days) {
@@ -437,7 +443,7 @@ function openChessGames(days) {
     }
     dlg.innerHTML = `<div class="sheet-inner">
       <div class="sheet-head"><button type="button" class="linkbtn" id="cgclose">Schließen</button><h2>Partien</h2><span></span></div>
-      <p class="muted small" style="margin:0 0 8px">${games.length} ${games.length === 1 ? "Partie" : "Partien"} · ${from === to ? shortDate(from) : `${shortDate(from)} – ${shortDate(to)}`} · neueste zuerst. Antippen für Details.</p>
+      <p class="muted small" style="margin:0 0 8px">${games.length} ${games.length === 1 ? "Partie" : "Partien"} · ${from === to ? shortDate(from) : `${shortDate(from)} – ${shortDate(to)}`} · neueste zuerst</p>
       ${html}
       ${games.length > shown ? `<button type="button" class="btn ghost block" id="cgmore" style="margin-top:12px">Weitere ${Math.min(CHESS_PAGE, games.length - shown)} anzeigen</button>` : ""}
     </div>`;
