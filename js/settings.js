@@ -57,6 +57,13 @@ function renderData() {
     </section>
 
     <section class="panel">
+      <h2>Excel-Tabelle</h2>
+      <p class="muted">Enthält immer alle bisher erfassten Tage, eine Spalte pro Frage. In der App wird dabei nichts gelöscht.</p>
+      <p class="stat">${days.length} Tage · ${nAnswers} Antworten${days.length ? ` · seit ${longDate(days[0])} ${days[0].slice(0, 4)}` : ""}</p>
+      <button class="btn block hold-btn" id="xlsx" ${days.length ? "" : "disabled"}>Excel erstellen</button>
+    </section>
+
+    <section class="panel">
       <h2>Erinnerung</h2>
       ${pushBody}
     </section>
@@ -76,13 +83,6 @@ function renderData() {
       ${settings.places.on ? `<button class="btn ghost block" id="placenow" style="margin-top:12px">Standort jetzt erfassen</button>` : ""}
     </section>
 
-
-    <section class="panel">
-      <h2>Excel-Tabelle</h2>
-      <p class="muted">Enthält immer alle bisher erfassten Tage, eine Spalte pro Frage. In der App wird dabei nichts gelöscht.</p>
-      <p class="stat">${days.length} Tage · ${nAnswers} Antworten${days.length ? ` · seit ${longDate(days[0])} ${days[0].slice(0, 4)}` : ""}</p>
-      <button class="btn block hold-btn" id="xlsx" ${days.length ? "" : "disabled"}>Excel erstellen</button>
-    </section>
 
     <section class="panel">
       <h2>Sicherung</h2>
