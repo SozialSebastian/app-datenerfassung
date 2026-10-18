@@ -102,6 +102,7 @@ function renderAnalysis() {
     <p class="muted small" style="margin:0 0 16px">${days.length === 1 ? `${tracked ? "Erfasst" : "Noch nicht erfasst"} · ${shortDate(days[0])}` : `${tracked} von ${days.length} Tagen erfasst · ${shortDate(days[0])} – ${shortDate(days[days.length - 1])}`}${hiddenN ? ` · ${hiddenN} Frage${hiddenN > 1 ? "n" : ""} ausgeblendet` : ""}</p>
     ${all.length && prefs.trends !== false ? trendsPanel(days) : ""}
     ${all.length && prefs.goals !== false ? goalsPanel() : ""}
+    ${prefs.sport !== false && sportQs().length ? sportPanel(days) : ""}
     ${prefs.places !== false && (Object.keys(state.places || {}).length || (settings.places && settings.places.on)) ? placesPanel(days) : ""}
     ${prefs.chess !== false && (settings.chess.on || Object.keys(chessData().months).length) ? chessPanel(days) : ""}
     ${usedThemes.length > 1 ? `<div class="tfilter" role="group" aria-label="Thema">
@@ -333,6 +334,32 @@ function donut(slices, total, center, focusKey) {
   </svg>`;
 }
 
+// Sport-Kachel: Sporttage im Zeitraum (alle Fragen mit Haken „Ist eine Sportart“)
+function sportPanel(days) {
+  const qs = sportQs();
+  let n = 0, ans = 0;
+  const per = Object.fromEntries(qs.map((q) => [q.id, 0]));
+  for (const d of days) {
+    const h = sportDay(d);
+    if (h === null) continue;
+    ans++; if (h) n++;
+    qs.forEach((q) => { if ((state.answers[d] || {})[q.id] === "Ja") per[q.id]++; });
+  }
+  const rows = qs.map((q) => [q, per[q.id]]).filter(([, c]) => c > 0).sort((a, b) => b[1] - a[1]);
+  const max = Math.max(1, ...rows.map(([, c]) => c));
+  return `<section class="panel acard sport">
+    <h2 class="atitle">🏃 Sport</h2>
+    ${ans ? `<div class="kpi">
+        <div><strong>${n}</strong><span>${n === 1 ? "Sporttag" : "Sporttage"}</span></div>
+        ${days.length >= 7 ? `<div><strong>${fmt1(n / (days.length / 7))}</strong><span>Ø pro Woche</span></div>` : ""}
+        <div><strong>${pct(n, ans)} %</strong><span>der Tage</span></div>
+      </div>
+      ${rows.length ? `<div class="bars">${rows.map(([q, c]) => `<div class="barrow static"><span class="bl">${esc(shortQ(q).replace(/^./, (c) => c.toUpperCase()))}</span><span class="bt"><span style="width:${(c / max) * 100}%"></span></span><span class="bv">${c}×</span></div>`).join("")}</div>` : ""}
+      ${days.length > 1 ? columnChart({ id: "__sport" }, days, "Sport", "abs", sportDay) : ""}`
+    : `<p class="muted small" style="margin:0">Im gewählten Zeitraum noch keine Antworten zu deinen Sportarten.</p>`}
+  </section>`;
+}
+
 // Kuchen mit Beschriftung direkt am Stück (Name fett, darunter der Anteil), für alle Fragentypen
 function labeledPie(items, unit) {
   const sl = items.filter((x) => x.c > 0);
@@ -379,7 +406,8 @@ function labeledPie(items, unit) {
 }
 
 // Säulen über die Zeit: wie oft die gewählte Antwort vorkam (pro Tag, Woche oder Monat)
-function columnChart(q, days, focusKey, unit) {
+// hitOf(d): optional eigene Zählung je Tag (null = nicht beantwortet, true/false = Treffer)
+function columnChart(q, days, focusKey, unit, hitOf) {
   const span = days.length;
   const mode = span <= 14 ? "day" : span <= 92 ? "week" : "month";
   const buckets = [];
@@ -388,6 +416,7 @@ function columnChart(q, days, focusKey, unit) {
     const k = keyOf(d);
     let b = buckets[buckets.length - 1];
     if (!b || b.k !== k) { b = { k, first: d, n: 0, hit: 0 }; buckets.push(b); }
+    if (hitOf) { const h = hitOf(d); if (h !== null) { b.n++; if (h) b.hit++; } continue; }
     const v = (state.answers[d] || {})[q.id];
     if (isAnswered(v)) { b.n++; if (Array.isArray(v) ? v.includes(focusKey) : v === focusKey) b.hit++; }
   }
@@ -476,6 +505,12 @@ function openAnalysisSettings(onlyQid) {
         </div>
         <p class="muted small" style="margin:6px 0 0">Stand deiner Ziele. Festlegen unter „Tag“ über das Zahnrad.</p>
       </section>
+      ${sportQs().length ? `<section class="sq">
+        <div class="sq-head"><strong>Sport</strong>
+          <label class="switch"><input type="checkbox" data-f="sport" ${prefs.sport !== false ? "checked" : ""}><span>Anzeigen</span></label>
+        </div>
+        <p class="muted small" style="margin:6px 0 0">Wie oft du im Zeitraum Sport gemacht hast, alle Sportarten zusammen.</p>
+      </section>` : ""}
       <section class="sq">
         <div class="sq-head"><strong>Orte</strong>
           <label class="switch"><input type="checkbox" data-f="places" ${prefs.places !== false ? "checked" : ""}><span>Anzeigen</span></label>
@@ -516,6 +551,7 @@ function openAnalysisSettings(onlyQid) {
       if (i.dataset.f === "trends") { prefs.trends = i.checked; savePrefs(); }
       else if (i.dataset.f === "goals") { prefs.goals = i.checked; savePrefs(); }
       else if (i.dataset.f === "places") { prefs.places = i.checked; savePrefs(); }
+      else if (i.dataset.f === "sport") { prefs.sport = i.checked; savePrefs(); }
       else if (i.dataset.f === "chess") { prefs.chess = i.checked; savePrefs(); }
       else if (i.dataset.f === "chessElo" || i.dataset.f === "chessAcc") { prefs[i.dataset.f] = i.checked; savePrefs(); }
       else if (i.dataset.f === "show") setQ(i.dataset.q, { hidden: !i.checked });

@@ -340,7 +340,7 @@ test("Themen: Zuordnung, Überschriften, Filter und Themen-Trends", async () => 
     answers[daysAgo(i)] = { b: rnd() < (recent ? 0.6 : 0.15) ? "Ja" : "Nein", p: rnd() < (recent ? 0.5 : 0.1) ? "Ja" : "Nein", v: rnd() < 0.05 ? "Ja" : "Nein", al: "Nein", s: 7 + rnd() };
   }
   const data = { version: 1, lastBackup: null, answers, questions: [
-    yesNo("al", "Alkohol getrunken?"), yesNo("b", "Heute bouldern?"), yesNo("p", "Heute paddeln?"), yesNo("v", "Volleyball gespielt?"),
+    yesNo("al", "Alkohol getrunken?"), { ...yesNo("b", "Heute bouldern?"), sport: true }, { ...yesNo("p", "Heute paddeln?"), sport: true }, yesNo("v", "Volleyball gespielt?"),
     health("s", "Schlafdauer", "schlaf", "duration")] };
   const { page, ctx, errors } = await open({ data });
   // Vorschläge: Sport-Fragen in Sport, Alkohol in Ernährung, Schlaf in Gesundheit; Sortierung nach Thema
@@ -350,9 +350,21 @@ test("Themen: Zuordnung, Überschriften, Filter und Themen-Trends", async () => 
   await page.selectOption("[data-range-sel]", "365");
   if (await page.locator("#tmore").count()) await page.click("#tmore");
   const tr = await page.locator(".trends").innerText();
-  assert.match(tr, /🏃 Sport: letzte 7 Tage \d+× \(.*bouldern.*\), sonst Ø/);
+  assert.match(tr, /Diese Woche \d+ Sporttag/); // nur Fragen mit Haken „Ist eine Sportart“
+  assert.doesNotMatch(tr, /Gesundheit|Ernährung|egal welche Frage/); // keine Trends über andere Themen
+  // Sport-Kachel: Sporttage im Zeitraum, je Sportart
+  const sp = await page.locator(".sport").innerText();
+  assert.match(sp, /Sport[\s\S]*\d+\s*Sporttage[\s\S]*bouldern[\s\S]*paddeln/i);
+  assert.doesNotMatch(sp, /Volleyball/); // ohne Haken zählt es nicht
   await page.click('[data-th="sport"]');
-  assert.equal(await page.locator(".acard").count(), 3);
+  assert.equal(await page.locator(".acard[data-qid]").count(), 3);
+  // Haken „Ist eine Sportart“ im Editor (nur bei Sport-Ja/Nein-Fragen)
+  await page.evaluate(() => openEditor("v"));
+  await page.check("#qsport"); await page.click("#savebtn");
+  assert.equal(await page.evaluate(() => qById("v").sport), true);
+  await page.evaluate(() => openEditor("al"));
+  assert.equal(await page.locator("#qsport").count(), 0);
+  await page.click("#cancel");
   // Thema im Editor ändern
   await page.click('[data-tab="data"]'); await page.click("#qmore"); await page.click('[data-edit="al"]');
   await page.click('[data-theme="mood"]'); await page.click("#savebtn");

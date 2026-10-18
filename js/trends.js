@@ -50,8 +50,13 @@ function streakInsights() {
 
 /* ---------- Themen zusammengefasst (z. B. Sport = Bouldern + Paddeln + Volleyball) ---------- */
 // Ja/Nein-Fragen eines Themas (ohne Health-Felder); Themen-Trends erst ab 2 solchen Fragen
-const themeYesQs = (k) => state.questions.filter((q) => !q.archived && q.type === "choice" && !q.multi && q.options.includes("Ja") && !isHealthQ(q) && themeOf(q) === k);
-const themesWithYes = () => THEMES.filter((t) => themeYesQs(t.k).length >= 2);
+// Nur noch Sport: Ja/Nein-Fragen mit dem Haken „Ist eine Sportart“ (andere Themen zusammenzufassen sagt wenig aus)
+const sportQs = () => state.questions.filter((q) => !q.archived && q.sport && q.type === "choice" && !q.multi && q.options.includes("Ja"));
+const SPORT_TH = { k: "sport", i: "🏃", l: "Sport" };
+const themeYesQs = (k) => (k === "sport" ? sportQs() : []);
+const themesWithYes = () => (sportQs().length ? [SPORT_TH] : []);
+// Sporttag: mindestens eine Sportart mit „Ja“; null, wenn an dem Tag keine Sportfrage beantwortet ist
+const sportDay = (d) => { const h = themeHits(sportQs(), d); return h === null ? null : h > 0; };
 const shortQ = (q) => q.text.replace(/\?$/, "").replace(/^(heute|warst du heute|hast du heute|bist du heute|war ich heute)\s+/i, "");
 // Anzahl „Ja“ an einem Tag; null, wenn keine der Fragen beantwortet ist
 function themeHits(qs, d) {
@@ -71,17 +76,16 @@ function themeInsights() {
     const qs = themeYesQs(th.k);
     const w = THEME_WORDS[th.k] || { run: `Tage in Folge etwas bei ${th.l}`, none: `nichts bei ${th.l}` };
     const lead = `${th.i} ${esc(th.l)}`;
-    // 1. letzte 7 Tage gegenüber den 8 Wochen davor (heute zählt erst, wenn schon etwas beantwortet ist)
-    const end = themeHits(qs, t) === null ? addDays(t, -1) : t;
-    const block = (e) => { let n = 0, ans = 0; const per = {}; for (let i = 0; i < 7; i++) { const d = addDays(e, -i); const h = themeHits(qs, d); if (h === null) continue; ans++; n += h; qs.forEach((q) => { if ((state.answers[d] || {})[q.id] === "Ja") per[q.id] = (per[q.id] || 0) + 1; }); } return { n, ans, per }; };
-    const cur = block(end);
-    const prev = Array.from({ length: 8 }, (_, i) => block(addDays(end, -7 * (i + 1)))).filter((b) => b.ans >= 3);
-    if (cur.ans >= 4 && prev.length >= 3) {
-      const m = mean(prev.map((b) => b.n)), diff = cur.n - m;
-      if (Math.abs(diff) >= Math.max(2, 0.35 * m)) {
-        const parts = qs.filter((q) => cur.per[q.id]).map((q) => `${esc(shortQ(q))} ${cur.per[q.id]}×`).join(", ");
-        out.push({ score: 1.5 + Math.abs(diff) / Math.max(m, 1), html: `${lead}: <strong>letzte 7 Tage ${cur.n}×</strong>${parts ? ` (${parts})` : ""}, sonst Ø ${fmt1(m)}× pro Woche` });
-      }
+    // 1. diese Woche (Mo bis heute) gegenüber letzter Woche und dem Schnitt der 8 Wochen davor – gezählt werden Sporttage
+    const mon = mondayOf(t);
+    const week = (m, upto) => { let n = 0, ans = 0; const per = {}; for (let i = 0; i < 7; i++) { const d = addDays(m, i); if (upto && d > upto) break; const h = themeHits(qs, d); if (h === null) continue; ans++; if (h > 0) n++; qs.forEach((q) => { if ((state.answers[d] || {})[q.id] === "Ja") per[q.id] = (per[q.id] || 0) + 1; }); } return { n, ans, per }; };
+    const cur = week(mon, t), lw = week(addDays(mon, -7));
+    const prev = Array.from({ length: 8 }, (_, i) => week(addDays(mon, -7 * (i + 1)))).filter((b) => b.ans >= 3);
+    if (cur.ans || lw.ans) {
+      const parts = qs.filter((q) => cur.per[q.id]).map((q) => `${esc(shortQ(q))} ${cur.per[q.id]}×`).join(", ");
+      const cmp = lw.ans ? (cur.n > lw.n ? `mehr als letzte Woche (${lw.n})` : cur.n < lw.n ? `letzte Woche ${lw.n}` : `wie letzte Woche`) : "";
+      const m = prev.length >= 3 ? mean(prev.map((b) => b.n)) : null;
+      out.push({ score: 20, tone: lw.ans && cur.n > lw.n ? " good" : "", html: `<strong>Diese Woche ${cur.n} ${cur.n === 1 ? "Sporttag" : "Sporttage"}</strong>${parts ? ` (${parts})` : ""}${cmp ? ` · ${cmp}` : ""}${m !== null ? ` · sonst Ø ${fmt1(m)}` : ""}` });
     }
     // 2. Serie: Tage in Folge mit mindestens einem „Ja“ im Thema
     let d = themeHits(qs, t) ? t : addDays(t, -1), run = 0;
@@ -101,7 +105,7 @@ function themeInsights() {
 function themeGroupings() {
   return themesWithYes().map((th) => {
     const qs = themeYesQs(th.k);
-    return { q: { id: "__theme_" + th.k, text: th.l, type: "choice", options: ["Ja", "Nein"], themeQs: qs }, opt: "Ja", label: `${th.i} ${esc(th.l)} (egal welche Frage)` };
+    return { q: { id: "__theme_" + th.k, text: th.l, type: "choice", options: ["Ja", "Nein"], themeQs: qs }, opt: "Ja", label: `${th.i} Sport (egal welche Sportart)` };
   });
 }
 
@@ -336,12 +340,12 @@ function numberInsights() {
 }
 
 // Ruhige Darstellung: nach Art gruppiert, ohne Farbquadrate; standardmäßig die auffälligsten 5 (je Art abwechselnd)
-const T_KINDS = [["theme", "Themen"], ["streak", "Serien"], ["num", "Zahlen & Muster"], ["season", "Jahreszeiten"], ["rel", "Zusammenhänge"]];
+const T_KINDS = [["theme", "Sport"], ["streak", "Serien"], ["num", "Zahlen & Muster"], ["season", "Jahreszeiten"], ["rel", "Zusammenhänge"]];
 const T_SHOW = 5;
 let showAllTrends = false;
 const trendKindOn = (k) => !(prefs.trendKinds && prefs.trendKinds[k] === false);
 function trendIcon(x, kind) {
-  if (kind === "num" && x.tone === " good") return `<span class="ticon up" title="besser">↑</span>`;
+  if ((kind === "num" || kind === "theme") && x.tone === " good") return `<span class="ticon up" title="besser">↑</span>`;
   if (kind === "num" && x.tone === " bad") return `<span class="ticon down" title="schlechter">↓</span>`;
   if (/in Folge/.test(x.html)) return `<span class="ticon" title="Serie">🔥</span>`;
   return `<span class="ticon dot" aria-hidden="true">·</span>`;
@@ -375,7 +379,7 @@ function trendsPanel(days) {
 // Zahnrad der Trends-Kachel: welche Arten angezeigt werden
 function openTrendSettings() {
   const dlg = $("#sheet");
-  const ex = { theme: "z. B. „5 Tage in Folge etwas bei Gesundheit“", streak: "Serien und Pausen einzelner Ja/Nein-Fragen", num: "Wochentage, diese Woche gegen sonst, Rekorde", season: "Sommer/Winter-Unterschiede über alle Daten", rel: "z. B. Stimmung an Tagen mit Sport, mit Orten und Wetter" };
+  const ex = { theme: "Sporttage diese Woche gegen letzte Woche, Serien und Pausen. Zählt Fragen mit dem Haken „Ist eine Sportart“", streak: "Serien und Pausen einzelner Ja/Nein-Fragen", num: "Wochentage, diese Woche gegen sonst, Rekorde", season: "Sommer/Winter-Unterschiede über alle Daten", rel: "z. B. Stimmung an Tagen mit Sport, mit Orten und Wetter" };
   dlg.innerHTML = `<div class="sheet-inner">
     <div class="sheet-head"><span></span><h2>Trends</h2><button type="button" class="linkbtn" id="tsdone">Fertig</button></div>
     ${T_KINDS.map(([k, l]) => `<section class="sq">

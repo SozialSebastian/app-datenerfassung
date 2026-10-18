@@ -291,7 +291,8 @@ function openEditor(id) {
       </div>
       <label class="field">Frage<input id="qtext" value="${esc(draft.text)}" placeholder="z. B. Heute bouldern?" autocomplete="off"></label>
       ${draft.cond ? "" : `<div class="field" style="margin-bottom:8px;font-weight:600;font-size:15px">Thema</div>
-      <div class="chips themechips">${THEMES.map((t) => `<button type="button" class="chip" data-theme="${t.k}" aria-pressed="${(draft.theme || guessTheme(draft)) === t.k}">${t.i} ${esc(t.l)}</button>`).join("")}</div>`}
+      <div class="chips themechips">${THEMES.map((t) => `<button type="button" class="chip" data-theme="${t.k}" aria-pressed="${(draft.theme || guessTheme(draft)) === t.k}">${t.i} ${esc(t.l)}</button>`).join("")}</div>
+      ${(draft.theme || guessTheme(draft)) === "sport" && draft.type === "choice" && !draft.multi && draft.options.includes("Ja") ? `<label class="check" style="margin:-4px 0 14px"><input type="checkbox" id="qsport" ${draft.sport ? "checked" : ""}> Ist eine Sportart – „Ja“ zählt als Sport (Sport-Kachel und Trends)</label>` : ""}`}
       <div class="seg" role="group" aria-label="Antworttyp">
         ${["choice", "scale", "number"].map((t) => `<button type="button" data-type="${t}" aria-pressed="${draft.type === t}" ${(typeLocked && draft.type !== t) || (hasChildren && t === "number") ? "disabled" : ""}>${typeLabel[t]}</button>`).join("")}
       </div>
@@ -322,6 +323,7 @@ function openEditor(id) {
     // Eingaben im Entwurf mitschreiben, damit Neuzeichnen nichts verliert
     const sync = () => {
       draft.text = $("#qtext", dlg).value;
+      if ($("#qsport", dlg)) draft.sport = $("#qsport", dlg).checked;
       if ($("#ch", dlg)) {
         const h = parseNum($("#ch", dlg).value), w = parseNum($("#cw", dlg).value);
         const per = draft._cper || draft.contract?.per || "week";

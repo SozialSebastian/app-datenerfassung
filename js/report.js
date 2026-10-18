@@ -71,7 +71,7 @@ function reportHtml(mon) {
   const lastOk = todayIso();
   const thRows = themesWithYes().map((th) => {
     const tq = themeYesQs(th.k);
-    const sum = (m) => { let n = 0, a = 0; for (let i = 0; i < 7; i++) { const d = addDays(m, i); if (d > lastOk) break; const h = themeHits(tq, d); if (h !== null) { a++; n += h; } } return a ? n : null; };
+    const sum = (m) => { let n = 0, a = 0; for (let i = 0; i < 7; i++) { const d = addDays(m, i); if (d > lastOk) break; const h = themeHits(tq, d); if (h !== null) { a++; if (h > 0) n++; } } return a ? n : null; };
     const c = sum(mon);
     if (c === null) return null;
     const prev = Array.from({ length: 8 }, (_, i) => sum(addDays(mon, -7 * (i + 1)))).filter((x) => x !== null);
