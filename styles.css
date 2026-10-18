@@ -624,7 +624,7 @@ body.no-scroll { overflow: hidden; touch-action: none; }
 svg.cline { width: 100%; height: auto; display: block; touch-action: pan-y; background: var(--bg); border-radius: 8px; }
 svg.cline .ln { fill: none; stroke-width: 2; stroke-linejoin: round; stroke-linecap: round; }
 svg.cline .avg { stroke: var(--act); stroke-width: 1.5; stroke-dasharray: 4 4; }
-svg.cline .mark { stroke: var(--hold); stroke-width: 1.5; }
+svg.cline .hover { fill: var(--hold); stroke: var(--surface); stroke-width: 2; }
 .ccap:empty { display: none; }
 .ccap { margin: 4px 0 0; }
 .export-card svg.cline { background: #FFFFFF; }

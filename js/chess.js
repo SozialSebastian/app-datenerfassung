@@ -341,14 +341,17 @@ function chessLineChart(series, days, { fmt = (v) => String(Math.round(v)), avg 
   // zum Antippen: je Tag die Werte aller Linien
   const byDay = {};
   series.forEach((s) => s.pts.forEach((p) => { (byDay[p.d] ||= []).push(`${s.name ? s.name + " " : ""}${fmt(p.v)}`); }));
-  const tips = Object.entries(byDay).map(([d, t]) => ({ d, x: +xi(d).toFixed(1), t: `${shortDate(d)}: ${t.join(" · ")}` }));
+  // Punkt zum Mitziehen wie bei den Fragen-Verläufen (y der ersten Linie)
+  const yOf = {};
+  series.forEach((s) => s.pts.forEach((p) => { if (yOf[p.d] === undefined) yOf[p.d] = +yi(p.v).toFixed(1); }));
+  const tips = Object.entries(byDay).map(([d, t]) => ({ d, x: +xi(d).toFixed(1), y: yOf[d], t: `${shortDate(d)}: ${t.join(" · ")}` }));
   return `<div class="chart">
       <div class="yax small muted"><span>${fmt(hi)}</span><span>${fmt(lo)}</span>${avg !== null ? `<span class="avgtag" style="top:${(yi(avg) / H) * 100}%" title="Durchschnitt">Ø</span>` : ""}</div>
       <div class="plot">
         <svg class="cline" viewBox="0 0 ${W} ${H}" data-tips='${esc(JSON.stringify(tips))}' role="img" aria-label="${esc(label)}">
           ${avg !== null ? `<line x1="0" x2="${W}" y1="${yi(avg)}" y2="${yi(avg)}" class="avg"/>` : ""}
           ${lines}
-          <line class="mark" y1="0" y2="${H}" style="display:none"/>
+          <circle class="hover" r="5" style="display:none"/>
         </svg>
       </div>
     </div>
@@ -380,13 +383,13 @@ function wireChessCharts(root) {
   root.querySelectorAll("svg.cline").forEach((svg) => {
     const tips = JSON.parse(svg.dataset.tips);
     const cap = svg.closest(".chart").parentElement.querySelector(".ccap");
-    const mark = svg.querySelector(".mark");
+    const mark = svg.querySelector(".hover");
     const pick = (ev) => {
       const r = svg.getBoundingClientRect();
       const x = ((ev.clientX - r.left) / r.width) * 300;
       let best = tips[0];
       for (const t of tips) if (Math.abs(t.x - x) < Math.abs(best.x - x)) best = t;
-      mark.setAttribute("x1", best.x); mark.setAttribute("x2", best.x); mark.style.display = "";
+      mark.setAttribute("cx", best.x); mark.setAttribute("cy", best.y); mark.style.display = "";
       // passende Beschriftung direkt unter diesem Diagramm
       let c = svg.closest(".chart").nextElementSibling;
       if (c && !c.classList.contains("ccap")) c = c.nextElementSibling;

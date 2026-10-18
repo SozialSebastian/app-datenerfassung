@@ -694,8 +694,8 @@ test("Vertiefungsgespräche: anlegen, ausfüllen, Verlauf mit „Letztes Mal“,
   await page.click("#tfok");
   // per Gedrückthalten: erste Frage hinter die zweite schieben
   const r0 = await page.locator('[data-ti="0.0"]').boundingBox(), r1 = await page.locator('[data-ti="0.1"]').boundingBox();
-  await page.mouse.move(r0.x + 40, r0.y + r0.height / 2); await page.mouse.down(); await page.waitForTimeout(600);
-  for (let i = 1; i <= 6; i++) await page.mouse.move(r0.x + 40, r0.y + r0.height / 2 + (r1.y + r1.height * 0.9 - r0.y - r0.height / 2) * i / 6);
+  await page.mouse.move(r0.x + 40, r0.y + r0.height / 2); await page.mouse.down(); await page.waitForTimeout(800);
+  for (let i = 1; i <= 12; i++) { await page.mouse.move(r0.x + 40, r0.y + r0.height / 2 + (r1.y + r1.height + 4 - r0.y - r0.height / 2) * i / 12); await page.waitForTimeout(15); }
   await page.mouse.up();
   await page.waitForTimeout(100);
   await page.locator("#sheet .sheet-inner").screenshot({ path: path.join(shots, "fragebogen.png") });
