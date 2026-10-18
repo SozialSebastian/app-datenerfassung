@@ -172,13 +172,14 @@ test("Excel enthält alle Fragen, Datumsformat, Dauer und Orte", async () => {
 test("Analyse mit einem Jahr Daten: Trends, Jahreszeiten, Zusammenhänge", async () => {
   const { page, ctx, errors } = await open({ data: yearData() });
   await page.click('[data-tab="analysis"]');
-  await page.click('[data-range="365"]');
+  await page.selectOption("[data-range-sel]", "365");
   if (await page.locator("#tmore").count()) await page.click("#tmore");
   const txt = await page.locator(".trends").innerText();
   assert.match(txt, /Schritte: (samstags|sonntags) am meisten/);
   assert.match(txt, /Schritte: im Sommer am meisten/);
   assert.match(txt, /„Schlafdauer“ (an Tagen mit|am Tag nach) „Heute bouldern“ = Ja/);
-  for (const r of ["7", "30", "ytd", "all"]) await page.click(`[data-range="${r}"]`);
+  for (const r of ["1", "7", "30"]) await page.click(`[data-range="${r}"]`);
+  for (const r of ["ytd", "all", "custom"]) await page.selectOption("[data-range-sel]", r);
   assert.deepEqual(errors, []);
   await ctx.close();
 });
@@ -346,7 +347,7 @@ test("Themen: Zuordnung, Überschriften, Filter und Themen-Trends", async () => 
   assert.deepEqual(await page.evaluate(() => ordered().map((o) => `${o.q.id}:${themeOf(o.q)}`)), ["b:sport", "p:sport", "v:sport", "s:health", "al:food"]);
   assert.match(await page.locator("#view").innerText(), /🏃 Sport[\s\S]*Heute bouldern\?[\s\S]*🍽️ Ernährung[\s\S]*Alkohol/);
   await page.click('[data-tab="analysis"]');
-  await page.click('[data-range="365"]');
+  await page.selectOption("[data-range-sel]", "365");
   if (await page.locator("#tmore").count()) await page.click("#tmore");
   const tr = await page.locator(".trends").innerText();
   assert.match(tr, /🏃 Sport: letzte 7 Tage \d+× \(.*bouldern.*\), sonst Ø/);
@@ -476,6 +477,35 @@ for (const cors of [true, false]) test(`chess.com: Einschalten lädt alles, Wert
   await page.evaluate(() => { settings.chess.lastDay = ""; return syncChess(false); });
   const monthCalls = mock.calls.slice(n).filter((c) => /games\/\d{4}\/\d{2}/.test(c));
   assert.ok(monthCalls.length >= 1 && monthCalls.length <= 2);
+  assert.deepEqual(errors, []);
+  await ctx.close();
+});
+
+test("Zeitraum: 1 Tag, Mehr-Auswahl und eigener Zeitraum (Analyse und Grafik)", async () => {
+  const { page, ctx, errors } = await open({ data: yearData() });
+  await page.waitForTimeout(500);
+  await page.evaluate(() => { const d = document.querySelector("#sheet"); if (d.open) d.close(); });
+  await page.click('[data-tab="analysis"]');
+  // sichtbar: 1 Tag, 7 Tage, 30 Tage, Mehr
+  assert.deepEqual(await page.locator(".rseg > button, .rseg > label > span").allInnerTexts(), ["1 Tag", "7 Tage", "30 Tage", "Mehr ▾"]);
+  await page.click('[data-range="1"]');
+  assert.equal(await page.evaluate(() => rangeDays().length), 1);
+  assert.match(await page.locator("#view").innerText(), /Erfasst · |Noch nicht erfasst · /);
+  await page.selectOption("[data-range-sel]", "ytd");
+  assert.match(await page.locator(".rmore").innerText(), /Seit 1\.1\. ▾/);
+  await page.selectOption("[data-range-sel]", "custom");
+  await page.fill("[data-range-from]", await page.evaluate(() => addDays(todayIso(), -9)));
+  await page.locator("[data-range-from]").dispatchEvent("change");
+  await page.fill("[data-range-to]", await page.evaluate(() => addDays(todayIso(), -5)));
+  await page.locator("[data-range-to]").dispatchEvent("change");
+  assert.equal(await page.evaluate(() => rangeDays().length), 5);
+  assert.match(await page.locator("#view").innerText(), /von 5 Tagen erfasst/);
+  await page.locator(".rseg").screenshot({ path: path.join(shots, "zeitraum.png") });
+  // Grafik erstellen übernimmt den Zeitraum und hat dieselbe Auswahl
+  await page.click('[data-tab="data"]'); await page.click("#exportopen");
+  assert.equal(await page.locator("#sheet [data-xr-from]").count(), 1);
+  await page.click('#sheet [data-xr="7"]');
+  assert.equal(await page.locator("#sheet [data-xr-from]").count(), 0);
   assert.deepEqual(errors, []);
   await ctx.close();
 });

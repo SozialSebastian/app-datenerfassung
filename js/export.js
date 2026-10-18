@@ -21,7 +21,7 @@ function exportItems() {
   }
   if (state.questions.length) {
     const days = rangeDays(exportRange);
-    const range = (RANGES.find(([k]) => k === exportRange) || [, ""])[1];
+    const range = rangeLabel(exportRange);
     items.push({ id: "trends", group: "Analyse", label: `Trends (${range})`, file: "Trends", html: () => withAllOpen(() => trendsPanel(days)) });
     if (goalItems().length) items.push({ id: "goals", group: "Analyse", label: "Ziele", file: "Ziele", html: () => withAllOpen(goalsPanel) });
     if (Object.keys(state.places || {}).length) items.push({ id: "places", group: "Analyse", label: `Orte (${range})`, file: "Orte", html: () => { const k = showAllPlaces; showAllPlaces = true; try { return placesPanel(days); } finally { showAllPlaces = k; } } });
@@ -46,7 +46,7 @@ function openExport() {
       <div class="sheet-head"><button type="button" class="linkbtn" id="xclose">Schließen</button><h2>Grafik erstellen</h2><span></span></div>
       ${items.length ? `
       <div class="field" style="font-weight:600;font-size:15px;margin-bottom:8px">Zeitraum für Analyse-Grafiken</div>
-      <div class="seg seg4" role="group" aria-label="Zeitraum">${RANGES.map(([k, l]) => `<button type="button" data-xr="${k}" aria-pressed="${exportRange === k}">${l}</button>`).join("")}</div>
+      ${rangeControl(exportRange, "xr")}
       <div class="xbar"><button type="button" class="linkbtn" id="xall">${exportSel.size === items.length ? "Keine auswählen" : "Alle auswählen"}</button><span class="muted small">${exportSel.size} ausgewählt</span></div>
       ${groups.map((g) => `<section class="sq"><strong>${g}</strong>
         ${items.filter((x) => x.group === g).map((x) => `<label class="xrow"><input type="checkbox" data-xid="${esc(x.id)}" ${exportSel.has(x.id) ? "checked" : ""}><span>${esc(x.label)}</span></label>`).join("")}
@@ -56,13 +56,13 @@ function openExport() {
       : `<p class="muted">Noch nichts da. Leg zuerst Fragen oder Freunde an.</p>`}
     </div>`;
     $("#xclose", dlg).addEventListener("click", () => dlg.close());
-    dlg.querySelectorAll("[data-xr]").forEach((b) => b.addEventListener("click", () => {
-      exportRange = b.dataset.xr;
+    wireRange(dlg, "xr", (k) => {
+      exportRange = k;
       // Auswahl behalten: Kennungen ändern sich durch den Zeitraum nicht
       items = exportItems();
       const keep = dlg.querySelector(".sheet-inner").scrollTop;
       draw(); dlg.querySelector(".sheet-inner").scrollTop = keep;
-    }));
+    });
     $("#xall", dlg)?.addEventListener("click", () => { exportSel = exportSel.size === items.length ? new Set() : new Set(items.map((x) => x.id)); draw(); });
     dlg.querySelectorAll("[data-xid]").forEach((c) => c.addEventListener("change", () => { if (c.checked) exportSel.add(c.dataset.xid); else exportSel.delete(c.dataset.xid); draw(); }));
     $("#xgo", dlg)?.addEventListener("click", () => makeImages(items.filter((x) => exportSel.has(x.id))));

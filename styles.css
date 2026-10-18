@@ -603,3 +603,12 @@ body.no-scroll { overflow: hidden; touch-action: none; }
 .orow .ov { font-variant-numeric: tabular-nums; color: var(--ink-2); }
 .orow .ob { grid-column: 1 / -1; height: 8px; border-radius: 4px; background: var(--line); overflow: hidden; }
 .orow .ob span { display: block; height: 100%; background: var(--s6); border-radius: 4px; }
+/* ---------- Zeitraum: 1 Tag, 7 Tage, 30 Tage, Mehr ---------- */
+.seg.seg4.rseg { grid-template-columns: repeat(4, 1fr); }
+.rmore { position: relative; display: flex; align-items: center; justify-content: center; border-radius: 8px; font-weight: 600; font-size: 14px; white-space: nowrap; color: var(--ink); overflow: hidden; }
+.rmore[aria-pressed="true"] { background: var(--surface); }
+.rmore .rsmall { font-size: 12.5px; }
+.rmore select { position: absolute; inset: 0; opacity: 0; width: 100%; height: 100%; font-size: 16px; -webkit-appearance: none; appearance: none; border: 0; }
+.rcustom { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin: -2px 0 10px; }
+.rcustom label { display: grid; gap: 4px; font-size: 13px; color: var(--ink-2); font-weight: 600; }
+.rcustom input { font: inherit; font-size: 16px; color: var(--ink); background: var(--surface); border: 1.5px solid var(--line); border-radius: var(--r-sm); padding: 8px 10px; min-width: 0; width: 100%; }

@@ -11,7 +11,8 @@ const savePrefs = () => { try { localStorage.setItem(PREF_KEY, JSON.stringify(pr
 const qset = (q) => ({ chart: "bars", unit: "pct", trend: q.type !== "choice", hidden: false, ...(prefs.q[q.id] || {}) });
 const setQ = (qid, patch) => { prefs.q[qid] = { ...(prefs.q[qid] || {}), ...patch }; savePrefs(); };
 
-const RANGES = [["7", "7 Tage"], ["30", "30 Tage"], ["ytd", "Seit 1.1."], ["365", "12 Mon."], ["all", "Alles"]];
+const RANGES = [["1", "1 Tag"], ["7", "7 Tage"], ["30", "30 Tage"], ["ytd", "Seit 1.1."], ["365", "12 Monate"], ["all", "Alles"], ["custom", "Eigener Zeitraum"]];
+const RANGE_MAIN = ["1", "7", "30"]; // direkt sichtbar, der Rest über „Mehr“
 const SERIES = 8; // Farben für Kuchendiagramme, weitere Antworten → „Weitere“
 const fmt1 = (n) => (Math.round(n * 10) / 10).toLocaleString("de-DE");
 const pct = (a, b) => (b ? Math.round((a / b) * 100) : 0);
@@ -25,10 +26,53 @@ function rangeDays(range = prefs.range) {
     const first = Object.keys(state.answers).sort()[0];
     start = first && first < t ? first : t;
   } else if (range === "ytd") start = t.slice(0, 4) + "-01-01"; // seit Jahresbeginn
-  else start = addDays(t, -(Number(range) - 1));
+  else if (range === "custom") {
+    const [a, b] = customRange();
+    const out = [];
+    for (let d = a; d <= b; d = addDays(d, 1)) out.push(d);
+    return out;
+  } else start = addDays(t, -(Number(range) - 1) || 0);
   const out = [];
   for (let d = start; d <= t; d = addDays(d, 1)) out.push(d);
   return out;
+}
+// Eigener Zeitraum: von–bis, höchstens bis heute
+function customRange() {
+  const t = todayIso();
+  let a = /^\d{4}-\d{2}-\d{2}$/.test(prefs.rfrom || "") ? prefs.rfrom : addDays(t, -13);
+  let b = /^\d{4}-\d{2}-\d{2}$/.test(prefs.rto || "") ? prefs.rto : t;
+  if (b > t) b = t;
+  if (a > b) [a, b] = [b, a];
+  return [a, b];
+}
+
+function rangeLabel(k) {
+  if (k === "custom") { const [a, b] = customRange(); return a === b ? dm(a) : `${dm(a)}–${dm(b)}`; }
+  return (RANGES.find(([x]) => x === k) || [, ""])[1];
+}
+// Zeitraum-Wahl: 1 Tag, 7 Tage, 30 Tage und „Mehr“ (Auswahlliste von iOS) für die übrigen
+function rangeControl(cur, attr) {
+  const main = RANGE_MAIN.includes(cur);
+  return `<div class="seg seg4 rseg" role="group" aria-label="Zeitraum">
+      ${RANGE_MAIN.map((k) => `<button type="button" data-${attr}="${k}" aria-pressed="${cur === k}">${rangeLabel(k)}</button>`).join("")}
+      <label class="rmore" aria-pressed="${!main}"><span class="${cur === "custom" ? "rsmall" : ""}">${main ? "Mehr" : esc(cur === "custom" ? rangeLabel(cur) : rangeLabel(cur).replace("12 Monate", "12 Mon."))} ▾</span>
+        <select data-${attr}-sel aria-label="Weitere Zeiträume">
+          <option value="" disabled ${main ? "selected" : ""}>Zeitraum wählen</option>
+          ${RANGES.filter(([k]) => !RANGE_MAIN.includes(k)).map(([k, l]) => `<option value="${k}" ${cur === k ? "selected" : ""}>${l}${k === "custom" ? " …" : ""}</option>`).join("")}
+        </select>
+      </label>
+    </div>
+    ${cur === "custom" ? `<div class="rcustom">
+      <label>von<input type="date" data-${attr}-from value="${customRange()[0]}" max="${todayIso()}"></label>
+      <label>bis<input type="date" data-${attr}-to value="${customRange()[1]}" max="${todayIso()}"></label>
+    </div>` : ""}`;
+}
+function wireRange(root, attr, set) {
+  root.querySelectorAll(`button[data-${attr}]`).forEach((b) => b.addEventListener("click", () => set(b.getAttribute(`data-${attr}`))));
+  root.querySelector(`[data-${attr}-sel]`)?.addEventListener("change", (e) => { if (e.target.value) set(e.target.value); });
+  const upd = (k) => (e) => { if (e.target.value) { prefs[k] = e.target.value; savePrefs(); set("custom"); } };
+  root.querySelector(`[data-${attr}-from]`)?.addEventListener("change", upd("rfrom"));
+  root.querySelector(`[data-${attr}-to]`)?.addEventListener("change", upd("rto"));
 }
 
 const GEAR = `<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/></svg>`;
@@ -53,10 +97,8 @@ function renderAnalysis() {
       <h1>Analyse</h1>
       ${all.length ? `<button class="gear" id="asettings" aria-label="Darstellung einstellen">${GEAR}</button>` : ""}
     </div>
-    <div class="seg seg4" role="group" aria-label="Zeitraum">
-      ${RANGES.map(([k, l]) => `<button data-range="${k}" aria-pressed="${prefs.range === k}">${l}</button>`).join("")}
-    </div>
-    <p class="muted small" style="margin:0 0 16px">${tracked} von ${days.length} Tagen erfasst · ${shortDate(days[0])} – ${shortDate(days[days.length - 1])}${hiddenN ? ` · ${hiddenN} Frage${hiddenN > 1 ? "n" : ""} ausgeblendet` : ""}</p>
+    ${rangeControl(prefs.range, "range")}
+    <p class="muted small" style="margin:0 0 16px">${days.length === 1 ? `${tracked ? "Erfasst" : "Noch nicht erfasst"} · ${shortDate(days[0])}` : `${tracked} von ${days.length} Tagen erfasst · ${shortDate(days[0])} – ${shortDate(days[days.length - 1])}`}${hiddenN ? ` · ${hiddenN} Frage${hiddenN > 1 ? "n" : ""} ausgeblendet` : ""}</p>
     ${all.length && prefs.trends !== false ? trendsPanel(days) : ""}
     ${all.length && prefs.goals !== false ? goalsPanel() : ""}
     ${prefs.places !== false && (Object.keys(state.places || {}).length || (settings.places && settings.places.on)) ? placesPanel(days) : ""}
@@ -72,7 +114,7 @@ function renderAnalysis() {
   $("#gmore")?.addEventListener("click", () => { showAllGoals = !showAllGoals; renderAnalysis(); });
   $("#tmore")?.addEventListener("click", () => { showAllTrends = !showAllTrends; renderAnalysis(); });
   $("#pmore")?.addEventListener("click", () => { showAllPlaces = !showAllPlaces; renderAnalysis(); });
-  view.querySelectorAll("[data-range]").forEach((b) => b.addEventListener("click", () => { prefs.range = b.dataset.range; savePrefs(); renderAnalysis(); }));
+  wireRange(view, "range", (k) => { prefs.range = k; savePrefs(); renderAnalysis(); });
   view.querySelectorAll("[data-focus]").forEach((b) => b.addEventListener("click", () => {
     prefs.focus[b.dataset.qid] = b.dataset.focus; savePrefs(); renderAnalysis();
   }));
