@@ -165,7 +165,7 @@ function renderFriends() {
         <button class="addbtn big" id="fadd" aria-label="Freund hinzufügen">+</button>
       </div>
     </div>
-    ${n ? `${friendsSummaryHtml()}${meetsPanel()}${friendChangesPanel()}${friendsListHtml()}`
+    ${n ? `${friendsSummaryHtml()}${meetsPanel()}${talksPanel()}${friendChangesPanel()}${friendsListHtml()}`
     : `<div class="empty-state">
         <h2>Noch keine Freunde</h2>
         <p class="muted">Tippe oben rechts auf +, um Freunde hinzuzufügen. Du kannst auch mehrere Namen auf einmal eintragen.</p>
@@ -177,6 +177,7 @@ function renderFriends() {
   $("#fsettings").addEventListener("click", openFriendSettings);
   $("#fchmore")?.addEventListener("click", () => { showAllFriendChanges = !showAllFriendChanges; renderFriends(); });
   $("#mmore")?.addEventListener("click", () => { showAllMeets = !showAllMeets; renderFriends(); });
+  wireTalks();
   document.querySelectorAll("[data-fid]").forEach((b) => b.addEventListener("click", () => openFriend(b.dataset.fid)));
 }
 

@@ -648,6 +648,58 @@ test("Desktop-Ansicht am Mac (Maus/Trackpad), iPhone unverändert", async () => 
   await ctx.close();
 });
 
+test("Vertiefungsgespräche: anlegen, ausfüllen, Verlauf mit „Letztes Mal“, Fragebogen bearbeiten", async () => {
+  const data = { version: 1, lastBackup: null, answers: {}, questions: [], friends: { stichtag: daysAgo(30), labels: {}, history: [], list: [{ id: "a", name: "Anna", cat: "best", tags: {} }, { id: "b", name: "Ben", cat: "good", tags: {} }] } };
+  const { page, ctx, errors } = await open({ data });
+  await page.click('[data-tab="friends"]');
+  assert.match(await page.locator(".talks").innerText(), /Vertiefungsgespräche[\s\S]*Noch keine Gespräche/);
+  // erstes Gespräch (vor 3 Monaten)
+  await page.click("#tnew");
+  await page.selectOption("#tnf", "a");
+  await page.fill("#tndate", daysAgo(90));
+  await page.click("#tngo");
+  assert.equal(await page.locator("#sheet .tpart").count(), 8);
+  assert.match(await page.locator("#sheet").innerText(), /Lebenssituationen[\s\S]*Jobverlust/);
+  await page.locator("#sheet .tta").first().fill("Der Wanderurlaub");
+  await page.locator("#sheet .tq").nth(3).locator(".chip", { hasText: "gleichbleibend" }).click();
+  await page.locator("#sheet .tq").nth(6).locator(".chip", { hasText: /^7$/ }).click();
+  await page.click("#tdone");
+  let st = await page.evaluate(() => state.talks[0]);
+  assert.equal(st.done, true);
+  const q0 = st.form.parts[0].qs[0].id, q3 = st.form.parts[0].qs[3].id, q6 = st.form.parts[1].qs[2].id;
+  assert.equal(st.answers[q0].t, "Der Wanderurlaub");
+  assert.equal(st.answers[q3].v, "gleichbleibend");
+  assert.equal(st.answers[q6].v, 7);
+  assert.match(await page.locator(".talks").innerText(), /Anna[\s\S]*3 von \d+ Fragen/);
+  // zweites Gespräch: zeigt, was letztes Mal geantwortet wurde
+  await page.click("#tnew");
+  await page.selectOption("#tnf", "a");
+  await page.click("#tngo");
+  assert.match(await page.locator("#sheet .tq").first().innerText(), /Letztes Mal \(\d\d\.\d\d\.\d{4}\): Der Wanderurlaub/);
+  assert.match(await page.locator("#sheet .tq").nth(6).innerText(), /Letztes Mal.*7 von 10/);
+  await page.locator("#sheet .sheet-inner").screenshot({ path: path.join(shots, "gespraech.png") });
+  await page.click("#tclose");
+  assert.match(await page.locator(".talks").innerText(), /Entwurf/i);
+  // Fragebogen bearbeiten: gilt nur für neue Gespräche
+  await page.click("#tform");
+  await page.fill('[data-qt="0.0"]', "Was war unser schönster Moment?");
+  await page.click('[data-qadd="0"]');
+  await page.fill('[data-qt="0.4"]', "Neue Frage?");
+  await page.selectOption('[data-qty="0.4"]', "choice");
+  await page.fill('[data-qo="0.4"]', "Ja, Nein, Weiß nicht");
+  await page.locator('[data-qo="0.4"]').dispatchEvent("input");
+  await page.locator("#sheet .sheet-inner").screenshot({ path: path.join(shots, "fragebogen.png") });
+  await page.click("#tfsave");
+  const f = await page.evaluate(() => ({ t0: state.talkForm.parts[0].qs[0].text, n: state.talkForm.parts[0].qs.length, o: state.talkForm.parts[0].qs[4].options, old: state.talks[0].form.parts[0].qs[0].text }));
+  assert.deepEqual(f, { t0: "Was war unser schönster Moment?", n: 5, o: ["Ja", "Nein", "Weiß nicht"], old: "Was waren für dich die schönsten gemeinsamen Momente in den letzten sechs Monaten?" });
+  // Gespräch löschen
+  await page.locator('[data-talk]').first().click();
+  await page.click("#tdel");
+  assert.equal(await page.evaluate(() => state.talks.length), 1);
+  assert.deepEqual(errors, []);
+  await ctx.close();
+});
+
 test("Fragen per Gedrückthalten verschieben", async () => {
   const data = { version: 1, lastBackup: null, answers: {}, questions: ["A", "B", "C"].map((x) => yesNo(x.toLowerCase(), x + "?")) };
   const { page, ctx, errors } = await open({ data });

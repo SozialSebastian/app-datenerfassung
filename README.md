@@ -7,7 +7,7 @@ Web-App (PWA) fürs iPhone: eigene Fragen anlegen, jeden Tag beantworten, auswer
 - **Fragen:** Auswahl (auch mehrere), Skala, Zahl (mit Einheit, Dauer h:mm oder Uhrzeit), Folgefragen, Vorlagen „Arbeit“ (mit Vertrag → effektiver Stundenlohn in der Analyse) und „Freunde“, „Was ist besser?“, Sortieren per Gedrückthalten
 - **Ziele:** je Ziel Woche/Monat/Jahr, wiederholen oder einmalig; Stand in der Analyse, Hinweis bei verfehlten Zielen
 - **Analyse:** Zeitraum wählbar; Trends (Serien, Normalwert, Wochentage, Rekorde, Jahreszeiten, Zusammenhänge inkl. Orte und Wetter), Ziele, Orte, eine Karte je Frage
-- **Freunde:** Kategorien, Labels und Quoten, Stichtage mit Veränderung, Treffen (wen wann zuletzt)
+- **Freunde:** Kategorien, Labels und Quoten, Stichtage mit Veränderung, Treffen (wen wann zuletzt); Vertiefungsgespräche mit eigenem Fragebogen und Verlauf
 - **Wochenbericht** mit wöchentlicher Mitteilung, **Ziel-Erinnerung**, tägliche **Erinnerung**
 - **Grafik erstellen:** Übersichten als PNG; **Excel** mit allen Daten; **Sicherung** als JSON-Datei
 - **Apple Health** über einen Kurzbefehl, der Werte an den Mosaik-Dienst (`worker/`) schickt
@@ -26,7 +26,7 @@ Web-App (PWA) fürs iPhone: eigene Fragen anlegen, jeden Tag beantworten, auswer
 | `js/places.js`, `js/weather.js` | Orte und Wetter |
 | `js/chess.js` | Schnittstelle chess.com |
 | `js/notion.js` | Schnittstelle Notion (Rezepte) |
-| `js/questions.js`, `js/friends.js` | Fragen-Editor und Freunde |
+| `js/questions.js`, `js/friends.js`, `js/talks.js` | Fragen-Editor, Freunde, Vertiefungsgespräche |
 | `js/service.js`, `js/settings.js`, `js/data.js` | Mosaik-Dienst, Einstellungen, Excel/Sicherung |
 | `js/start.js` | Start, Updates, Links aus Mitteilungen |
 | `sw.js` | Offline-Cache und Mitteilungen |
