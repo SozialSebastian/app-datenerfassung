@@ -136,9 +136,8 @@ function goalRow(e) {
   const bar = e.frac === null ? "" : `<span class="gbar"><span style="width:${Math.round(e.frac * 100)}%"></span></span>`;
   return `<li class="grow st-${e.status}">
     <div class="gtop"><span class="gq">${esc(e.q.text)}</span><span class="gst"><span class="gdot" aria-hidden="true"></span>${statusLabel(e)}</span></div>
-    <div class="gdesc small muted">${goalText(e.g, e.q)} ${PER_WORD[e.per.kind]}${e.g.repeat === false ? " (einmalig)" : ""}${e.ended ? "" : ` · noch ${e.daysLeft} Tag${e.daysLeft === 1 ? "" : "e"}`}</div>
     ${bar}
-    <div class="gcur small"><strong>${e.cur}</strong>${e.note ? ` · ${e.note}` : ""}</div>
+    ${e.never ? "" : `<div class="gcur small"><strong>${e.cur}</strong>${e.note ? ` · ${e.note}` : ""}</div>`}
   </li>`;
 }
 
@@ -169,19 +168,11 @@ function goalsPanel() {
       <p class="muted small" style="margin:0">Noch keine aktiven Ziele. Leg sie unter „Tag“ über das Zahnrad oben rechts an.</p></section>`;
   }
   const evals = items.map((g) => evalGoal(g, goalCur(g))).sort((a, b) => STATUS_ORDER[a.status] - STATUS_ORDER[b.status]);
-  const n = (s2) => evals.filter((e) => e.status === s2).length;
-  const parts = [];
-  if (n("done")) parts.push(`${n("done")} erreicht`);
-  if (n("ok")) parts.push(`${n("ok")} auf Kurs`);
-  if (n("behind")) parts.push(`${n("behind")} hinterher`);
-  if (n("fail")) parts.push(`${n("fail")} verfehlt`);
-  if (n("none")) parts.push(`${n("none")} offen`);
   const shown = showAllGoals ? evals : evals.slice(0, GOAL_PREVIEW);
   const hist = goalHistory();
 
   return `<section class="panel goals">
     <h2 class="atitle">Ziele</h2>
-    <p class="gsum small">${parts.join(" · ")}</p>
     <ul class="glist">${shown.map(goalRow).join("")}</ul>
     ${evals.length > GOAL_PREVIEW ? `<button class="btn ghost block" id="gmore" style="margin-top:10px">${showAllGoals ? "Weniger anzeigen" : `Alle Ziele anzeigen (${evals.length - GOAL_PREVIEW} weitere)`}</button>` : ""}
     ${hist.length ? `<details class="ghist">

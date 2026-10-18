@@ -219,7 +219,7 @@ test("Ziel über das Zahnrad anlegen und in der Analyse sehen", async () => {
   await page.waitForTimeout(700);
   await page.evaluate(() => { const d = document.querySelector("#sheet"); if (d.open) d.close(); });
   await page.click('[data-tab="analysis"]');
-  assert.match(await page.locator(".goals").innerText(), /mindestens 2× „Ja“ pro Woche/);
+  assert.match(await page.locator(".goals").innerText(), /Heute bouldern\?[\s\S]*\d von 2×/);
   assert.deepEqual(errors, []);
   await ctx.close();
 });
@@ -320,7 +320,7 @@ test("Ziel „nie“: eigene Darstellung, keine Warnung, kein Überlaufen", asyn
   await page.evaluate(() => { const d = document.querySelector("#sheet"); if (d.open) d.close(); });
   await page.click('[data-tab="analysis"]');
   const txt = await page.locator(".goals").innerText();
-  assert.match(txt, /nie „Ja“ im Monat/);
+  assert.doesNotMatch(txt, /im Monat|noch \d+ Tage|an \d+ Tagen eingehalten|auf Kurs ·/); // schlank: nur Name, Status, Balken, Stand
   assert.match(txt, /Bisher eingehalten/);
   assert.equal(await page.evaluate(() => goalAlertPlan().filter((x) => x.id.startsWith("n|")).length), 0);
   // nichts ragt über den rechten Rand des Feldes hinaus
