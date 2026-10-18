@@ -403,10 +403,10 @@ function chessMock(cors) {
   const op = (result) => ({ username: "Gegner", rating: 1300, result });
   const pgn = (s, e, eco) => `[Event "Live Chess"]\n[ECOUrl "https://www.chess.com/openings/${eco}"]\n[StartTime "${s}"]\n[EndTime "${e}"]\n\n1. e4 e5`;
   const games = [
-    { end_time: at(10, 12), time_class: "blitz", rules: "chess", rated: true, white: me(1100, "agreed"), black: op("agreed"), pgn: pgn("11:00:00", "11:05:00", "Sicilian-Defense-Open-2...Nc6") },
-    { end_time: at(1, 10), time_class: "rapid", rules: "chess", rated: true, white: me(1210, "win"), black: op("checkmated"), accuracies: { white: 80, black: 60 }, pgn: pgn("10:00:00", "10:15:00", "Italian-Game-Two-Knights-Defense-4.d3") },
-    { end_time: at(1, 11), time_class: "rapid", rules: "chess", rated: true, black: me(1200, "resigned"), white: op("win"), pgn: pgn("11:00:00", "11:20:00", "Sicilian-Defense-Open-2...Nc6") },
-    { end_time: at(0, 9), time_class: "rapid", rules: "chess", rated: true, white: me(1220, "win"), black: op("timeout"), pgn: pgn("08:50:00", "09:00:00", "Italian-Game") }
+    { end_time: at(10, 12), time_class: "blitz", time_control: "180+2", rules: "chess", rated: true, white: me(1100, "agreed"), black: op("agreed"), pgn: pgn("11:00:00", "11:05:00", "Sicilian-Defense-Open-2...Nc6") },
+    { end_time: at(1, 10), time_class: "rapid", time_control: "600", rules: "chess", rated: true, url: "https://www.chess.com/game/live/1", white: me(1210, "win"), black: op("checkmated"), accuracies: { white: 80, black: 60 }, pgn: pgn("10:00:00", "10:15:00", "Italian-Game-Two-Knights-Defense-4.d3") },
+    { end_time: at(1, 11), time_class: "rapid", time_control: "600", rules: "chess", rated: true, black: me(1200, "resigned"), white: op("win"), pgn: pgn("11:00:00", "11:20:00", "Sicilian-Defense-Open-2...Nc6") },
+    { end_time: at(0, 9), time_class: "rapid", time_control: "600", rules: "chess", rated: true, white: me(1220, "win"), black: op("timeout"), pgn: pgn("08:50:00", "09:00:00", "Italian-Game") }
   ];
   const ym = (t) => { const d = new Date(t * 1000); return `${d.getUTCFullYear()}/${String(d.getUTCMonth() + 1).padStart(2, "0")}`; };
   const months = {};
@@ -462,13 +462,29 @@ for (const cors of [true, false]) test(`chess.com: Einschalten lädt alles, Wert
   assert.match(txt, /2 Siege \(50 %\) · 1 Remis \(25 %\) · 1 Niederlage \(25 %\) · Punktequote 62,5 %/);
   assert.match(txt, /Rapid\s*1220\s*\+20\s*Bestwert 1250/);
   assert.match(txt, /Blitz\s*1100\s*±0/);
-  assert.match(txt, /Ø Genauigkeit 80 % \(1 analysierte Partie\)/);
-  assert.match(txt, /Sicilian Defense\s*2× · 25 %\s*Italian Game\s*2× · 100 %/);
+  assert.doesNotMatch(txt, /Eröffnung/);
+  assert.match(txt, /Dauer je Partie\s*12 min 30 s/);
+  assert.match(txt, /Züge je Partie\s*1\b/);
+  assert.match(txt, /Genauigkeit\s*80 %\s*1 analysiert/);
+  assert.match(txt, /Bedenkzeit: 10 min 3× · 3 min \+ 2 s 1×/);
+  assert.match(txt, /Alle 4 Partien im Zeitraum/);
   assert.match(txt, /Siege: Matt 1×, Zeit 1×|Siege: Zeit 1×, Matt 1×/);
   assert.match(txt, /Niederlagen: Aufgabe 1×/);
   assert.match(txt, /Taktik-Bestwert 1800 · Puzzle-Rush-Rekord 21/);
   assert.ok(await page.locator('.acard').filter({ hasText: "Schach: Elo Rapid" }).count() >= 1);
   if (cors) await page.locator(".chess").screenshot({ path: path.join(shots, "schach.png") });
+  // Partienliste: neueste zuerst, Details je Partie
+  await page.click("#chessgames");
+  assert.equal(await page.locator("#sheet .cgame").count(), 4);
+  await page.locator("#sheet .cgame summary").first().click();
+  const g1 = await page.locator("#sheet .cgame").first().innerText();
+  assert.match(g1, /Gegner \(1300\)/);
+  assert.match(g1, /Sieg durch Zeit/);
+  assert.match(g1, /Bedenkzeit\s*10 min \(Rapid\)/);
+  assert.match(g1, /Deine Elo danach\s*1220 \(\+20\)/);
+  assert.match(g1, /Dauer 10 min 00 s/);
+  if (cors) await page.locator("#sheet .sheet-inner").screenshot({ path: path.join(shots, "schach-partien.png") });
+  await page.click("#cgclose");
   // zweites Öffnen am selben Tag ruft nichts erneut ab
   const n = mock.calls.length;
   await page.evaluate(() => syncChess(false));

@@ -25,6 +25,11 @@ const chessData = () => {
   if (!state.chess || typeof state.chess !== "object") state.chess = { user: "", months: {}, done: {}, stats: null };
   if (!state.chess.months) state.chess.months = {};
   if (!state.chess.done) state.chess.done = {};
+  // frühere Fassung speicherte nur Tagessummen: einmal alles neu laden, damit es die einzelnen Partien gibt
+  if (Object.values(state.chess.months).some((m) => !Array.isArray(m))) {
+    state.chess.months = {}; state.chess.done = {};
+    if (settings.chess) settings.chess.lastDay = "";
+  }
   return state.chess;
 };
 const isChessQ = (q) => q.source === "chess";
@@ -81,51 +86,71 @@ function chessDuration(g) {
   if (s < 0) s += 86400;
   return s > 6 * 3600 ? 0 : s; // Unsinn ignorieren
 }
-// Partien eines Monats je Tag (Ortszeit des Spielendes) zusammenfassen
-function chessAggregate(games, user) {
-  const days = {};
+// Zahl der Züge aus der PGN (höchste Zugnummer)
+function chessMoves(g) {
+  if (!g.pgn) return 0;
+  const body = g.pgn.slice(g.pgn.lastIndexOf("]") + 1);
+  let m, max = 0;
+  const re = /(\d+)\.\s/g;
+  while ((m = re.exec(body))) max = Math.max(max, +m[1]);
+  return max;
+}
+// Partien eines Monats auf das Nötige kürzen (ohne PGN), eine Zeile je Partie
+function chessCompact(games, user) {
+  const out = [];
   for (const g of games || []) {
     if (!g || !g.end_time || !g.white || !g.black) continue;
     const meW = String(g.white.username || "").toLowerCase() === user;
     const meB = String(g.black.username || "").toLowerCase() === user;
     if (!meW && !meB) continue;
     const me = meW ? g.white : g.black, op = meW ? g.black : g.white;
-    const d = iso(new Date(g.end_time * 1000));
-    const x = days[d] || (days[d] = { n: 0, w: 0, l: 0, dr: 0, s: 0, a: 0, an: 0, r: {}, o: {}, e: {} });
     const res = me.result === "win" ? "w" : CHESS_DRAWS.has(me.result) ? "d" : "l";
-    x.n++;
-    if (res === "w") x.w++; else if (res === "d") x.dr++; else x.l++;
-    const how = res === "w" ? op.result : me.result;
-    x.e[`${res}:${how}`] = (x.e[`${res}:${how}`] || 0) + 1;
-    const cls = !g.rules || g.rules === "chess" ? g.time_class : `${g.rules}-${g.time_class}`;
-    if (cls && g.rated !== false && typeof me.rating === "number") {
-      const prev = x.r[cls];
-      if (!prev || g.end_time >= prev[1]) x.r[cls] = [me.rating, g.end_time]; // Elo nach der letzten Partie des Tages
-    }
-    const acc = g.accuracies && (meW ? g.accuracies.white : g.accuracies.black);
-    if (typeof acc === "number") { x.a += acc; x.an++; }
-    x.s += chessDuration(g);
-    const o = chessOpening(g);
-    if (o) { const p = x.o[o] || (x.o[o] = [0, 0]); p[0]++; p[1] += res === "w" ? 1 : res === "d" ? 0.5 : 0; }
-  }
-  return days;
-}
-// Alle Monate zu einem Tag zusammenführen (eine Partie kurz nach Mitternacht kann im Vormonat liegen)
-function chessDays() {
-  const out = {};
-  const months = chessData().months;
-  for (const ym of Object.keys(months).sort()) {
-    for (const [d, x] of Object.entries(months[ym])) {
-      const y = out[d];
-      if (!y) { out[d] = JSON.parse(JSON.stringify(x)); continue; }
-      for (const k of ["n", "w", "l", "dr", "s", "a", "an"]) y[k] += x[k];
-      for (const [c, v] of Object.entries(x.r)) if (!y.r[c] || v[1] >= y.r[c][1]) y.r[c] = v;
-      for (const [o, v] of Object.entries(x.o)) { const p = y.o[o] || (y.o[o] = [0, 0]); p[0] += v[0]; p[1] += v[1]; }
-      for (const [e, v] of Object.entries(x.e)) y.e[e] = (y.e[e] || 0) + v;
-    }
+    const acc = g.accuracies || {};
+    const num = (x) => (typeof x === "number" ? Math.round(x * 10) / 10 : null);
+    out.push({
+      t: g.end_time, dur: chessDuration(g),
+      c: !g.rules || g.rules === "chess" ? g.time_class : `${g.rules}-${g.time_class}`,
+      tc: g.time_control || "", rated: g.rated !== false,
+      col: meW ? "w" : "b", r: typeof me.rating === "number" ? me.rating : null,
+      on: op.username || "", or: typeof op.rating === "number" ? op.rating : null,
+      res, how: res === "w" ? op.result : me.result,
+      a: num(meW ? acc.white : acc.black), oa: num(meW ? acc.black : acc.white),
+      m: chessMoves(g), o: chessOpening(g), u: g.url || ""
+    });
   }
   return out;
 }
+// alle gespeicherten Partien, nach Ende sortiert
+function chessGames() {
+  const all = [];
+  for (const list of Object.values(chessData().months)) if (Array.isArray(list)) all.push(...list);
+  return all.sort((a, b) => a.t - b.t);
+}
+const chessDate = (g) => iso(new Date(g.t * 1000));
+// je Tag (Ortszeit des Spielendes) zusammenfassen
+function chessDays() {
+  const out = {};
+  for (const g of chessGames()) {
+    const d = chessDate(g);
+    const x = out[d] || (out[d] = { n: 0, w: 0, l: 0, dr: 0, s: 0, a: 0, an: 0, r: {}, e: {} });
+    x.n++;
+    if (g.res === "w") x.w++; else if (g.res === "d") x.dr++; else x.l++;
+    x.e[`${g.res}:${g.how}`] = (x.e[`${g.res}:${g.how}`] || 0) + 1;
+    if (g.c && g.rated && g.r !== null) x.r[g.c] = [g.r, g.t]; // sortiert: am Ende steht die letzte Partie des Tages
+    if (g.a !== null) { x.a += g.a; x.an++; }
+    x.s += g.dur || 0;
+  }
+  return out;
+}
+// Bedenkzeit lesbar: „600+5“ → „10 min + 5 s“, „1/86400“ → „1 Tag je Zug“
+function fmtTc(tc) {
+  if (!tc) return "–";
+  if (tc.includes("/")) { const d = Math.round(+tc.split("/")[1] / 86400); return `${d} ${d === 1 ? "Tag" : "Tage"} je Zug`; }
+  const [base, inc] = tc.split("+").map(Number);
+  const b = base >= 60 ? `${fmtNum(Math.round((base / 60) * 10) / 10)} min` : `${base} s`;
+  return inc ? `${b} + ${inc} s` : b;
+}
+const fmtSec = (s) => (s >= 3600 ? fmtDur(s / 3600) : `${Math.floor(s / 60)} min ${String(Math.round(s % 60)).padStart(2, "0")} s`);
 
 /* ---------- Felder anlegen und füllen ---------- */
 function ensureChessQuestion(key, created) {
@@ -200,7 +225,7 @@ async function syncChess(manual, progress) {
       const ym = url.slice(-7);
       progress && progress(++i, todo.length);
       const { games } = await chessGet(url);
-      cd.months[ym] = chessAggregate(games, user);
+      cd.months[ym] = chessCompact(games, user);
       if (ym < closed) cd.done[ym] = true;
     }
     const created = applyChessAnswers();
@@ -237,11 +262,12 @@ function chessPanel(days) {
   if (!ds.length) {
     return `<section class="panel"><h2 class="atitle">Schach</h2><p class="muted small" style="margin:0">${settings.chess.on ? "Im gewählten Zeitraum keine Partien auf chess.com." : "Einschalten unter Einstellungen → Schnittstelle chess.com."}</p></section>`;
   }
-  const sum = { n: 0, w: 0, l: 0, dr: 0, s: 0, a: 0, an: 0 }, op = {}, how = {}, first = {}, last = {};
+  const from = days[0], to = days[days.length - 1];
+  const games = chessGames().filter((g) => { const d = chessDate(g); return d >= from && d <= to; });
+  const sum = { n: 0, w: 0, l: 0, dr: 0, s: 0, a: 0, an: 0 }, how = {}, first = {}, last = {};
   for (const d of ds) {
     const x = all[d];
     for (const k of Object.keys(sum)) sum[k] += x[k];
-    for (const [o, v] of Object.entries(x.o)) { const p = op[o] || (op[o] = [0, 0]); p[0] += v[0]; p[1] += v[1]; }
     for (const [e, v] of Object.entries(x.e)) how[e] = (how[e] || 0) + v;
     for (const [c, v] of Object.entries(x.r)) { if (!first[c]) first[c] = v[0]; last[c] = v[0]; }
   }
@@ -258,7 +284,12 @@ function chessPanel(days) {
     const best = st && st.cls[c] && st.cls[c].best;
     return `<div class="crow"><span>${esc(chessClsName(c))}</span><strong>${last[c]}</strong><span class="${diff > 0 ? "up" : diff < 0 ? "down" : "muted"}">${diff > 0 ? "+" : diff < 0 ? "−" : "±"}${Math.abs(diff)}</span><span class="muted small">${best ? `Bestwert ${best.r} (${new Date(best.d * 1000).toLocaleDateString("de-DE", { month: "numeric", year: "numeric" })})` : ""}</span></div>`;
   }).join("");
-  const ops = Object.entries(op).sort((a, b) => b[1][0] - a[1][0]).slice(0, 5);
+  // Bedenkzeit, Dauer und Züge im Durchschnitt
+  const live = games.filter((g) => g.dur > 0);
+  const withMoves = games.filter((g) => g.m > 0);
+  const tcs = {};
+  games.forEach((g) => (tcs[g.tc] = (tcs[g.tc] || 0) + 1));
+  const tcList = Object.entries(tcs).sort((a, b) => b[1] - a[1]);
   const howRows = (r, label) => {
     const xs = Object.entries(how).filter(([k]) => k.startsWith(r + ":")).sort((a, b) => b[1] - a[1]);
     return xs.length ? `<p class="small" style="margin:4px 0 0"><strong>${label}:</strong> ${xs.map(([k, v]) => `${esc(CHESS_HOW[k.split(":")[1]] || k.split(":")[1])} ${v}×`).join(", ")}</p>` : "";
@@ -271,16 +302,81 @@ function chessPanel(days) {
     </div>
     <p class="small" style="margin:6px 0 0">${sum.w} ${sum.w === 1 ? "Sieg" : "Siege"} (${pct(sum.w)}) · ${sum.dr} Remis (${pct(sum.dr)}) · ${sum.l} ${sum.l === 1 ? "Niederlage" : "Niederlagen"} (${pct(sum.l)}) · Punktequote ${fmtNum(score)} %</p>
     ${eloRows ? `<h3 class="csub">Elo am Ende des Zeitraums</h3><div class="ctable">${eloRows}</div>` : ""}
-    ${sum.an ? `<p class="small" style="margin:10px 0 0">Ø Genauigkeit <strong>${fmtNum(Math.round((sum.a / sum.an) * 10) / 10)} %</strong> <span class="muted">(${sum.an} analysierte Partie${sum.an === 1 ? "" : "n"})</span></p>` : ""}
-    ${ops.length ? `<h3 class="csub">Häufigste Eröffnungen</h3><div class="olist">${ops.map(([o, [n, p]]) => `<div class="orow">
-      <span class="on">${esc(o)}</span><span class="ov">${n}× · ${Math.round((p / n) * 100)} %</span>
-      <span class="ob"><span style="width:${(n / ops[0][1][0]) * 100}%"></span></span>
-    </div>`).join("")}</div><p class="muted small" style="margin:4px 0 0">Prozent = Punktequote mit dieser Eröffnung.</p>` : ""}
+    <h3 class="csub">Im Durchschnitt</h3>
+    <div class="cavg">
+      ${live.length ? `<div><span class="muted small">Dauer je Partie</span><strong>${fmtSec(live.reduce((s, g) => s + g.dur, 0) / live.length)}</strong></div>` : ""}
+      ${withMoves.length ? `<div><span class="muted small">Züge je Partie</span><strong>${Math.round(withMoves.reduce((s, g) => s + g.m, 0) / withMoves.length)}</strong></div>` : ""}
+      ${sum.an ? `<div><span class="muted small">Genauigkeit</span><strong>${fmtNum(Math.round((sum.a / sum.an) * 10) / 10)} %</strong><span class="muted small">${sum.an} analysiert</span></div>` : ""}
+      ${live.length ? `<div><span class="muted small">Spielzeit je Spieltag</span><strong>${fmtSec(sum.s / ds.length)}</strong></div>` : ""}
+    </div>
+    ${tcList.length ? `<p class="small" style="margin:10px 0 0"><strong>Bedenkzeit:</strong> ${tcList.slice(0, 4).map(([tc, n]) => `${esc(fmtTc(tc))} ${n}×`).join(" · ")}</p>` : ""}
     <h3 class="csub">Wie entschieden</h3>
     ${howRows("w", "Siege")}${howRows("d", "Remis")}${howRows("l", "Niederlagen")}
     ${st && (st.tactics || st.rush) ? `<p class="small" style="margin:10px 0 0">${st.tactics ? `Taktik-Bestwert <strong>${st.tactics.r}</strong>` : ""}${st.tactics && st.rush ? " · " : ""}${st.rush ? `Puzzle-Rush-Rekord <strong>${st.rush}</strong>` : ""}</p>` : ""}
+    <button type="button" class="btn ghost block" id="chessgames" style="margin-top:14px">Alle ${games.length} ${games.length === 1 ? "Partie" : "Partien"} im Zeitraum</button>
     <p class="muted small" style="margin:10px 0 0">Daten von chess.com (${esc(chessData().user)}), aktualisiert ${settings.chess.last ? new Date(settings.chess.last).toLocaleDateString("de-DE") : "–"}.</p>
   </section>`;
+}
+
+// Liste aller Partien im Zeitraum, je Partie aufklappbar
+const CHESS_PAGE = 100;
+function openChessGames(days) {
+  const from = days[0], to = days[days.length - 1];
+  const all = chessGames();
+  // Elo-Veränderung je Partie: gegenüber der vorigen gewerteten Partie derselben Bedenkzeit
+  const prev = {}, delta = new Map();
+  for (const g of all) {
+    if (!g.rated || g.r === null) continue;
+    if (prev[g.c] !== undefined) delta.set(g, g.r - prev[g.c]);
+    prev[g.c] = g.r;
+  }
+  const games = all.filter((g) => { const d = chessDate(g); return d >= from && d <= to; }).reverse();
+  let shown = CHESS_PAGE;
+  const dlg = $("#sheet");
+  const resText = { w: "Sieg", d: "Remis", l: "Niederlage" };
+  const time = (t) => new Date(t * 1000).toLocaleTimeString("de-DE", { hour: "2-digit", minute: "2-digit" });
+  const row = (g) => {
+    const dl = delta.get(g);
+    const how = CHESS_HOW[g.how] || g.how;
+    return `<details class="cgame">
+      <summary>
+        <span class="cres ${g.res}" aria-label="${resText[g.res]}">${g.res === "w" ? "1" : g.res === "d" ? "½" : "0"}</span>
+        <span class="cwho"><span class="cname"><strong>${esc(g.on || "Gegner")}</strong>${g.or ? ` <span class="muted">(${g.or})</span>` : ""}</span><span class="muted small">${esc(chessClsName(g.c))} · ${esc(fmtTc(g.tc))} · ${time(g.t)}</span></span>
+        <span class="celo">${g.r ?? ""}${dl !== undefined ? `<span class="${dl > 0 ? "up" : dl < 0 ? "down" : "muted"}">${dl > 0 ? "+" : dl < 0 ? "−" : "±"}${Math.abs(dl)}</span>` : ""}</span>
+      </summary>
+      <dl class="cdet small">
+        <dt>Ergebnis</dt><dd>${resText[g.res]}${how ? ` durch ${esc(how)}` : ""}</dd>
+        <dt>Bedenkzeit</dt><dd>${esc(fmtTc(g.tc))} (${esc(chessClsName(g.c))}${g.rated ? "" : ", ungewertet"})</dd>
+        <dt>Farbe</dt><dd>${g.col === "w" ? "Weiß" : "Schwarz"}</dd>
+        <dt>Ende</dt><dd>${new Date(g.t * 1000).toLocaleString("de-DE", { weekday: "short", day: "numeric", month: "numeric", year: "numeric", hour: "2-digit", minute: "2-digit" })}${g.dur ? ` · Dauer ${fmtSec(g.dur)}` : ""}</dd>
+        ${g.m ? `<dt>Züge</dt><dd>${g.m}</dd>` : ""}
+        <dt>Deine Elo danach</dt><dd>${g.r ?? "–"}${dl !== undefined ? ` (${dl > 0 ? "+" : dl < 0 ? "−" : "±"}${Math.abs(dl)})` : ""}</dd>
+        <dt>Gegner</dt><dd>${esc(g.on || "–")}${g.or ? `, Elo ${g.or}` : ""}</dd>
+        ${g.a !== null || g.oa !== null ? `<dt>Genauigkeit</dt><dd>du ${g.a !== null ? fmtNum(g.a) + " %" : "–"} · Gegner ${g.oa !== null ? fmtNum(g.oa) + " %" : "–"}</dd>` : ""}
+        ${g.o ? `<dt>Eröffnung</dt><dd>${esc(g.o)}</dd>` : ""}
+      </dl>
+      ${g.u ? `<a class="small" href="${esc(g.u)}" target="_blank" rel="noopener">Partie auf chess.com ansehen ↗</a>` : ""}
+    </details>`;
+  };
+  const draw = () => {
+    let lastDay = "", html = "";
+    for (const g of games.slice(0, shown)) {
+      const d = chessDate(g);
+      if (d !== lastDay) { html += `<h3 class="cday">${parseIso(d).toLocaleDateString("de-DE", { weekday: "long", day: "numeric", month: "long", ...(d.slice(0, 4) !== todayIso().slice(0, 4) ? { year: "numeric" } : {}) })}</h3>`; lastDay = d; }
+      html += row(g);
+    }
+    dlg.innerHTML = `<div class="sheet-inner">
+      <div class="sheet-head"><button type="button" class="linkbtn" id="cgclose">Schließen</button><h2>Partien</h2><span></span></div>
+      <p class="muted small" style="margin:0 0 8px">${games.length} ${games.length === 1 ? "Partie" : "Partien"} · ${from === to ? shortDate(from) : `${shortDate(from)} – ${shortDate(to)}`} · neueste zuerst. Antippen für Details.</p>
+      ${html}
+      ${games.length > shown ? `<button type="button" class="btn ghost block" id="cgmore" style="margin-top:12px">Weitere ${Math.min(CHESS_PAGE, games.length - shown)} anzeigen</button>` : ""}
+    </div>`;
+    $("#cgclose", dlg).addEventListener("click", () => dlg.close());
+    $("#cgmore", dlg)?.addEventListener("click", () => { const keep = dlg.querySelector(".sheet-inner").scrollTop; shown += CHESS_PAGE; draw(); dlg.querySelector(".sheet-inner").scrollTop = keep; });
+  };
+  draw();
+  if (!dlg.open) dlg.showModal();
+  document.activeElement?.blur();
 }
 
 /* ---------- Einstellungen ---------- */
