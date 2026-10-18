@@ -217,7 +217,11 @@ function analysisCard(q, days) {
     const yesNo = q.type === "choice" && !q.multi && q.options.length === 2 && q.options.includes("Ja") && q.options.includes("Nein");
     if (yesNo) focusKey = "Ja";
 
-    if (yesNo && set.chart !== "pie") {
+    if (q.type === "scale" && set.chart === "count") {
+      body = hero; // Kompakt: nur der Durchschnitt
+    } else if (q.type === "scale" && set.chart === "pie") {
+      body = hero + scalePie(dist, set.unit);
+    } else if (yesNo && set.chart !== "pie") {
       // Ja/Nein: Kennzahlen statt Balken
       const c = vals.filter((x) => x.v === "Ja").length;
       const perWeek = c / (days.length / 7);
@@ -334,6 +338,44 @@ function donut(slices, total, center, focusKey) {
     <text x="70" y="70" class="dv" text-anchor="middle">${esc(center.v)}</text>
     <text x="70" y="88" class="dl" text-anchor="middle">${esc(center.l.length > 14 ? center.l.slice(0, 13) + "…" : center.l)}</text>
   </svg>`;
+}
+
+// Skala als Kuchen: Beschriftung mit Linie direkt am Stück statt Legende
+function scalePie(dist, unit) {
+  const sl = dist.map((x, i) => ({ ...x, i })).filter((x) => x.c > 0);
+  const total = sl.reduce((s, x) => s + x.c, 0);
+  if (!total) return "";
+  const W = 320, H = 200, cx = W / 2, cy = H / 2, R = 62, w = 22;
+  let a0 = -Math.PI / 2;
+  const pt = (r, a) => [cx + r * Math.cos(a), cy + r * Math.sin(a)];
+  const arcs = [], labs = [];
+  for (const s of sl) {
+    const a1 = a0 + (s.c / total) * 2 * Math.PI;
+    const gap = sl.length > 1 ? 0.025 : 0;
+    const [x0, y0] = pt(R, a0 + gap), [x1, y1] = pt(R, Math.max(a0 + gap, a1 - gap));
+    const big = a1 - a0 > Math.PI ? 1 : 0;
+    arcs.push(sl.length === 1 ? `<circle cx="${cx}" cy="${cy}" r="${R}" fill="none" stroke="var(--s${(s.i % SERIES) + 1})" stroke-width="${w}"/>`
+      : `<path d="M${x0.toFixed(1)},${y0.toFixed(1)} A${R},${R} 0 ${big} 1 ${x1.toFixed(1)},${y1.toFixed(1)}" fill="none" stroke="var(--s${(s.i % SERIES) + 1})" stroke-width="${w}"/>`);
+    const am = (a0 + a1) / 2;
+    const right = Math.cos(am) >= 0;
+    const [ex, ey] = pt(R + w / 2 + 2, am), [kx, ky] = pt(R + w / 2 + 14, am);
+    labs.push({ s, right, ex, ey, kx, ky });
+    a0 = a1;
+  }
+  // Beschriftungen je Seite nicht überlappen lassen
+  for (const side of [true, false]) {
+    const xs = labs.filter((l) => l.right === side).sort((a, b) => a.ky - b.ky);
+    for (let i = 1; i < xs.length; i++) if (xs[i].ky - xs[i - 1].ky < 15) xs[i].ky = xs[i - 1].ky + 15;
+    const over = xs.length ? xs[xs.length - 1].ky - (H - 8) : 0;
+    if (over > 0) xs.forEach((l) => (l.ky -= over));
+  }
+  const val = (c) => (unit === "pct" ? `${Math.round((c / total) * 100)} %` : `${c}×`);
+  const txt = labs.map(({ s, right, ex, ey, kx, ky }) => {
+    const tx = right ? cx + R + w / 2 + 24 : cx - R - w / 2 - 24;
+    return `<polyline points="${ex.toFixed(1)},${ey.toFixed(1)} ${kx.toFixed(1)},${ky.toFixed(1)} ${(tx + (right ? -4 : 4)).toFixed(1)},${ky.toFixed(1)}" class="pl"/>
+      <text x="${tx.toFixed(1)}" y="${(ky + 4).toFixed(1)}" text-anchor="${right ? "start" : "end"}" class="pt"><tspan class="pk">${esc(s.key)}</tspan> ${val(s.c)}</text>`;
+  }).join("");
+  return `<svg class="spie" viewBox="0 0 ${W} ${H}" role="img" aria-label="Kuchendiagramm">${arcs.join("")}${txt}</svg>`;
 }
 
 // Säulen über die Zeit: wie oft die gewählte Antwort vorkam (pro Tag, Woche oder Monat)
@@ -458,11 +500,11 @@ function openAnalysisSettings(onlyQid) {
             <label class="switch"><input type="checkbox" data-q="${q.id}" data-f="show" ${s.hidden ? "" : "checked"}><span>Anzeigen</span></label>
           </div>
           ${s.hidden ? "" : `
-          ${dist ? `<div class="sq-row"><span>Diagramm</span>${seg(q, "chart", q.type === "choice" ? [["bars", "Balken"], ["pie", "Kuchen"], ["count", "Kompakt"]] : [["bars", "Balken"], ["pie", "Kuchen"]], s.chart)}</div>
+          ${dist ? `<div class="sq-row"><span>Diagramm</span>${seg(q, "chart", [["bars", "Balken"], ["pie", "Kuchen"], ["count", "Kompakt"]], s.chart)}</div>
           ${q.type === "choice" && s.chart === "count"
             ? `<div class="sq-row"><span>Zählt</span><select data-q="${q.id}" data-f="countKey">${q.options.map((o) => `<option ${o === (q.options.includes(s.countKey) ? s.countKey : q.options[0]) ? "selected" : ""}>${esc(o)}</option>`).join("")}</select></div>
                <p class="muted small" style="margin:6px 0 0">Zeigt nur: an wie vielen Tagen im Zeitraum diese Antwort kam.</p>`
-            : `<div class="sq-row"><span>Werte</span>${seg(q, "unit", [["pct", "%"], ["abs", "Anzahl"]], s.unit)}</div>`}` : ""}
+            : q.type === "scale" && s.chart === "count" ? `<p class="muted small" style="margin:6px 0 0">Zeigt nur den Durchschnitt.</p>` : `<div class="sq-row"><span>Werte</span>${seg(q, "unit", [["pct", "%"], ["abs", "Anzahl"]], s.unit)}</div>`}` : ""}
           <label class="switch row"><input type="checkbox" data-q="${q.id}" data-f="trend" ${s.trend ? "checked" : ""}><span>Verlauf über die Zeit</span></label>`}
         </section>`;
       }).join("")}
