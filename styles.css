@@ -629,6 +629,7 @@ svg.cline .mark { stroke: var(--hold); stroke-width: 1.5; }
 .ccap { margin: 4px 0 0; }
 .export-card svg.cline { background: #FFFFFF; }
 
+.tabbar .subnav { display: none; } /* nur in der Desktop-Ansicht sichtbar */
 /* ================= Desktop-Ansicht (Safari am Mac: Maus/Trackpad) =================
    Greift nur bei feinem Zeiger (Maus, Trackpad), unabhängig von der Fensterform; auf dem iPhone ändert sich nichts. */
 @media (hover: hover) and (pointer: fine) and (min-width: 640px) {
@@ -655,9 +656,18 @@ svg.cline .mark { stroke: var(--hold); stroke-width: 1.5; }
   body[data-tab="day"] main { max-width: 760px; margin-left: calc(var(--side) + max(0px, (100vw - var(--side) - 760px) / 2)); }
 
   /* Analyse und Einstellungen: Kacheln fließen lückenlos in Spalten (so viele, wie Platz ist) */
-  body[data-tab="analysis"] main, body[data-tab="data"] main { columns: 3 360px; column-gap: 20px; }
-  body[data-tab="analysis"] main > *, body[data-tab="data"] main > * { column-span: all; }
-  body[data-tab="analysis"] main > .acard[data-qid], body[data-tab="data"] main > .panel:not(#qpanel) { column-span: none; break-inside: avoid; display: inline-block; width: 100%; box-sizing: border-box; }
+  body[data-tab="analysis"] main { columns: 3 360px; column-gap: 20px; }
+  body[data-tab="analysis"] main > * { column-span: all; }
+  body[data-tab="analysis"] main > .acard[data-qid] { column-span: none; break-inside: avoid; display: inline-block; width: 100%; box-sizing: border-box; }
+
+  /* Einstellungen: Unterpunkte in der Seitenleiste, rechts nur der gewählte Bereich */
+  .tabbar .subnav { display: none; }
+  body[data-tab="data"] .tabbar .subnav { display: grid; gap: 1px; margin: 2px 0 6px 22px; padding-left: 12px; border-left: 1px solid var(--line); }
+  .tabbar .subnav button { display: block; font-size: 14px; font-weight: 500; padding: 7px 10px; color: var(--ink-2); }
+  .tabbar .subnav button[aria-current="page"] { color: var(--ink); font-weight: 700; background: var(--surface); }
+  body[data-tab="data"] main { max-width: 820px; margin-left: calc(var(--side) + max(0px, (100vw - var(--side) - 820px) / 2)); }
+  body[data-tab="data"] main > section.panel:not(.sec-on) { display: none; }
+  .tabbar { overflow-y: auto; }
   body[data-tab="analysis"] main > .seg, body[data-tab="analysis"] main > .rcustom { max-width: 520px; }
 
   /* breite Blöcke innen in Spalten */

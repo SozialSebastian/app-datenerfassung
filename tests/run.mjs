@@ -614,6 +614,9 @@ test("Desktop-Ansicht am Mac (Maus/Trackpad), iPhone unverändert", async () => 
   const m = await open({ data: yearData() });
   const mb = await m.page.locator(".tabbar").boundingBox();
   assert.ok(mb.y > 500 && mb.width > 300);
+  await m.page.click('[data-tab="data"]');
+  assert.equal(await m.page.locator(".tabbar .subnav").isVisible(), false);
+  assert.ok(await m.page.locator("#view > section.panel").evaluateAll((els) => els.every((e) => e.offsetParent)));
   await m.ctx.close();
   // Mac-Fenster: Leiste links, Analyse in zwei Spalten
   const ctx = await browser.newContext({ viewport: { width: 1440, height: 900 } });
@@ -628,6 +631,15 @@ test("Desktop-Ansicht am Mac (Maus/Trackpad), iPhone unverändert", async () => 
   await page.click('[data-tab="analysis"]');
   const xs = await page.locator("main > .acard[data-qid]").evaluateAll((els) => [...new Set(els.map((e) => Math.round(e.getBoundingClientRect().x)))]);
   assert.ok(xs.length >= 2); // Kacheln fließen in mehrere Spalten
+  // Einstellungen: Unterpunkte in der Seitenleiste, immer nur ein Bereich sichtbar
+  await page.click('[data-tab="data"]');
+  assert.ok(await page.locator(".tabbar .subnav button").count() >= 10);
+  const visible = () => page.locator("#view > section.panel").evaluateAll((els) => els.filter((e) => e.offsetParent).map((e) => e.querySelector("h2").textContent.trim()));
+  assert.deepEqual(await visible(), ["Fragen"]);
+  await page.click('.subnav [data-sec="sicherung"]');
+  assert.deepEqual(await visible(), ["Sicherung"]);
+  await page.click('[data-tab="analysis"]');
+  assert.equal(await page.locator(".tabbar .subnav").isVisible(), false);
   // auch im schmalen Mac-Fenster bleibt die Seitenleiste links
   await page.setViewportSize({ width: 800, height: 900 });
   const tb2 = await page.locator(".tabbar").boundingBox();

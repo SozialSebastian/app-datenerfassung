@@ -214,6 +214,7 @@ function renderData() {
   $("#placenow")?.addEventListener("click", async () => { await capturePlace(true); renderData(); });
   wireChessSettings();
   wireNotionSettings();
+  settingsNav();
   $("#exportopen").addEventListener("click", openExport);
   const weekSave = async () => {
     const day = Number($("#weekday").value), time = $("#weektime").value || "19:00";
@@ -231,4 +232,34 @@ function renderData() {
   });
   $("#weekday")?.addEventListener("change", weekSave);
   $("#weektime")?.addEventListener("change", (e) => { if (/^\d{2}:\d{2}$/.test(e.target.value)) weekSave(); });
+}
+
+/* Desktop: Einstellungen in der Seitenleiste aufklappen, immer nur ein Bereich sichtbar (auf dem iPhone bleibt alles untereinander) */
+let settingsSec = "fragen";
+function settingsNav() {
+  const panels = [...document.querySelectorAll("#view > section.panel")];
+  const items = panels.map((p) => {
+    const t = (p.querySelector("h2")?.textContent || "").trim();
+    const id = t.toLowerCase().replace(/[^a-z0-9äöüß]+/g, "-").replace(/^-|-$/g, "");
+    p.dataset.sec = id;
+    return { id, label: t.replace(/^Schnittstelle\s+/, "") };
+  });
+  if (!items.some((x) => x.id === settingsSec)) settingsSec = items[0]?.id || "";
+  let nav = document.querySelector(".tabbar .subnav");
+  if (!nav) {
+    nav = document.createElement("div");
+    nav.className = "subnav";
+    document.querySelector('.tabbar [data-tab="data"]').after(nav);
+  }
+  nav.innerHTML = items.map((x) => `<button type="button" data-sec="${x.id}">${esc(x.label)}</button>`).join("");
+  const show = (id) => {
+    settingsSec = id;
+    panels.forEach((p) => p.classList.toggle("sec-on", p.dataset.sec === id));
+    nav.querySelectorAll("button").forEach((b) => (b.dataset.sec === id ? b.setAttribute("aria-current", "page") : b.removeAttribute("aria-current")));
+  };
+  nav.querySelectorAll("button").forEach((b) => b.addEventListener("click", () => {
+    if (tab !== "data") { tab = "data"; render(); }
+    show(b.dataset.sec); window.scrollTo(0, 0);
+  }));
+  show(settingsSec);
 }
