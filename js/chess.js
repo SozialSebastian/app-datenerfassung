@@ -348,7 +348,7 @@ function chessLineChart(series, days, { fmt = (v) => String(Math.round(v)), avg 
         <line class="mark" y1="0" y2="${H}" style="display:none"/>
       </svg>
     </div>
-    <p class="legend small">${series.map((s, k) => s.name ? `<span class="ln-key" style="border-color:var(--s${(k % 8) + 1})"></span>${esc(s.name)}` : `<span class="ln-key" style="border-color:var(--s1)"></span>Werte`).join(" ")}${avg !== null ? ` <span class="avg-key"></span>Durchschnitt` : ""} · antippen für Details</p>
+    <p class="legend small">${series.map((s, k) => s.name ? `<span class="ln-key" style="border-color:var(--s${(k % 8) + 1})"></span>${esc(s.name)}` : `<span class="ln-key" style="border-color:var(--s1)"></span>Werte`).join(" ")}${avg !== null ? ` <span class="avg-key"></span>Durchschnitt` : ""}</p>
     <p class="ccap small muted" aria-live="polite"></p>`;
 }
 // Elo je Bedenkzeit: Wert nach der letzten gewerteten Partie des Tages

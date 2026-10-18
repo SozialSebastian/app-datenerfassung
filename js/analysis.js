@@ -357,7 +357,7 @@ function columnChart(q, days, focusKey, unit) {
         ${avg > 0 && mode !== "day" ? `<div class="vavg" style="bottom:${(avg / max) * H}px"></div>` : ""}
       </div>
       <div class="vlabs">${buckets.map((b, i) => `<span>${i % every === 0 || i === buckets.length - 1 && !many ? lab(b) : ""}</span>`).join("")}</div>
-      ${avg > 0 && mode !== "day" ? `<p class="vleg small"><span class="avg-key"></span>Ø ${unit === "pct" ? Math.round(avg) + " %" : fmt1(avg) + "×"} pro ${mode === "week" ? "Woche" : "Monat"} · antippen für Details</p>` : `<p class="vleg small">antippen für Details</p>`}
+      ${avg > 0 && mode !== "day" ? `<p class="vleg small"><span class="avg-key"></span>Ø ${unit === "pct" ? Math.round(avg) + " %" : fmt1(avg) + "×"} pro ${mode === "week" ? "Woche" : "Monat"}</p>` : ""}
     </div>`;
 }
 
@@ -386,7 +386,7 @@ function lineChart(q, days, vals, avg) {
       <circle class="hover" r="5" style="display:none"/>
     </svg>
   </div>
-  <p class="legend small"><span class="ln-key"></span>Werte <span class="avg-key"></span>Durchschnitt · antippen für Details</p>`;
+  <p class="legend small"><span class="ln-key"></span>Werte <span class="avg-key"></span>Durchschnitt</p>`;
 }
 
 // Zahnrad: Darstellung pro Frage einstellen
