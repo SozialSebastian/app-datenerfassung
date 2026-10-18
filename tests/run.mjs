@@ -461,7 +461,6 @@ for (const cors of [true, false]) test(`chess.com: Einschalten lädt alles, Wert
   assert.match(txt, /^Schach\s*4\s*Partien an 3 von 30 Tagen/m);
   assert.match(txt, /2 Siege \(50 %\) · 1 Remis \(25 %\) · 1 Niederlage \(25 %\) · Punktequote 62,5 %/);
   assert.match(txt, /Rapid\s*1220\s*\+20\s*Bestwert 1250/);
-  assert.match(txt, /Blitz\s*1100\s*±0/);
   assert.doesNotMatch(txt, /Eröffnung/);
   assert.match(txt, /Dauer je Partie\s*12 min 30 s/);
   assert.match(txt, /Züge je Partie\s*1\b/);
@@ -471,13 +470,21 @@ for (const cors of [true, false]) test(`chess.com: Einschalten lädt alles, Wert
   assert.match(txt, /Siege: Matt 1×, Zeit 1×|Siege: Zeit 1×, Matt 1×/);
   assert.match(txt, /Niederlagen: Aufgabe 1×/);
   assert.match(txt, /Taktik-Bestwert 1800 · Puzzle-Rush-Rekord 21/);
-  assert.ok(await page.locator('.acard').filter({ hasText: "Schach: Elo Rapid" }).count() >= 1);
+  assert.equal(await page.locator('.acard[data-qid]').filter({ hasText: "Schach:" }).count(), 0); // keine einzelnen Schach-Karten mehr
   if (cors) await page.locator(".chess").screenshot({ path: path.join(shots, "schach.png") });
   // Elo und Genauigkeit im Verlauf, abschaltbar über das Zahnrad
-  assert.equal(await page.locator(".chess svg.cline").count(), 3); // Elo Rapid, Elo Blitz, Genauigkeit
-  assert.match(txt, /Elo im Verlauf[\s\S]*Rapid[\s\S]*Blitz/);
+  assert.equal(await page.locator(".chess svg.cline").count(), 2); // Elo des gewählten Modus, Genauigkeit
+  assert.match(txt, /Elo Rapid am Ende des Zeitraums[\s\S]*Elo im Verlauf/);
+  assert.doesNotMatch(txt, /Daten von chess\.com/);
+  // Zahnrad der Kachel: Elo für Blitz
+  await page.click("#chessgear");
+  await page.click('#sheet [data-cls="blitz"]');
+  await page.click("#cvdone");
+  assert.match(await page.locator(".chess").innerText(), /Elo Blitz am Ende des Zeitraums\s*Blitz\s*1100\s*±0/);
+  assert.match(await page.locator(".chess").innerText(), /32|4\s*Partien/); // Partien zählen weiter alle Modi
+  await page.evaluate(() => { prefs.chessCls = "rapid"; savePrefs(); renderAnalysis(); });
   assert.match(txt, /Genauigkeit im Verlauf/);
-  await page.locator(".chess svg.cline").first().scrollIntoViewIfNeeded();
+  await page.locator(".chess svg.cline").first().evaluate((el) => el.scrollIntoView({ block: "center" })); // nicht unter der Leiste unten
   const box = await page.locator(".chess svg.cline").first().boundingBox();
   await page.mouse.click(box.x + box.width - 3, box.y + box.height / 2);
   assert.match(await page.locator(".chess .ccap").first().innerText(), /: 1220$/);

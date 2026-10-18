@@ -681,6 +681,10 @@ svg.spie { width: 100%; max-width: 420px; height: auto; display: block; margin: 
 svg.spie .pl { fill: none; stroke: var(--ink-2); stroke-width: 1; }
 svg.spie .pt { font-size: 13px; fill: var(--ink-2); font-variant-numeric: tabular-nums; }
 svg.spie .pk { font-weight: 700; fill: var(--ink); }
+.chess .chead { display: flex; justify-content: space-between; align-items: center; gap: 12px; }
+.chess .chead .atitle { margin: 0; }
+.chess .chead .gear { border: 0; background: var(--bg); width: 36px; height: 36px; border-radius: 50%; display: grid; place-items: center; color: var(--ink); }
+.chess .chead .gear svg { width: 20px; height: 20px; }
 .acard[data-qid] { -webkit-user-select: none; user-select: none; -webkit-touch-callout: none; }
 .tabbar .subnav { display: none; } /* nur in der Desktop-Ansicht sichtbar */
 /* ================= Desktop-Ansicht (Safari am Mac: Maus/Trackpad) =================
@@ -729,7 +733,7 @@ svg.spie .pk { font-weight: 700; fill: var(--ink); }
   .acard.places .bars { columns: 3 280px; column-gap: 32px; }
   .acard.places .barrow { break-inside: avoid; }
   .acard.chess { columns: 3 300px; column-gap: 36px; }
-  .acard.chess > .atitle, .acard.chess > .hero, .acard.chess > .wdl, .acard.chess > .wdl + p, .acard.chess > #chessgames, .acard.chess > p:last-child { column-span: all; }
+  .acard.chess > .chead, .acard.chess > .hero, .acard.chess > .wdl, .acard.chess > .wdl + p, .acard.chess > #chessgames, .acard.chess > p:last-child { column-span: all; }
   .acard.chess > #chessgames { max-width: 420px; }
   .acard.chess .csub { break-after: avoid; margin-top: 14px; }
   .acard.chess .chart, .acard.chess .ctable, .acard.chess .cavg, .acard.chess .legend, .acard.chess .crow { break-inside: avoid; }

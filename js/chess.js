@@ -278,7 +278,8 @@ function chessPanel(days) {
   const score = Math.round(((sum.w + sum.dr / 2) / sum.n) * 1000) / 10;
   const ord = (c) => { const i = Object.keys(CHESS_CLS).indexOf(c); return i < 0 ? 99 : i; };
   const cls = Object.keys(last).sort((a, b) => ord(a) - ord(b));
-  const eloRows = cls.map((c) => {
+  const sel = chessSelCls(cls, games);
+  const eloRows = cls.filter((c) => c === sel).map((c) => {
     const start = before[c] ?? first[c];
     const diff = last[c] - start;
     const best = st && st.cls[c] && st.cls[c].best;
@@ -295,14 +296,14 @@ function chessPanel(days) {
     return xs.length ? `<p class="small" style="margin:4px 0 0"><strong>${label}:</strong> ${xs.map(([k, v]) => `${esc(CHESS_HOW[k.split(":")[1]] || k.split(":")[1])} ${v}×`).join(", ")}</p>` : "";
   };
   return `<section class="panel acard chess">
-    <h2 class="atitle">Schach</h2>
+    <div class="chead"><h2 class="atitle">Schach</h2><button type="button" class="gear" id="chessgear" aria-label="Schach-Ansicht einstellen">${GEAR}</button></div>
     <p class="hero"><span class="big">${sum.n}</span><span class="muted">${sum.n === 1 ? "Partie" : "Partien"} an ${ds.length} von ${days.length} Tagen${sum.s ? ` · ${fmtDur(sum.s / 3600)} gespielt` : ""}</span></p>
     <div class="wdl" role="img" aria-label="${sum.w} Siege, ${sum.dr} Remis, ${sum.l} Niederlagen">
       <span class="w" style="flex:${sum.w}"></span><span class="d" style="flex:${sum.dr}"></span><span class="l" style="flex:${sum.l}"></span>
     </div>
     <p class="small" style="margin:6px 0 0">${sum.w} ${sum.w === 1 ? "Sieg" : "Siege"} (${pct(sum.w)}) · ${sum.dr} Remis (${pct(sum.dr)}) · ${sum.l} ${sum.l === 1 ? "Niederlage" : "Niederlagen"} (${pct(sum.l)}) · Punktequote ${fmtNum(score)} %</p>
-    ${eloRows ? `<h3 class="csub">Elo am Ende des Zeitraums</h3><div class="ctable">${eloRows}</div>` : ""}
-    ${prefs.chessElo !== false ? chessEloChart(days) : ""}
+    ${eloRows ? `<h3 class="csub">Elo ${esc(chessClsName(sel))} am Ende des Zeitraums</h3><div class="ctable">${eloRows}</div>` : ""}
+    ${prefs.chessElo !== false && sel ? chessEloChart(days, sel) : ""}
     <h3 class="csub">Im Durchschnitt</h3>
     <div class="cavg">
       ${live.length ? `<div><span class="muted small">Dauer je Partie</span><strong>${fmtSec(live.reduce((s, g) => s + g.dur, 0) / live.length)}</strong></div>` : ""}
@@ -316,7 +317,6 @@ function chessPanel(days) {
     ${howRows("w", "Siege")}${howRows("d", "Remis")}${howRows("l", "Niederlagen")}
     ${st && (st.tactics || st.rush) ? `<p class="small" style="margin:10px 0 0">${st.tactics ? `Taktik-Bestwert <strong>${st.tactics.r}</strong>` : ""}${st.tactics && st.rush ? " · " : ""}${st.rush ? `Puzzle-Rush-Rekord <strong>${st.rush}</strong>` : ""}</p>` : ""}
     <button type="button" class="btn ghost block" id="chessgames" style="margin-top:14px">Alle ${games.length} ${games.length === 1 ? "Partie" : "Partien"} im Zeitraum</button>
-    <p class="muted small" style="margin:10px 0 0">Daten von chess.com (${esc(chessData().user)}), aktualisiert ${settings.chess.last ? new Date(settings.chess.last).toLocaleDateString("de-DE") : "–"}.</p>
   </section>`;
 }
 
@@ -359,17 +359,50 @@ function chessLineChart(series, days, { fmt = (v) => String(Math.round(v)), avg 
     <p class="ccap small muted" aria-live="polite"></p>`;
 }
 // Elo je Bedenkzeit: Wert nach der letzten gewerteten Partie des Tages
-function chessEloChart(days) {
+// gewählter Spielmodus für die Elo (über das Zahnrad der Kachel), sonst der meistgespielte im Zeitraum
+function chessSelCls(cls, games) {
+  if (prefs.chessCls && cls.includes(prefs.chessCls)) return prefs.chessCls;
+  const n = {};
+  games.forEach((g) => { if (cls.includes(g.c)) n[g.c] = (n[g.c] || 0) + 1; });
+  return cls.slice().sort((a, b) => (n[b] || 0) - (n[a] || 0))[0] || null;
+}
+// Elo-Verlauf des gewählten Spielmodus, Optik wie die Verläufe der Fragen
+function chessEloChart(days, c) {
+  const all = chessDays();
+  const pts = days.filter((d) => all[d] && all[d].r[c]).map((d) => ({ d, v: all[d].r[c][0] }));
+  if (!pts.length) return "";
+  const a = pts.reduce((s, p) => s + p.v, 0) / pts.length;
+  return `<h3 class="csub">Elo im Verlauf</h3>${chessLineChart([{ name: "", pts }], days, { avg: a, label: `Elo ${chessClsName(c)} im Verlauf` })}`;
+}
+// Zahnrad der Schach-Kachel: Spielmodus für die Elo und welche Verläufe
+function openChessView(days) {
+  const dlg = $("#sheet");
   const all = chessDays();
   const ord = (c) => { const i = Object.keys(CHESS_CLS).indexOf(c); return i < 0 ? 99 : i; };
-  const cls = [...new Set(days.flatMap((d) => (all[d] ? Object.keys(all[d].r) : [])))].sort((a, b) => ord(a) - ord(b));
-  if (!cls.length) return "";
-  // je Bedenkzeit ein eigener Verlauf mit Durchschnitt, wie bei den Fragen
-  return `<h3 class="csub">Elo im Verlauf</h3>${cls.map((c) => {
-    const pts = days.filter((d) => all[d] && all[d].r[c]).map((d) => ({ d, v: all[d].r[c][0] }));
-    const a = pts.reduce((s, p) => s + p.v, 0) / pts.length;
-    return `<div class="celo-c">${cls.length > 1 ? `<p class="small" style="margin:8px 0 2px;font-weight:600">${esc(chessClsName(c))}</p>` : ""}${chessLineChart([{ name: "", pts }], days, { avg: a, label: `Elo ${chessClsName(c)} im Verlauf` })}</div>`;
-  }).join("")}`;
+  const cls = [...new Set(Object.values(all).flatMap((x) => Object.keys(x.r)))].sort((a, b) => ord(a) - ord(b));
+  const from = days[0], to = days[days.length - 1];
+  const games = chessGames().filter((g) => { const d = chessDate(g); return d >= from && d <= to; });
+  const draw = () => {
+    const sel = chessSelCls(cls, games);
+    dlg.innerHTML = `<div class="sheet-inner">
+      <div class="sheet-head"><span></span><h2>Schach</h2><button type="button" class="linkbtn" id="cvdone">Fertig</button></div>
+      <section class="sq">
+        <strong>Elo für</strong>
+        <div class="chips" style="margin-top:10px">${cls.map((c) => `<button type="button" class="chip" data-cls="${c}" aria-pressed="${c === sel}">${esc(chessClsName(c))}</button>`).join("")}</div>
+        <p class="muted small" style="margin:8px 0 0">Partien, Bilanz und Durchschnitte zählen immer alle Spielmodi.</p>
+      </section>
+      <section class="sq">
+        <label class="switch row" style="margin-top:0"><input type="checkbox" data-cv="chessElo" ${prefs.chessElo !== false ? "checked" : ""}><span>Elo über die Zeit</span></label>
+        <label class="switch row"><input type="checkbox" data-cv="chessAcc" ${prefs.chessAcc !== false ? "checked" : ""}><span>Genauigkeit über die Zeit</span></label>
+      </section>
+    </div>`;
+    $("#cvdone", dlg).addEventListener("click", () => dlg.close());
+    dlg.querySelectorAll("[data-cls]").forEach((b) => b.addEventListener("click", () => { prefs.chessCls = b.dataset.cls; savePrefs(); draw(); renderAnalysis(); }));
+    dlg.querySelectorAll("[data-cv]").forEach((i) => i.addEventListener("change", () => { prefs[i.dataset.cv] = i.checked; savePrefs(); renderAnalysis(); }));
+  };
+  draw();
+  if (!dlg.open) dlg.showModal();
+  document.activeElement?.blur();
 }
 // Genauigkeit: Ø der analysierten Partien je Tag
 function chessAccChart(days) {
