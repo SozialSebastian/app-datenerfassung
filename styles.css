@@ -686,6 +686,12 @@ svg.spie .pv { font-size: 12px; fill: var(--ink-2); font-variant-numeric: tabula
 .chess .chead .atitle { margin: 0; }
 .chess .chead .gear { border: 0; background: var(--bg); width: 36px; height: 36px; border-radius: 50%; display: grid; place-items: center; color: var(--ink); }
 .chess .chead .gear svg { width: 20px; height: 20px; }
+.iok { display: flex; gap: 12px; align-items: flex-start; margin: 0; }
+.ibadge { flex: 0 0 26px; height: 26px; border-radius: 50%; display: grid; place-items: center; font-weight: 800; font-size: 14px; color: #fff; }
+.ibadge.ok { background: var(--s6); } .ibadge.warn { background: var(--hold); }
+.ilist { list-style: none; margin: 0; padding: 0; display: grid; gap: 14px; }
+.itop { display: flex; gap: 10px; align-items: center; }
+.ilist p { padding-left: 36px; }
 .acard[data-qid] { -webkit-user-select: none; user-select: none; -webkit-touch-callout: none; }
 .tabbar .subnav { display: none; } /* nur in der Desktop-Ansicht sichtbar */
 /* ================= Desktop-Ansicht (Safari am Mac: Maus/Trackpad) =================

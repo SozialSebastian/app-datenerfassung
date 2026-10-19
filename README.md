@@ -27,6 +27,7 @@ Web-App (PWA) fürs iPhone: eigene Fragen anlegen, jeden Tag beantworten, auswer
 | `js/chess.js` | Schnittstelle chess.com |
 | `js/notion.js` | Schnittstelle Notion (Rezepte) |
 | `js/questions.js`, `js/friends.js`, `js/talks.js` | Fragen-Editor, Freunde, Vertiefungsgespräche |
+| `js/intol.js` | Vorlage Unverträglichkeiten und ihre Auswertung |
 | `js/service.js`, `js/settings.js`, `js/data.js` | Mosaik-Dienst, Einstellungen, Excel/Sicherung |
 | `js/start.js` | Start, Updates, Links aus Mitteilungen |
 | `sw.js` | Offline-Cache und Mitteilungen |

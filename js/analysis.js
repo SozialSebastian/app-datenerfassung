@@ -79,7 +79,7 @@ const GEAR = `<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12
 
 function analysisQuestions(days) {
   // Schach-Werte stehen gebündelt in der Schach-Kachel, nicht als eigene Karten
-  return ordered().map((o) => o.q).filter((q) => q.source !== "chess" && (!q.archived || days.some((d) => isAnswered((state.answers[d] || {})[q.id]))));
+  return ordered().map((o) => o.q).filter((q) => q.source !== "chess" && !isIntolQ(q) && (!q.archived || days.some((d) => isAnswered((state.answers[d] || {})[q.id]))));
 }
 
 function renderAnalysis() {
@@ -103,6 +103,7 @@ function renderAnalysis() {
     ${all.length && prefs.trends !== false ? trendsPanel(days) : ""}
     ${all.length && prefs.goals !== false ? goalsPanel() : ""}
     ${prefs.sport !== false && sportQs().length ? sportPanel(days) : ""}
+    ${prefs.intol !== false ? intolPanel() : ""}
     ${prefs.places !== false && (Object.keys(state.places || {}).length || (settings.places && settings.places.on)) ? placesPanel(days) : ""}
     ${prefs.chess !== false && (settings.chess.on || Object.keys(chessData().months).length) ? chessPanel(days) : ""}
     ${usedThemes.length > 1 ? `<div class="tfilter" role="group" aria-label="Thema">
@@ -505,6 +506,12 @@ function openAnalysisSettings(onlyQid) {
         </div>
         <p class="muted small" style="margin:6px 0 0">Stand deiner Ziele. Festlegen unter „Tag“ über das Zahnrad.</p>
       </section>
+      ${intolQ("intol-food") ? `<section class="sq">
+        <div class="sq-head"><strong>Unverträglichkeiten</strong>
+          <label class="switch"><input type="checkbox" data-f="intol" ${prefs.intol !== false ? "checked" : ""}><span>Anzeigen</span></label>
+        </div>
+        <p class="muted small" style="margin:6px 0 0">Ob nach bestimmten Lebensmitteln auffällig oft Bauchprobleme kamen (alle Daten).</p>
+      </section>` : ""}
       ${sportQs().length ? `<section class="sq">
         <div class="sq-head"><strong>Sport</strong>
           <label class="switch"><input type="checkbox" data-f="sport" ${prefs.sport !== false ? "checked" : ""}><span>Anzeigen</span></label>
@@ -552,6 +559,7 @@ function openAnalysisSettings(onlyQid) {
       else if (i.dataset.f === "goals") { prefs.goals = i.checked; savePrefs(); }
       else if (i.dataset.f === "places") { prefs.places = i.checked; savePrefs(); }
       else if (i.dataset.f === "sport") { prefs.sport = i.checked; savePrefs(); }
+      else if (i.dataset.f === "intol") { prefs.intol = i.checked; savePrefs(); }
       else if (i.dataset.f === "chess") { prefs.chess = i.checked; savePrefs(); }
       else if (i.dataset.f === "chessElo" || i.dataset.f === "chessAcc") { prefs[i.dataset.f] = i.checked; savePrefs(); }
       else if (i.dataset.f === "show") setQ(i.dataset.q, { hidden: !i.checked });

@@ -774,6 +774,37 @@ test("Trends: ruhig nach Art gruppiert, höchstens 5, Arten über das Zahnrad ab
   await ctx.close();
 });
 
+test("Vorlage „Unverträglichkeiten“: eine Kachel mit Verdacht bzw. keiner", async () => {
+  const { page, ctx, errors } = await open({ data: { version: 1, lastBackup: null, answers: {}, questions: [] } });
+  await page.click("#firstq");
+  await page.click('[data-tpl="intol"]');
+  await page.waitForSelector("#savebtn"); await page.click("#savebtn");
+  const ids = await page.evaluate(() => Object.fromEntries(state.questions.map((q) => [q.template, q.id])));
+  assert.ok(ids["intol-food"] && ids["intol-belly"] && ids["intol-symptoms"] && ids["intol-strength"]);
+  // zu wenig Daten
+  await page.click('[data-tab="analysis"]');
+  assert.match(await page.locator(".intol").innerText(), /von mind\. 14 Tagen/);
+  // 30 Tage: Milch an jedem 3. Tag, danach meist Bauchprobleme; sonst selten
+  await page.evaluate((ids) => {
+    for (let i = 0; i < 30; i++) {
+      const d = addDays(todayIso(), -i - 1), milk = i % 3 === 0;
+      const food = milk ? ["Milch, Joghurt, Quark, Sahne", "Weizen (Brot, Nudeln, Gebäck)"] : ["Weizen (Brot, Nudeln, Gebäck)"];
+      state.answers[d] = { [ids["intol-food"]]: food, [ids["intol-belly"]]: milk && i !== 3 ? "Ja" : i === 10 ? "Ja" : "Nein" };
+    }
+    save(); renderAnalysis();
+  }, ids);
+  const txt = await page.locator(".intol").innerText();
+  assert.match(txt, /Verdacht: Laktose/);
+  assert.doesNotMatch(txt, /Gluten/); // Weizen gab es jeden Tag → kein Vergleich möglich
+  assert.equal(await page.locator('.acard[data-qid]').count(), 0); // keine einzelnen Karten der Vorlage
+  await page.locator(".intol").screenshot({ path: path.join(shots, "unvertraeglichkeit.png") });
+  // ohne Auffälligkeit
+  await page.evaluate((ids) => { for (const d of Object.keys(state.answers)) state.answers[d][ids["intol-belly"]] = "Nein"; save(); renderAnalysis(); }, ids);
+  assert.match(await page.locator(".intol").innerText(), /Keine Unverträglichkeit erkannt/);
+  assert.deepEqual(errors, []);
+  await ctx.close();
+});
+
 test("Fragen per Gedrückthalten verschieben", async () => {
   const data = { version: 1, lastBackup: null, answers: {}, questions: ["A", "B", "C"].map((x) => yesNo(x.toLowerCase(), x + "?")) };
   const { page, ctx, errors } = await open({ data });

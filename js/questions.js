@@ -18,6 +18,8 @@ function withThemeHeads(list, keyOf, render, head) {
 
 /* ---------- Neue Frage: eigene oder aus Vorlage ---------- */
 const TEMPLATES = [
+  { k: "intol", icon: "🩺", title: "Unverträglichkeiten", desc: "„Was davon hast du heute gegessen oder getrunken?“ (Laktose, Fruktose, Histamin, Gluten, FODMAP & Co.) und „Hattest du heute Bauchprobleme?“ mit Beschwerden und Stärke. Die Analyse zeigt in einer Kachel, ob ein Verdacht erkannt wurde.",
+    make: () => intolMake() },
   { k: "recipes", icon: "🍳", title: "Gekocht (Rezepte aus Notion)", desc: "„Was hast du heute gekocht?“ mit deinen Rezepten von der Notion-Seite als Antworten, bleibt automatisch aktuell. Die Analyse zeigt, was du wie oft gekocht hast.",
     needs: async () => {
       if (!recipeList().length) await syncRecipes(true);
@@ -45,7 +47,7 @@ function openNewQuestion() {
   dlg.querySelectorAll("[data-tpl]").forEach((b) => b.addEventListener("click", async () => {
     const t = TEMPLATES.find((x) => x.k === b.dataset.tpl);
     if (t.needs && !(await t.needs())) return;
-    if (state.questions.some((q) => q.template === t.k && !q.archived) && !confirm(`Die Vorlage „${t.title}“ ist schon angelegt. Trotzdem noch einmal anlegen?`)) return;
+    if (state.questions.some((q) => (q.template === t.k || String(q.template || "").startsWith(t.k + "-")) && !q.archived) && !confirm(`Die Vorlage „${t.title}“ ist schon angelegt. Trotzdem noch einmal anlegen?`)) return;
     const qs = t.make();
     state.questions.push(...qs);
     save(); render();
