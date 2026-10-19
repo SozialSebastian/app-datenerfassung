@@ -105,22 +105,20 @@ function wireTalks() {
 function openTalkNew() {
   const dlg = $("#sheet");
   const fr = friendsOrdered();
+  if (!fr.length) return toast("Leg zuerst Freunde an – Gespräche gibt es nur mit hinterlegten Freunden");
   dlg.innerHTML = `<div class="sheet-inner">
     <div class="sheet-head"><button type="button" class="linkbtn" id="tncancel">Abbrechen</button><h2>Neues Gespräch</h2><span></span></div>
     <label class="field">Mit wem?
-      <select id="tnf">${fr.map((x) => `<option value="${x.id}">${esc(x.name)}</option>`).join("")}<option value="">Andere Person …</option></select>
+      <select id="tnf">${fr.map((x) => `<option value="${x.id}">${esc(x.name)}</option>`).join("")}</select>
     </label>
-    <label class="field" id="tnnamef" ${fr.length ? "hidden" : ""}>Name<input id="tnname" type="text" autocomplete="off"></label>
     <label class="field">Datum<input id="tndate" type="date" value="${todayIso()}" max="${todayIso()}"></label>
     <button class="btn block hold-btn" id="tngo">Gespräch beginnen</button>
   </div>`;
   const sel = $("#tnf", dlg);
-  sel.addEventListener("change", () => { $("#tnnamef", dlg).hidden = !!sel.value; });
   $("#tncancel", dlg).addEventListener("click", () => dlg.close());
   $("#tngo", dlg).addEventListener("click", () => {
-    const fid = sel.value, name = fid ? "" : $("#tnname", dlg).value.trim();
-    if (!fid && !name) return toast("Bitte einen Namen eintragen");
-    const t = { id: uid(), fid: fid || null, name: fid ? (fr.find((x) => x.id === fid) || {}).name : name, date: $("#tndate", dlg).value || todayIso(), created: Date.now(), done: false, form: clone(talkForm()), answers: {} };
+    const fid = sel.value;
+    const t = { id: uid(), fid, name: (fr.find((x) => x.id === fid) || {}).name, date: $("#tndate", dlg).value || todayIso(), created: Date.now(), done: false, form: clone(talkForm()), answers: {} };
     talks().push(t); save();
     openTalk(t.id);
   });
