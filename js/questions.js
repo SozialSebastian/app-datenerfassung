@@ -206,6 +206,14 @@ function descendants(id) {
   return out;
 }
 
+// Editor: eine Zeile je Skalen-Zahl für die (optionale) Beschreibung
+function scaleLabelRows(d) {
+  if (!(Number.isInteger(d.min) && Number.isInteger(d.max) && d.max > d.min && d.max - d.min <= 10)) return "";
+  const mid = Math.round((d.min + d.max) / 2);
+  return `<p class="small" style="margin:4px 0 6px"><strong>Beschreibung je Zahl</strong> <span class="muted">(optional)</span></p>
+    <div class="slabels">${Array.from({ length: d.max - d.min + 1 }, (_, i) => d.min + i).map((s) =>
+      `<label class="slab"><span class="slnum">${s}</span><input data-slab="${s}" value="${esc(scaleLabel(d, s))}" placeholder="${s === d.min ? "z. B. schlecht" : s === d.max ? "z. B. super" : s === mid ? "z. B. okay" : ""}" autocomplete="off"></label>`).join("")}</div>`;
+}
 function openEditor(id) {
   const existing = id ? qById(id) : null;
   const used = existing ? answerCount(existing.id) : 0;
@@ -254,10 +262,7 @@ function openEditor(id) {
           <label class="field">Von<input type="number" inputmode="numeric" id="smin" value="${draft.min}"></label>
           <label class="field">Bis<input type="number" inputmode="numeric" id="smax" value="${draft.max}"></label>
         </div>
-        <div class="row2">
-          <label class="field">Text links <input id="sminl" value="${esc(draft.minLabel)}" placeholder="z. B. schlecht"></label>
-          <label class="field">Text rechts <input id="smaxl" value="${esc(draft.maxLabel)}" placeholder="z. B. super"></label>
-        </div>
+        <div id="slabwrap">${scaleLabelRows(draft)}</div>
         ${betterSeg([["high", `${draft.max} ist gut`], ["low", `${draft.min} ist gut`], ["none", "Neutral"]])}`;
     } else {
       const UNITS = ["Stunden", "Minuten", "km", "kg", "€", "Liter", "Gläser", "Seiten", "Mal"];
@@ -333,7 +338,11 @@ function openEditor(id) {
       }
       dlg.querySelectorAll("[data-opt]").forEach((inp) => (draft.options[+inp.dataset.opt] = inp.value));
       if ($("#multi", dlg)) draft.multi = $("#multi", dlg).checked;
-      if ($("#smin", dlg)) { draft.min = parseInt($("#smin", dlg).value, 10); draft.max = parseInt($("#smax", dlg).value, 10); draft.minLabel = $("#sminl", dlg).value; draft.maxLabel = $("#smaxl", dlg).value; }
+      if ($("#smin", dlg)) { draft.min = parseInt($("#smin", dlg).value, 10); draft.max = parseInt($("#smax", dlg).value, 10); 
+        const labs = {};
+        dlg.querySelectorAll("[data-slab]").forEach((inp) => { if (inp.value.trim()) labs[inp.dataset.slab] = inp.value.trim(); });
+        if (dlg.querySelector("[data-slab]")) { draft.labels = labs; draft.minLabel = ""; draft.maxLabel = ""; }
+      }
       if ($("#unit", dlg)) {
         const u = $("#unit", dlg).value.trim();
         if (u) { draft.unit = u; draft.format = null; } else if (!draft.format && !$(".unitchips [aria-pressed=true]", dlg)) draft.unit = "";
@@ -348,6 +357,13 @@ function openEditor(id) {
     dlg.querySelectorAll("[data-theme]").forEach((b) => b.addEventListener("click", () => { sync(); draft.theme = b.dataset.theme; draw(); }));
     dlg.querySelectorAll("[data-fmt]").forEach((b) => b.addEventListener("click", () => { sync(); draft.format = draft.format === b.dataset.fmt ? null : b.dataset.fmt; draft.unit = ""; if (!draft.better || draft.better === "none") draft.better = draft.format === "clock" ? "none" : draft.better; draw(); }));
     dlg.querySelectorAll("[data-unit]").forEach((b) => b.addEventListener("click", () => { sync(); const u = b.dataset.unit; draft.unit = draft.unit === u && !draft.format ? "" : u; draft.format = null; draw(); }));
+    // Von/Bis geändert: nur die Zeilen für die Beschreibungen neu aufbauen (Fokus bleibt im Feld)
+    ["#smin", "#smax"].forEach((s) => $(s, dlg)?.addEventListener("input", () => {
+      sync();
+      $("#slabwrap", dlg).innerHTML = scaleLabelRows(draft);
+      const bb = dlg.querySelectorAll("[data-better]");
+      if (bb.length === 3 && Number.isInteger(draft.min) && Number.isInteger(draft.max)) { bb[0].textContent = `${draft.max} ist gut`; bb[1].textContent = `${draft.min} ist gut`; }
+    }));
     dlg.querySelectorAll("[data-better]").forEach((b) => b.addEventListener("click", () => { sync(); draft.better = b.dataset.better; draw(); }));
     $("#fsync", dlg)?.addEventListener("change", (e) => {
       sync();
@@ -425,6 +441,8 @@ function openEditor(id) {
       if (draft.type === "scale") {
         if (!Number.isInteger(draft.min) || !Number.isInteger(draft.max) || draft.max <= draft.min) return toast("Skala: „Bis“ muss größer als „Von“ sein");
         if (draft.max - draft.min > 10) return toast("Skala: höchstens 11 Stufen");
+        draft.labels = Object.fromEntries(Object.entries(draft.labels || {}).filter(([k, v]) => +k >= draft.min && +k <= draft.max && v));
+        draft.minLabel = ""; draft.maxLabel = "";
       }
       if (draft.cond && !draft.cond.values.length) return toast("Wähle mindestens eine Antwort, bei der die Folgefrage kommt");
       if (draft.healthKey && state.questions.some((q) => q.id !== draft.id && q.healthKey === draft.healthKey)) return toast("Dieses Health-Kürzel ist schon vergeben");

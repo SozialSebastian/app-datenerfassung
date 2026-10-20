@@ -53,7 +53,7 @@ function buildWorkbook() {
   for (const q of qs) {
     qrows.push([
       q.text, themeById(themeOf(q)).l, typeLabel[q.type],
-      q.type === "choice" ? q.options.join(" / ") : q.type === "scale" ? `${q.min}–${q.max}${q.minLabel || q.maxLabel ? ` (${q.minLabel || ""} … ${q.maxLabel || ""})` : ""}` : "",
+      q.type === "choice" ? q.options.join(" / ") : q.type === "scale" ? `${q.min}–${q.max}${hasScaleLabels(q) ? ` (${Array.from({ length: q.max - q.min + 1 }, (_, i) => q.min + i).filter((s) => scaleLabel(q, s)).map((s) => `${s} = ${scaleLabel(q, s)}`).join(", ")})` : ""}` : "",
       q.multi ? "ja" : "", condText(q), q.unit || "", q.healthKey || "", q.archived ? "ausgeblendet" : "aktiv", answerCount(q.id)
     ]);
   }

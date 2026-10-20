@@ -175,7 +175,7 @@ function distribution(q, vals) {
   if (q.type === "scale") {
     return Array.from({ length: q.max - q.min + 1 }, (_, i) => q.min + i).map((s) => ({
       key: String(s),
-      label: `${s}${s === q.min && q.minLabel ? " · " + q.minLabel : ""}${s === q.max && q.maxLabel ? " · " + q.maxLabel : ""}`,
+      label: `${s}${scaleLabel(q, s) ? " · " + scaleLabel(q, s) : ""}`,
       c: vals.filter((x) => x.v === s).length
     }));
   }

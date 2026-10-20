@@ -111,6 +111,19 @@ p { margin: 0 0 12px; }
 .scale { display: flex; gap: 6px; }
 .scale .chip { flex: 1; padding: 9px 0; min-width: 0; border-radius: var(--r-sm); }
 .scale-labels { display: flex; justify-content: space-between; font-size: 13px; color: var(--ink-2); margin-top: 6px; }
+.scale.labeled .chip { display: flex; flex-direction: column; align-items: center; gap: 2px; padding: 8px 2px; }
+.scale .sn { font-weight: 600; }
+.scale .sl { font-size: 11px; line-height: 1.2; font-weight: 400; opacity: .8; overflow-wrap: anywhere; hyphens: auto; min-height: 1.2em; }
+.scale.rows { flex-direction: column; gap: 6px; }
+.scale.rows .chip { flex-direction: row; justify-content: flex-start; gap: 10px; padding: 10px 14px; text-align: left; }
+.scale.rows .sn { min-width: 1.6em; }
+.scale.rows .sl { font-size: 14px; }
+.quiz-q .scale.labeled .chip { padding: 12px 2px; }
+.quiz-q .scale.rows .chip { padding: 12px 14px; }
+.slabels { display: flex; flex-direction: column; gap: 6px; margin-bottom: 14px; }
+.slab { display: flex; align-items: center; gap: 10px; }
+.slab .slnum { flex: 0 0 34px; height: 34px; border-radius: 50%; display: grid; place-items: center; background: var(--line); font-weight: 600; font-size: 15px; }
+.slab input { flex: 1; min-width: 0; padding: 10px 12px; border-radius: var(--r-sm); border: 1.5px solid var(--line); background: var(--surface); font-size: 17px; }
 
 .numrow { display: flex; align-items: center; gap: 10px; }
 .numrow input {

@@ -41,7 +41,7 @@ function intolMake() {
   const food = { ...base, id: uid(), text: "Was davon hast du heute gegessen oder getrunken?", type: "choice", multi: true, options: [...INTOL_FOODS.map(([o]) => o), INTOL_NONE], theme: "food", template: "intol-food" };
   const belly = { ...base, id: uid(), text: "Hattest du heute Bauchprobleme?", type: "choice", options: ["Ja", "Nein"], theme: "health", template: "intol-belly" };
   const sym = { ...base, id: uid(), text: "Welche Beschwerden?", type: "choice", multi: true, options: ["Blähungen", "Bauchschmerzen", "Durchfall", "Übelkeit", "Sodbrennen", "Verstopfung", "Kopfschmerzen", "Hautreaktion"], cond: { qid: belly.id, values: ["Ja"] }, template: "intol-symptoms" };
-  const str = { ...base, id: uid(), text: "Wie stark?", type: "scale", minLabel: "leicht", maxLabel: "heftig", cond: { qid: belly.id, values: ["Ja"] }, template: "intol-strength" };
+  const str = { ...base, id: uid(), text: "Wie stark?", type: "scale", labels: { 1: "leicht", 2: "spürbar", 3: "mittel", 4: "stark", 5: "heftig" }, cond: { qid: belly.id, values: ["Ja"] }, template: "intol-strength" };
   return [food, belly, sym, str];
 }
 

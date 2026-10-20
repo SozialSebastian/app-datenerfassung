@@ -22,9 +22,14 @@ let state = load();
 for (const q of state.questions) if (!q.theme && !q.cond) q.theme = guessTheme(q);
 for (const q of state.questions) {
   if (!q.format && q.healthKey === "schlaf") { q.format = "duration"; if (q.unit === "Stunden") q.unit = ""; }
+  // Skala: früher nur Text links/rechts → jetzt Beschreibung je Zahl
+  if (q.type === "scale" && !q.labels && (q.minLabel || q.maxLabel)) { q.labels = {}; if (q.minLabel) q.labels[q.min] = q.minLabel; if (q.maxLabel) q.labels[q.max] = q.maxLabel; }
   if (q.healthKey === "schlafenszeit" && q.text === "Schlafenszeit") q.text = "Einschlafzeit"; // eindeutiger als „Schlafenszeit“
   if (!q.format && (q.healthKey === "schlafenszeit" || q.healthKey === "aufwachzeit")) q.format = "clock";
 }
+// Beschreibung einer Skalen-Zahl (z. B. 3 → „gut“), sonst ""
+const scaleLabel = (q, s) => String(((q.labels || {})[s]) ?? (s === q.min ? q.minLabel : s === q.max ? q.maxLabel : "") ?? "").trim();
+const hasScaleLabels = (q) => { for (let i = q.min; i <= q.max; i++) if (scaleLabel(q, i)) return true; return false; };
 function save() {
   localStorage.setItem(KEY, JSON.stringify(state));
 }
@@ -177,7 +182,7 @@ function betterDir(q) {
 }
 function describe(q) {
   if (q.type === "choice") return q.options.join(" / ") + (q.multi ? " (mehrere)" : "");
-  if (q.type === "scale") return `Skala ${q.min}–${q.max}`;
+  if (q.type === "scale") return `Skala ${q.min}–${q.max}${hasScaleLabels(q) ? ` (${[q.min, q.max].map((s) => scaleLabel(q, s)).filter(Boolean).join(" … ")})` : ""}`;
   return `Zahl${q.unit ? " in " + q.unit : ""}`;
 }
 function condText(q) {
@@ -242,11 +247,14 @@ function answerInput(q, val) {
       ${q.multi ? `<p class="q-hint">Mehrere möglich</p>` : ""}`;
   }
   if (q.type === "scale") {
+    // mit Beschreibungen: bis 6 Stufen Text unter der Zahl, sonst untereinander („7 · gut“)
+    const lab = hasScaleLabels(q), rows = lab && q.max - q.min > 5;
     let btns = "";
-    for (let i = q.min; i <= q.max; i++) btns += `<button class="chip" data-val="${i}" aria-pressed="${val === i}">${i}</button>`;
-    let s = `<div class="scale">${btns}</div>`;
-    if (q.minLabel || q.maxLabel) s += `<div class="scale-labels"><span>${esc(q.minLabel)}</span><span>${esc(q.maxLabel)}</span></div>`;
-    return s;
+    for (let i = q.min; i <= q.max; i++) {
+      const l = scaleLabel(q, i);
+      btns += `<button class="chip" data-val="${i}" aria-pressed="${val === i}"><span class="sn">${i}</span>${lab ? `<span class="sl">${esc(l)}</span>` : ""}</button>`;
+    }
+    return `<div class="scale${lab ? " labeled" : ""}${rows ? " rows" : ""}">${btns}</div>`;
   }
   return `<div class="numrow">
       <input type="text" inputmode="${q.format ? "text" : "decimal"}" autocomplete="off" value="${esc(q.format ? fmtQ(q, val) : fmtNum(val))}" aria-label="${esc(q.text)}" placeholder="${q.format === "clock" ? "23:30" : q.format === "duration" ? "7:30" : "–"}">

@@ -151,6 +151,27 @@ test("Zeitformate: Eingabe und Anzeige", async () => {
   await ctx.close();
 });
 
+test("Skala: Beschreibung je Zahl im Editor, in der Abfrage und alte Texte links/rechts übernommen", async () => {
+  const data = { questions: [{ id: "sk", text: "Wie war der Tag?", type: "scale", options: [], multi: false, min: 1, max: 5, minLabel: "mies", maxLabel: "super", unit: "", healthKey: "", archived: false, cond: null }], answers: {} };
+  const { page, ctx, errors } = await open({ data });
+  assert.deepEqual(await page.evaluate(() => state.questions[0].labels), { 1: "mies", 5: "super" });
+  await page.evaluate(() => openEditor("sk"));
+  assert.equal(await page.locator("[data-slab]").count(), 5);
+  await page.fill('[data-slab="3"]', "gut");
+  await page.fill("#smax", "7");
+  assert.equal(await page.locator("[data-slab]").count(), 7);
+  assert.equal(await page.inputValue('[data-slab="3"]'), "gut");
+  await page.click("#savebtn");
+  const q = await page.evaluate(() => state.questions[0]);
+  assert.equal(q.max, 7);
+  assert.equal(q.labels[3], "gut");
+  assert.equal(q.labels[1], "mies");
+  await page.evaluate(() => { document.querySelector("#sheet")?.open && document.querySelector("#sheet").close(); tab = "day"; render(); });
+  assert.ok(await page.locator(".scale.rows .chip", { hasText: "gut" }).count() >= 1);
+  assert.deepEqual(errors, []);
+  await ctx.close();
+});
+
 test("Schlaf aus Health: Wachphasen abgezogen, doppelte Messungen einmal, Einschlaf- und Aufwachzeit", async () => {
   const { listEntries } = await import("../worker/src/index.js");
   const t = (x) => `2026-10-${x}:00+02:00`;
