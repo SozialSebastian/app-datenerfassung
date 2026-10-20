@@ -195,6 +195,8 @@ test("Ziele mit Startdatum: Zeiträume ab dem gewählten Tag", async () => {
     return { active: goalItems().map((g) => g.id), cur: goalCur(g2).start, c: evalGoal(g2, goalCur(g2)).c };
   });
   assert.deepEqual(out.active, ["g2"]);
+  // Rückblick: Zeiträume vor dem Startdatum zählen nicht
+  assert.equal(await page.evaluate(() => goalHistory().length), 0);
   assert.equal(out.c, 1);
   // Formular: Startdatum wählen
   await page.evaluate(() => openGoals());

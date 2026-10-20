@@ -6,6 +6,7 @@
 // { period (Vorgabe für neue Ziele), items: [Ziel], seen: { week|month|year: zuletzt gemeldeter Zeitraum }, seenFails }
 // Ziel: { id, qid, kind: "count"|"days"|"avg"|"sum", key, op: "min"|"max", n, cmp: "ge"|"le", val,
 //         period: "week"|"month"|"year", repeat: true|false, once: Zeitraum-Schlüssel bei einmaligen Zielen,
+//         created: ab wann das Ziel zählt (Startdatum, bei älteren Zielen Tag der Umstellung) – Rückblick erst ab dann,
 //         start: Startdatum (optional) – Zeiträume laufen ab diesem Tag, z. B. Woche Do–Mi, Monat 15.–14. }
 const GOAL_PERIODS = [["week", "Woche"], ["month", "Monat"], ["year", "Jahr"]];
 const PER_WORD = { week: "pro Woche", month: "im Monat", year: "im Jahr" };
@@ -21,6 +22,8 @@ function G() {
   if (!Array.isArray(g.items)) g.items = [];
   // ältere Ziele hatten einen gemeinsamen Zeitraum → fest übernehmen
   g.items.forEach((x) => { if (!x.period) x.period = g.period; });
+  // ältere Ziele ohne Anlegedatum: ab heute (der Rückblick bewertet keine Zeiträume vor dem Ziel)
+  if (g.items.some((x) => !x.created)) { g.items.forEach((x) => { if (!x.created) x.created = todayIso(); }); save(); }
   if (!Array.isArray(g.seenFails)) g.seenFails = [];
   if (!g.seen || typeof g.seen !== "object") { g.seen = {}; if (g.seenPeriod) g.seen[g.seenPeriod.split(":")[0]] = g.seenPeriod; }
   return g;
@@ -36,7 +39,7 @@ const goalGroup = (g) => (g.start ? `${gp(g)}|${goalAnchor(gp(g), g.start)}` : g
 // aktive Ziele mit aktiver Frage
 const goalItems = () => G().items.filter((x) => { const q = qById(x.qid); return q && !q.archived && goalActive(x); });
 // Gilt ein Ziel in einem (früheren) Zeitraum?
-const goalIn = (g, per) => gp(g) === per.kind && (!g.start || per.start >= g.start) && (g.repeat !== false || g.once === per.key);
+const goalIn = (g, per) => gp(g) === per.kind && (!g.start || per.start >= g.start) && (!g.created || per.end >= g.created) && (g.repeat !== false || g.once === per.key);
 const dayCount = (a, b) => Math.round((parseIso(b) - parseIso(a)) / 864e5) + 1;
 const dm = (s) => { const d = parseIso(s); return `${d.getDate()}.${d.getMonth() + 1}.`; };
 
@@ -445,8 +448,10 @@ function openGoals() {
       const start = !g.autoStart && g.start ? g.start : null;
       const fp = periodOf(g.period, start && start > todayIso() ? start : todayIso(), start);
       const timing = { period: g.period, repeat: g.repeat !== false, ...(start ? { start } : {}), ...(g.repeat === false ? { once: fp.key } : {}) };
-      const clean = q.type === "choice" ? { id: g.id, qid: g.qid, kind: "count", key: g.key, op: g.op, n: g.n, ...timing }
-        : { id: g.id, qid: g.qid, kind: g.kind, cmp: g.cmp, val: g.val, ...(g.kind === "days" ? { n: g.n } : {}), ...timing };
+      // Rückblick zählt ab dem Startdatum (auch wenn es nur der Beginn der laufenden Woche/des Monats ist)
+      const created = g.start || g.created || todayIso();
+      const clean = q.type === "choice" ? { id: g.id, qid: g.qid, kind: "count", key: g.key, op: g.op, n: g.n, created, ...timing }
+        : { id: g.id, qid: g.qid, kind: g.kind, cmp: g.cmp, val: g.val, ...(g.kind === "days" ? { n: g.n } : {}), created, ...timing };
       gs.period = g.period; // Vorgabe für das nächste neue Ziel
       const grp = goalGroup(timing);
       if (!gs.seen[grp]) gs.seen[grp] = prevPeriod(goalPer(timing, start && start > todayIso() ? start : todayIso())).key;
