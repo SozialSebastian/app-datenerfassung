@@ -5,7 +5,8 @@
 // Gespeichert in state.goals (mit in der Sicherung):
 // { period (Vorgabe für neue Ziele), items: [Ziel], seen: { week|month|year: zuletzt gemeldeter Zeitraum }, seenFails }
 // Ziel: { id, qid, kind: "count"|"days"|"avg"|"sum", key, op: "min"|"max", n, cmp: "ge"|"le", val,
-//         period: "week"|"month"|"year", repeat: true|false, once: Zeitraum-Schlüssel bei einmaligen Zielen }
+//         period: "week"|"month"|"year", repeat: true|false, once: Zeitraum-Schlüssel bei einmaligen Zielen,
+//         start: Startdatum (optional) – Zeiträume laufen ab diesem Tag, z. B. Woche Do–Mi, Monat 15.–14. }
 const GOAL_PERIODS = [["week", "Woche"], ["month", "Monat"], ["year", "Jahr"]];
 const PER_WORD = { week: "pro Woche", month: "im Monat", year: "im Jahr" };
 const THIS_WORD = { week: "diese Woche", month: "diesen Monat", year: "dieses Jahr" };
@@ -25,17 +26,55 @@ function G() {
   return g;
 }
 const gp = (g) => g.period || G().period; // Zeitraum eines Ziels (ältere Ziele: gemeinsamer Zeitraum)
-const goalCur = (g) => periodOf(gp(g), todayIso());
-const goalActive = (g) => g.repeat !== false || g.once === goalCur(g).key; // einmalige Ziele nur in ihrem Zeitraum
+const goalPer = (g, d) => periodOf(gp(g), d, g.start); // Zeitraum eines Ziels, der den Tag d enthält
+const goalCur = (g) => goalPer(g, todayIso());
+const goalStarted = (g) => !g.start || g.start <= todayIso();
+// einmalige Ziele nur in ihrem Zeitraum; Ziele mit Startdatum erst ab diesem Tag
+const goalActive = (g) => goalStarted(g) && (g.repeat !== false || g.once === goalCur(g).key);
+// Gruppe für Rückblick und Meldungen: Zeitraum-Art plus Startdatum (gleiche Zeiträume)
+const goalGroup = (g) => (g.start ? `${gp(g)}|${goalAnchor(gp(g), g.start)}` : gp(g));
 // aktive Ziele mit aktiver Frage
 const goalItems = () => G().items.filter((x) => { const q = qById(x.qid); return q && !q.archived && goalActive(x); });
 // Gilt ein Ziel in einem (früheren) Zeitraum?
-const goalIn = (g, per) => gp(g) === per.kind && (g.repeat !== false || g.once === per.key);
+const goalIn = (g, per) => gp(g) === per.kind && (!g.start || per.start >= g.start) && (g.repeat !== false || g.once === per.key);
 const dayCount = (a, b) => Math.round((parseIso(b) - parseIso(a)) / 864e5) + 1;
 const dm = (s) => { const d = parseIso(s); return `${d.getDate()}.${d.getMonth() + 1}.`; };
 
-// Zeitraum (Kalenderwoche ab Montag, Kalendermonat, Kalenderjahr), der den Tag d enthält
-function periodOf(kind, d) {
+const monthLen = (y, m) => new Date(y, m + 1, 0).getDate(); // m: 0–11
+// Startdatum auf das Wesentliche kürzen: Woche → Wochentag, Monat → Tag im Monat, Jahr → Monat und Tag
+function goalAnchor(kind, a) {
+  if (kind === "week") return "w" + parseIso(a).getDay();
+  if (kind === "month") return "m" + a.slice(8);
+  return "y" + a.slice(5);
+}
+// Zeitraum, der den Tag d enthält: ohne Startdatum Kalenderwoche (ab Montag), Kalendermonat, Kalenderjahr;
+// mit Startdatum a läuft er ab dem Tag von a (Woche ab dem Wochentag, Monat ab dem Tag im Monat, Jahr ab Tag und Monat)
+function periodOf(kind, d, a) {
+  if (a && (kind !== "week" || parseIso(a).getDay() !== 1) && (kind !== "month" || a.slice(8) !== "01") && (kind !== "year" || a.slice(5) !== "01-01")) {
+    let s;
+    if (kind === "week") {
+      const k = Math.floor(Math.round((parseIso(d) - parseIso(a)) / 864e5) / 7);
+      s = addDays(a, 7 * k);
+      const e = addDays(s, 6);
+      return { kind, a, start: s, end: e, key: `week:${s}`, name: `Woche ${dm(s)}–${dm(e)}` };
+    }
+    const D = Number(a.slice(8)), M = Number(a.slice(5, 7)) - 1;
+    const at = (y, m) => { // Stichtag im Monat m (gekürzt, z. B. 31. → 30.)
+      while (m < 0) { m += 12; y--; } while (m > 11) { m -= 12; y++; }
+      return `${y}-${pad(m + 1)}-${pad(Math.min(D, monthLen(y, m)))}`;
+    };
+    const y = Number(d.slice(0, 4)), m = Number(d.slice(5, 7)) - 1;
+    let e;
+    if (kind === "month") {
+      s = at(y, m); if (s > d) s = at(y, m - 1);
+      const sm = Number(s.slice(5, 7)) - 1, sy = Number(s.slice(0, 4));
+      e = addDays(at(sy, sm + 1), -1);
+    } else {
+      s = at(y, M); if (s > d) s = at(y - 1, M);
+      e = addDays(at(Number(s.slice(0, 4)) + 1, M), -1);
+    }
+    return { kind, a, start: s, end: e, key: `${kind}:${s}`, name: `${dm(s)}–${dm(e)}${e.slice(0, 4)}` };
+  }
   if (kind === "week") {
     const s = mondayOf(d), e = addDays(s, 6);
     return { kind, start: s, end: e, key: `week:${s}`, name: `Woche ${dm(s)}–${dm(e)}` };
@@ -49,7 +88,7 @@ function periodOf(kind, d) {
   const x = parseIso(s);
   return { kind, start: s, end: addDays(iso(nx), -1), key: `month:${s}`, name: `${MON[x.getMonth()]} ${x.getFullYear()}` };
 }
-const prevPeriod = (p) => periodOf(p.kind, addDays(p.start, -1));
+const prevPeriod = (p) => periodOf(p.kind, addDays(p.start, -1), p.a);
 
 // Wörter für Vergleich: bei Uhrzeiten früh/spät, sonst mindestens/höchstens
 const cmpWord = (q, cmp) => (q.format === "clock" ? (cmp === "le" ? "spätestens" : "frühestens") : (cmp === "le" ? "höchstens" : "mindestens"));
@@ -148,10 +187,10 @@ function goalHistory() {
   const out = [];
   if (!first) return out;
   const LIMIT = { week: 6, month: 6, year: 3 };
-  for (const [k] of GOAL_PERIODS) {
-    const gs = all.filter((g) => gp(g) === k);
-    if (!gs.length) continue;
-    let p = prevPeriod(periodOf(k, todayIso()));
+  for (const grp of new Set(all.map(goalGroup))) {
+    const gs = all.filter((g) => goalGroup(g) === grp);
+    const k = gp(gs[0]);
+    let p = prevPeriod(goalCur(gs[0]));
     for (let i = 0; i < LIMIT[k] && p.start >= first; i++, p = prevPeriod(p)) {
       const ev = gs.filter((g) => goalIn(g, p)).map((g) => evalGoal(g, p));
       if (ev.length) out.push({ p, ok: ev.filter((e) => e.status === "done").length, all: ev.length, miss: ev.filter((e) => e.status !== "done") });
@@ -187,14 +226,13 @@ function goalsPanel() {
 // Hinweis: Zeitraum vorbei (mit verfehlten Zielen) oder Ziel nicht mehr erreichbar
 function goalNotices() {
   const gs = G();
-  const all = gs.items.filter((g) => { const q = qById(g.qid); return q && !q.archived; });
+  const all = gs.items.filter((g) => { const q = qById(g.qid); return q && !q.archived && goalStarted(g); });
   if (!all.length || quiz || document.querySelector("dialog[open]")) return;
   // 1. abgelaufene Zeiträume je Art (Woche, Monat, Jahr) – einmal melden
   const summaries = [];
-  for (const [k] of GOAL_PERIODS) {
-    const gsK = all.filter((g) => gp(g) === k);
-    if (!gsK.length) continue;
-    const prev = prevPeriod(periodOf(k, todayIso()));
+  for (const k of new Set(all.map(goalGroup))) {
+    const gsK = all.filter((g) => goalGroup(g) === k);
+    const prev = prevPeriod(goalCur(gsK[0]));
     if (!gs.seen[k]) { gs.seen[k] = prev.key; continue; } // erst ab dem nächsten Wechsel melden
     if (gs.seen[k] === prev.key) continue;
     gs.seen[k] = prev.key;
@@ -260,12 +298,21 @@ function openGoals() {
     return `<input id="gval" class="gin wide" type="text" inputmode="${q.format ? "text" : "decimal"}" autocomplete="off" value="${esc(shown)}" placeholder="${q.format === "clock" ? "23:30" : q.format === "duration" ? "7:00" : "Wert"}">${q.unit && !q.format ? `<span class="muted">${esc(q.unit)}</span>` : ""}`;
   };
 
+  // erster bzw. laufender Zeitraum zum gewählten Startdatum
+  const firstPer = () => periodOf(edit.period, edit.start > todayIso() ? edit.start : todayIso(), edit.start);
+  const perInfo = () => {
+    const p = firstPer(), W = { week: "Woche", month: "Monat", year: "Jahr" }[edit.period];
+    return `${edit.start > todayIso() ? "Erster" : "Laufender"} Zeitraum: ${dm(p.start)}–${dm(p.end)}${p.end.slice(0, 4)}. Jede${edit.period === "week" ? "" : "r"} ${W} beginnt ${edit.period === "week" ? `am ${["Sonntag", "Montag", "Dienstag", "Mittwoch", "Donnerstag", "Freitag", "Samstag"][parseIso(edit.start).getDay()]}` : edit.period === "month" ? `am ${Number(edit.start.slice(8))}.` : `am ${dm(edit.start)}`}`;
+  };
+  const once = () => (edit.repeat === false ? ` (nur ${esc(firstPer().name)})` : "");
   const form = () => {
     const q = qById(edit.qid);
     const per = PER_WORD[edit.period];
     let f = `<label class="field">Frage<select id="gq">${qs().map((x) => `<option value="${x.id}" ${x.id === q.id ? "selected" : ""}>${esc(x.text)}</option>`).join("")}</select></label>
       <div class="sq-row"><span>Zeitraum</span><div class="seg seg-3" role="group">${GOAL_PERIODS.map(([k, l]) => `<button type="button" data-gper="${k}" aria-pressed="${edit.period === k}">${l}</button>`).join("")}</div></div>
-      <div class="sq-row"><span>Wiederholen</span>${seg2("grep", [["yes", EVERY_WORD[edit.period]], ["no", `Nur ${THIS_WORD[edit.period]}`]], edit.repeat === false ? "no" : "yes")}</div>`;
+      <div class="sq-row"><span>Beginnt am</span><input id="gstart" class="gdate" type="date" value="${esc(edit.start)}"></div>
+      <p class="small muted gperinfo">${esc(perInfo())}</p>
+      <div class="sq-row"><span>Wiederholen</span>${seg2("grep", [["yes", EVERY_WORD[edit.period]], ["no", `Nur ${edit.start > todayIso() ? "einmal" : THIS_WORD[edit.period]}`]], edit.repeat === false ? "no" : "yes")}</div>`;
     if (q.type === "choice") {
       f += `<div class="sq-row"><span>Antwort</span><select id="gkey">${q.options.map((o) => `<option ${o === edit.key ? "selected" : ""}>${esc(o)}</option>`).join("")}</select></div>
         <div class="sq-row"><span>Wie oft</span><div class="seg seg-3" role="group">${[["min", "mindestens"], ["max", "höchstens"], ["never", "nie"]].map(([v, l]) => `<button type="button" data-gop="${v}" aria-pressed="${(edit.op === "max" && edit.n === 0 ? "never" : edit.op) === v}">${l}</button>`).join("")}</div></div>
@@ -277,7 +324,7 @@ function openGoals() {
         <div class="gline">${valInput(q, edit.val)}</div>`;
     }
     const valid = goalValid(edit, q);
-    f += `<p class="gprev small">${valid ? `Ziel: <strong>${goalText(edit, q)}</strong> ${per}${edit.repeat === false ? ` (nur ${esc(periodOf(edit.period, todayIso()).name)})` : ""}` : `<span class="muted">Bitte ${q.type === "choice" || edit.kind === "days" ? "Anzahl" : "Wert"} eintragen</span>`}</p>
+    f += `<p class="gprev small">${valid ? `Ziel: <strong>${goalText(edit, q)}</strong> ${per}${once()}` : `<span class="muted">Bitte ${q.type === "choice" || edit.kind === "days" ? "Anzahl" : "Wert"} eintragen</span>`}</p>
       <div class="gbtns"><button type="button" class="btn ghost" id="gcancel">Abbrechen</button><button type="button" class="btn" id="gsave">${edit.isNew ? "Ziel anlegen" : "Sichern"}</button></div>`;
     return `<section class="sq gform" id="gform">${f}</section>`;
   };
@@ -301,11 +348,11 @@ function openGoals() {
       ${items.map((g) => {
         const q = qById(g.qid);
         if (edit && edit.id === g.id) return form();
-        const done = !goalActive(g);
+        const done = goalStarted(g) && !goalActive(g);
         return `<section class="sq ${q.archived || done ? "off" : ""}">
           <div class="sq-head"><strong>${esc(q.text)}</strong>
             <button type="button" class="iconbtn" data-gdel="${g.id}" aria-label="Ziel löschen">✕</button></div>
-          <button type="button" class="gedit" data-gedit="${g.id}">${goalText(g, q)} ${PER_WORD[gp(g)]}<span class="gtag">${g.repeat === false ? (done ? "abgeschlossen" : `nur ${esc(goalCur(g).name)}`) : `${EVERY_WORD[gp(g)].toLowerCase()}`}</span>${q.archived ? " · Frage ausgeblendet" : ""}<span class="muted"> · ändern</span></button>
+          <button type="button" class="gedit" data-gedit="${g.id}">${goalText(g, q)} ${PER_WORD[gp(g)]}<span class="gtag">${!goalStarted(g) ? `ab ${dm(g.start)}` : g.repeat === false ? (done ? "abgeschlossen" : `nur ${esc(goalCur(g).name)}`) : `${EVERY_WORD[gp(g)].toLowerCase()}${g.start && periodOf(gp(g), todayIso(), g.start).a ? ` · ab ${dm(goalCur(g).start)}` : ""}`}</span>${q.archived ? " · Frage ausgeblendet" : ""}<span class="muted"> · ändern</span></button>
         </section>`;
       }).join("")}
       ${edit && edit.isNew ? form() : ""}
@@ -318,13 +365,13 @@ function openGoals() {
     $("#gdone", dlg).addEventListener("click", () => dlg.close());
     $("#gadd", dlg)?.addEventListener("click", () => {
       const q = qs()[0];
-      edit = { id: uid(), qid: q.id, period: gs.period, repeat: true, ...goalDraft(q, gs.period), isNew: true };
+      edit = { id: uid(), qid: q.id, period: gs.period, repeat: true, start: periodOf(gs.period, todayIso()).start, autoStart: true, ...goalDraft(q, gs.period), isNew: true };
       draw();
       $("#gform", dlg)?.scrollIntoView({ block: "nearest" });
     });
     dlg.querySelectorAll("[data-gedit]").forEach((b) => b.addEventListener("click", () => {
       const g0 = gs.items.find((x) => x.id === b.dataset.gedit);
-      edit = { ...g0, period: gp(g0), repeat: g0.repeat !== false, isNew: false };
+      edit = { ...g0, period: gp(g0), repeat: g0.repeat !== false, start: g0.start || (g0.once ? g0.once.split(":")[1].replace(/^(\d{4})$/, "$1-01-01") : periodOf(gp(g0), todayIso()).start), autoStart: !g0.start, isNew: false };
       draw();
     }));
     dlg.querySelectorAll("[data-gdel]").forEach((b) => b.addEventListener("click", () => {
@@ -337,7 +384,7 @@ function openGoals() {
     // Formular
     $("#gq", dlg).addEventListener("change", (e) => {
       const q = qById(e.target.value);
-      edit = { id: edit.id, qid: q.id, period: edit.period, repeat: edit.repeat, ...goalDraft(q, edit.period), isNew: edit.isNew };
+      edit = { id: edit.id, qid: q.id, period: edit.period, repeat: edit.repeat, start: edit.start, autoStart: edit.autoStart, ...goalDraft(q, edit.period), isNew: edit.isNew };
       draw();
     });
     $("#gkey", dlg)?.addEventListener("change", () => { sync(); draw(); });
@@ -350,8 +397,15 @@ function openGoals() {
         if (edit.kind === "sum" && typeof edit.val === "number") edit.val = Math.round(edit.val * f);
         if (edit.kind === "days") edit.n = Math.min(edit.n, dayCount(periodOf(b.dataset.gper, todayIso()).start, periodOf(b.dataset.gper, todayIso()).end));
       }
-      edit.period = b.dataset.gper; draw();
+      edit.period = b.dataset.gper;
+      if (edit.autoStart) edit.start = periodOf(edit.period, todayIso()).start; // ohne eigenes Startdatum: Kalender-Zeitraum
+      draw();
     }));
+    $("#gstart", dlg).addEventListener("change", (e) => {
+      sync();
+      if (/^\d{4}-\d{2}-\d{2}$/.test(e.target.value)) { edit.start = e.target.value; edit.autoStart = false; }
+      draw();
+    });
     dlg.querySelectorAll("[data-grep]").forEach((b) => b.addEventListener("click", () => { sync(); edit.repeat = b.dataset.grep === "yes"; draw(); }));
     dlg.querySelectorAll("[data-gop]").forEach((b) => b.addEventListener("click", () => {
       sync();
@@ -374,7 +428,7 @@ function openGoals() {
         sync();
         const prev = dlg.querySelector(".gprev");
         const q = qById(edit.qid);
-        if (prev) prev.innerHTML = goalValid(edit, q) ? `Ziel: <strong>${goalText(edit, q)}</strong> ${PER_WORD[edit.period]}${edit.repeat === false ? ` (nur ${esc(periodOf(edit.period, todayIso()).name)})` : ""}` : `<span class="muted">Bitte gültige Zahl eintragen</span>`;
+        if (prev) prev.innerHTML = goalValid(edit, q) ? `Ziel: <strong>${goalText(edit, q)}</strong> ${PER_WORD[edit.period]}${once()}` : `<span class="muted">Bitte gültige Zahl eintragen</span>`;
         if (inp.id === "gval" && q.format && edit.val !== null) inp.value = fmtQ(q, edit.val);
         else inp.value = before;
       });
@@ -387,11 +441,15 @@ function openGoals() {
       if (!goalValid(edit, q)) return toast(q.type === "choice" || edit.kind === "days" ? "Bitte eine Anzahl ab 1 eintragen" : "Bitte einen Wert eintragen");
       const { isNew, ...g } = edit;
       // nur die Felder behalten, die zur Art passen
-      const timing = { period: g.period, repeat: g.repeat !== false, ...(g.repeat === false ? { once: periodOf(g.period, todayIso()).key } : {}) };
+      // Startdatum nur speichern, wenn selbst gewählt (sonst Kalenderwoche/-monat/-jahr wie bisher)
+      const start = !g.autoStart && g.start ? g.start : null;
+      const fp = periodOf(g.period, start && start > todayIso() ? start : todayIso(), start);
+      const timing = { period: g.period, repeat: g.repeat !== false, ...(start ? { start } : {}), ...(g.repeat === false ? { once: fp.key } : {}) };
       const clean = q.type === "choice" ? { id: g.id, qid: g.qid, kind: "count", key: g.key, op: g.op, n: g.n, ...timing }
         : { id: g.id, qid: g.qid, kind: g.kind, cmp: g.cmp, val: g.val, ...(g.kind === "days" ? { n: g.n } : {}), ...timing };
       gs.period = g.period; // Vorgabe für das nächste neue Ziel
-      if (!gs.seen[g.period]) gs.seen[g.period] = prevPeriod(periodOf(g.period, todayIso())).key;
+      const grp = goalGroup(timing);
+      if (!gs.seen[grp]) gs.seen[grp] = prevPeriod(goalPer(timing, start && start > todayIso() ? start : todayIso())).key;
       const i = gs.items.findIndex((x) => x.id === g.id);
       if (i >= 0) gs.items[i] = clean; else gs.items.push(clean);
       // geändertes Ziel darf wieder einen Hinweis auslösen

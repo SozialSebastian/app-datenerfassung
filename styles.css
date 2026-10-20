@@ -339,6 +339,8 @@ label.switch input { width: 20px; height: 20px; accent-color: var(--act); }
 .cnum strong { font-size: 26px; color: var(--ink); font-variant-numeric: tabular-nums; margin-right: 2px; }
 .acap:empty { display: none; }
 .sq-row select { padding: 9px 10px; border-radius: var(--r-sm); border: 1.5px solid var(--line); background: var(--surface); font-size: 16px; width: 100%; }
+.sq-row .gdate { padding: 8px 10px; border-radius: var(--r-sm); border: 1.5px solid var(--line); background: var(--surface); color: var(--ink); font: inherit; font-size: 16px; width: 100%; min-width: 0; -webkit-appearance: none; appearance: none; text-align: left; }
+.gperinfo { margin: 6px 0 0; }
 .seg.seg-3 { grid-template-columns: repeat(3, 1fr); }
 .seg.seg-3 button { padding: 7px 0; }
 

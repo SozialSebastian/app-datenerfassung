@@ -172,6 +172,39 @@ test("Skala: Beschreibung je Zahl im Editor, in der Abfrage und alte Texte links
   await ctx.close();
 });
 
+test("Ziele mit Startdatum: Zeiträume ab dem gewählten Tag", async () => {
+  const { page, ctx, errors } = await open();
+  const r = await page.evaluate(() => [
+    periodOf("week", "2026-10-20", "2026-10-15"),   // Do-Woche
+    periodOf("month", "2026-10-20", "2026-09-15"),  // 15.–14.
+    periodOf("month", "2026-10-10", "2026-09-15"),
+    periodOf("month", "2027-02-28", "2027-01-31"),  // 31. → Ende Februar gekürzt
+    periodOf("year", "2026-10-20", "2026-04-01"),
+    periodOf("week", "2026-10-20", "2026-10-19")    // Montag = Kalenderwoche
+  ].map((p) => [p.start, p.end]));
+  assert.deepEqual(r, [["2026-10-15", "2026-10-21"], ["2026-10-15", "2026-11-14"], ["2026-09-15", "2026-10-14"], ["2027-02-28", "2027-03-30"], ["2026-04-01", "2027-03-31"], ["2026-10-19", "2026-10-25"]]);
+  // Ziel in der Zukunft ist noch nicht aktiv, eines ab Donnerstag zählt nur ab dort
+  const out = await page.evaluate(() => {
+    const t = todayIso();
+    state.questions.push({ id: "gq", text: "Sport?", type: "choice", options: ["Ja", "Nein"], multi: false, archived: false, cond: null });
+    state.answers[addDays(t, -1)] = { gq: "Ja" };
+    state.answers[addDays(t, -3)] = { gq: "Ja" };
+    G().items.push({ id: "g1", qid: "gq", kind: "count", key: "Ja", op: "min", n: 3, period: "week", repeat: true, start: addDays(t, 5) });
+    G().items.push({ id: "g2", qid: "gq", kind: "count", key: "Ja", op: "min", n: 3, period: "week", repeat: true, start: addDays(t, -2) });
+    const g2 = G().items[1];
+    return { active: goalItems().map((g) => g.id), cur: goalCur(g2).start, c: evalGoal(g2, goalCur(g2)).c };
+  });
+  assert.deepEqual(out.active, ["g2"]);
+  assert.equal(out.c, 1);
+  // Formular: Startdatum wählen
+  await page.evaluate(() => openGoals());
+  await page.click("[data-gedit='g2']");
+  assert.ok(await page.locator("#gstart").count());
+  assert.match(await page.textContent(".gperinfo"), /Zeitraum/);
+  assert.deepEqual(errors, []);
+  await ctx.close();
+});
+
 test("Schlaf aus Health: Wachphasen abgezogen, doppelte Messungen einmal, Einschlaf- und Aufwachzeit", async () => {
   const { listEntries } = await import("../worker/src/index.js");
   const t = (x) => `2026-10-${x}:00+02:00`;

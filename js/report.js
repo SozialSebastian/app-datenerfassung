@@ -53,7 +53,7 @@ function reportHtml(mon) {
   let goalsHtml = "";
   if (items.length) {
     const ref = sun <= t ? sun : t;
-    const ev = items.map((g) => evalGoal(g, periodOf(gp(g), ref))).sort((a, b) => STATUS_ORDER[a.status] - STATUS_ORDER[b.status]);
+    const ev = items.map((g) => evalGoal(g, goalPer(g, ref))).sort((a, b) => STATUS_ORDER[a.status] - STATUS_ORDER[b.status]);
     const running = ev.some((e) => !e.ended);
     const done = ev.filter((e) => e.status === "done").length;
     const okn = ev.filter((e) => e.status === "ok").length;
@@ -107,7 +107,7 @@ function reportHtml(mon) {
       <div class="rstats">
         <div><strong>${tracked}</strong><span>von ${days.length} Tagen erfasst</span></div>
         <div><strong>${full}</strong><span>Tage vollständig</span></div>
-        ${items.length ? `<div><strong>${items.map((g) => evalGoal(g, periodOf(gp(g), sun <= t ? sun : t))).filter((e) => e.status === "done" || e.status === "ok").length}/${items.length}</strong><span>Ziele erreicht oder auf Kurs</span></div>` : ""}
+        ${items.length ? `<div><strong>${items.map((g) => evalGoal(g, goalPer(g, sun <= t ? sun : t))).filter((e) => e.status === "done" || e.status === "ok").length}/${items.length}</strong><span>Ziele erreicht oder auf Kurs</span></div>` : ""}
       </div>
     </section>
     ${goalsHtml}${qHtml}${trHtml}
