@@ -136,6 +136,10 @@ const visibleQuestions = (date) => {
 
 // Health- und Schach-Felder werden automatisch gefüllt und nicht abgefragt (vollständig ist erst der Vortag)
 const isHealthQ = (q) => q.source === "health" || q.source === "chess";
+// Werte, die im Lauf des Tages noch wachsen (Schritte, Partien …) – heute erst morgen zählen.
+// Schlaf gehört zum Tag des Aufwachens und ist morgens schon vollständig.
+const NIGHT_KEYS = ["schlaf", "schlafenszeit", "aufwachzeit"];
+const todayOpen = (q) => isHealthQ(q) && !NIGHT_KEYS.includes(q.healthKey);
 const askQuestions = (date) => visibleQuestions(date).filter((q) => !isHealthQ(q));
 const healthQuestions = () => ordered().map((o) => o.q).filter((q) => q.source === "health" && !q.archived);
 

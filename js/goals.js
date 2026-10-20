@@ -111,7 +111,7 @@ function evalGoal(g, per) {
   const q = qById(g.qid);
   const t = todayIso();
   // Health-Werte von heute sind noch unvollständig → erst ab morgen zählen
-  const last0 = isHealthQ(q) ? addDays(t, -1) : t;
+  const last0 = todayOpen(q) ? addDays(t, -1) : t;
   const last = per.end < last0 ? per.end : last0;
   const ended = per.end < t;
   const total = dayCount(per.start, per.end);
@@ -122,8 +122,8 @@ function evalGoal(g, per) {
     if (isAnswered(v)) vals.push({ d, v });
   }
   // Tage, an denen noch etwas dazukommen kann (heute zählt, solange unbeantwortet)
-  let rest = ended ? 0 : dayCount(t, per.end) - (isHealthQ(q) ? 0 : 1);
-  if (!ended && !isHealthQ(q) && !isAnswered((state.answers[t] || {})[q.id])) rest += 1;
+  let rest = ended ? 0 : dayCount(t, per.end) - (todayOpen(q) ? 0 : 1);
+  if (!ended && !todayOpen(q) && !isAnswered((state.answers[t] || {})[q.id])) rest += 1;
   const daysLeft = ended ? 0 : dayCount(t, per.end);
   const pace = counted / total;
   const r = { q, g, per, ended, vals: vals.length, daysLeft };
@@ -149,7 +149,7 @@ function evalGoal(g, per) {
     const ok = cmpOk(g.cmp, a, g.val);
     // was ab jetzt im Schnitt nötig ist, damit das Ziel am Ende des Zeitraums erreicht wird
     let need = "";
-    const left = ended ? 0 : dayCount(t, per.end) - (!isHealthQ(q) && isAnswered((state.answers[t] || {})[q.id]) ? 1 : 0);
+    const left = ended ? 0 : dayCount(t, per.end) - (!todayOpen(q) && isAnswered((state.answers[t] || {})[q.id]) ? 1 : 0);
     if (!ok && left > 0) {
       const w = (g.val * (nums.length + left) - nums.reduce((x, y) => x + y, 0)) / left;
       const [lo, hi] = q.type === "scale" ? [q.min, q.max] : q.format === "duration" ? [0, 16] : q.format === "clock" && q.healthKey !== "aufwachzeit" ? [18, 32] : [0, Infinity];

@@ -13,7 +13,7 @@ const kw = (s) => { // ISO-Kalenderwoche
 // Kennzahl einer Frage für eine Woche, verglichen mit den 8 Wochen davor
 function weekStat(q, mon) {
   const t = todayIso();
-  const lastOk = isHealthQ(q) ? addDays(t, -1) : t;
+  const lastOk = todayOpen(q) ? addDays(t, -1) : t;
   const daysOf = (m) => Array.from({ length: 7 }, (_, i) => addDays(m, i)).filter((d) => d <= lastOk);
   const valsOf = (m) => daysOf(m).map((d) => (state.answers[d] || {})[q.id]).filter(isAnswered);
   const now = valsOf(mon);

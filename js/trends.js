@@ -234,7 +234,7 @@ function seasonInsights() {
     if (q.archived) continue;
     const yesNo = q.type === "choice" && !q.multi && q.options.includes("Ja");
     if (q.type !== "number" && !yesNo) continue;
-    const last = isHealthQ(q) ? addDays(t, -1) : t;
+    const last = todayOpen(q) ? addDays(t, -1) : t;
     const by = [[], [], [], []];
     for (const d of Object.keys(state.answers)) {
       if (d > last) continue;
@@ -270,7 +270,7 @@ function numberInsights() {
   for (const q of state.questions) {
     if (q.archived || q.type !== "number") continue;
     // Der heutige Health-Wert ist meist noch unvollständig (Schritte) → nicht mitzählen
-    const last = isHealthQ(q) ? addDays(t, -1) : t;
+    const last = todayOpen(q) ? addDays(t, -1) : t;
     const series = Object.keys(state.answers).sort()
       .filter((d) => d <= last && typeof (state.answers[d] || {})[q.id] === "number")
       .map((d) => ({ d, v: state.answers[d][q.id] }));

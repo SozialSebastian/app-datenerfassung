@@ -221,12 +221,16 @@ test("Ziel „im Schnitt“: Puffer, was ab jetzt nötig ist, bisheriger Schnitt
     // leerer Zeitraum: bisheriger Schnitt der 30 Tage davor
     state.answers[addDays(t, -20)] = { ez: 23 };
     const e2 = evalGoal(g, { kind: "week", start: t, end: addDays(t, 6), key: "y", name: "y" });
-    return [e1.cur, e1.note, e2.note];
+    // Schlaf von heute (Nacht ist vorbei) zählt sofort: ein Wert = Schnitt
+    state.answers[t] = { ez: 26 + 23 / 60 };
+    const e3 = evalGoal(g, { kind: "week", start: t, end: addDays(t, 6), key: "z", name: "z" });
+    return [e1.cur, e1.note, e2.note, e3.cur];
   });
   assert.equal(r[0], "Ø 00:00");
   // 5 Tage übrig: (23,5 · 7 − 48) / 5 = 23,3 → auf 5 min zur sicheren Seite 23:15
   assert.equal(r[1], "30 min zu spät · ab jetzt Ø spätestens 23:15 nötig");
   assert.equal(r[2], "bisher Ø 23:40 (10 min zu spät)"); // 23:50, 0:10, 23:00
+  assert.equal(r[3], "Ø 02:23");
   assert.deepEqual(errors, []);
   await ctx.close();
 });
