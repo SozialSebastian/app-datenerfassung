@@ -77,7 +77,7 @@ function renderData() {
           <li>iPhone-Einstellungen → <strong>Apps → Safari</strong> → ganz unten <strong>Standort</strong> → <strong>Erlauben</strong>.</li>
           <li>Einstellungen → <strong>Datenschutz & Sicherheit → Ortungsdienste → Safari-Websites</strong> → <strong>Beim Verwenden der App</strong>, „Genauer Standort“ darf aus sein.</li>
         </ol>
-        <p class="muted small" style="margin:6px 0 0">Ohne diese Einstellung fragt iOS bei Web-Apps immer wieder. Mosaik fragt dann von sich aus höchstens einmal am Tag.</p>
+        <p class="muted small" style="margin:6px 0 0">Ohne diese Einstellung fragt iOS bei Web-Apps immer wieder. Mosaik fragt dann von sich aus höchstens alle 4 Stunden (beim Öffnen).</p>
       </details>` : ""}
       ${settings.places.on && settings.places.err ? `<p class="small" style="margin:8px 0 0;color:var(--danger)">Letzter Fehler ${esc(settings.places.err)}</p>` : ""}
       ${settings.places.on ? `<button class="btn ghost block" id="placenow" style="margin-top:12px">Standort jetzt erfassen</button>` : ""}

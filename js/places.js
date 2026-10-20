@@ -5,6 +5,7 @@
 // Gespeichert in state.places: { "2026-10-16": [{ c: "Wedel", t: "08:12" }, { c: "Hamburg", t: "12:40" }] }
 // Aufeinanderfolgende gleiche Orte werden zusammengefasst. Koordinaten werden nicht gespeichert.
 const PLACE_MIN_GAP = 20 * 60 * 1000; // höchstens alle 20 Minuten abfragen
+const PLACE_ASK_GAP = 4 * 60 * 60 * 1000; // ohne dauerhafte Erlaubnis: höchstens alle 4 Stunden nachfragen lassen
 const P = () => { if (!state.places || typeof state.places !== "object") state.places = {}; return state.places; };
 const placesOn = (d) => (P()[d] || []).map((x) => x.c);
 const placeCities = (d) => Array.from(new Set(placesOn(d))); // ohne Wiederholungen
@@ -53,14 +54,14 @@ async function capturePlace(manual) {
   if (!settings.places || !settings.places.on || !("geolocation" in navigator)) return;
   if (placeBusy) return;
   if (!manual && settings.places.last && Date.now() - settings.places.last < PLACE_MIN_GAP) return;
-  // Ohne dauerhafte Erlaubnis fragt iOS jedes Mal nach → automatisch höchstens einmal am Tag nachfragen
+  // Ohne dauerhafte Erlaubnis fragt iOS jedes Mal nach → automatisch höchstens alle 4 Stunden nachfragen
   if (!manual) {
     let state = "unknown";
     try { if (navigator.permissions) state = (await navigator.permissions.query({ name: "geolocation" })).state; } catch (e) { /* nicht unterstützt */ }
     if (state === "denied") return;
     if (state !== "granted") {
-      if (settings.places.askedDay === todayIso()) return;
-      settings.places.askedDay = todayIso(); saveSettings();
+      if (settings.places.askedAt && Date.now() - settings.places.askedAt < PLACE_ASK_GAP) return;
+      settings.places.askedAt = Date.now(); delete settings.places.askedDay; saveSettings();
     }
   }
   placeBusy = true;
