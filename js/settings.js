@@ -72,6 +72,7 @@ function renderData() {
       <h2>Orte</h2>
       <label class="switch row" style="margin-top:0"><input type="checkbox" id="placeson" ${settings.places.on ? "checked" : ""}><span>Stadt beim Öffnen erfassen</span></label>
       <p class="muted small" style="margin:8px 0 0">Beim Öffnen (höchstens alle 20 Minuten) wird die Stadt gespeichert, nur der Name und nur auf dem iPhone. Dafür gehen auf ca. 1 km gerundete Koordinaten an BigDataCloud bzw. OpenStreetMap. Dazu kommt das Wetter des Tages von Open-Meteo, genutzt nur für Zusammenhänge in den Trends.${settings.places.on ? ` Wetter für ${Object.keys(state.weather || {}).length} Tage.` : ""}</p>
+      ${settings.places.on ? `<p class="small hstatus" id="geoperm" style="margin:8px 0 0" hidden></p>` : ""}
       ${settings.places.on ? `<details style="margin-top:8px"><summary class="small"><strong>Nicht jedes Mal nach Erlaubnis fragen</strong></summary>
         <ol class="steps small" style="margin:6px 0 0">
           <li>iPhone-Einstellungen → <strong>Apps → Safari</strong> → ganz unten <strong>Standort</strong> → <strong>Erlauben</strong>.</li>
@@ -214,6 +215,16 @@ function renderData() {
     renderData();
   });
   $("#placenow")?.addEventListener("click", async () => { await capturePlace(true); renderData(); });
+  // Status der Standort-Erlaubnis, wie iOS sie dieser Web-App meldet
+  if ($("#geoperm") && navigator.permissions) navigator.permissions.query({ name: "geolocation" }).then((p) => {
+    const el = $("#geoperm");
+    if (!el) return;
+    const t = { granted: ["ok", "<strong>Standort dauerhaft erlaubt.</strong> Mosaik erfasst ihn ohne Rückfrage beim Öffnen (höchstens alle 20 Minuten)."],
+      prompt: ["", "<strong>iOS fragt jedes Mal nach.</strong> Mosaik lässt deshalb höchstens alle 4 Stunden fragen."],
+      denied: ["", "<strong>Standort abgelehnt.</strong> Orte werden nicht erfasst."] }[p.state];
+    if (!t) return;
+    el.className = `small hstatus ${t[0]}`; el.innerHTML = t[1]; el.hidden = false;
+  }).catch(() => {});
   wireChessSettings();
   wireNotionSettings();
   settingsNav();
