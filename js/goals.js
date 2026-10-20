@@ -130,10 +130,34 @@ function evalGoal(g, per) {
 
   if (g.kind === "avg") {
     const nums = vals.map((x) => x.v).filter((v) => typeof v === "number");
-    if (!nums.length) return { ...r, status: ended ? "fail" : "none", cur: "noch keine Werte", frac: null };
+    // Abstand zum Ziel: Puffer oder wie viel fehlt (bei Zeiten in Minuten)
+    const gap = (v) => {
+      const d = Math.abs(v - g.val);
+      const txt = q.format ? (() => { const m = Math.round(d * 60); return m < 60 ? `${m} min` : `${Math.floor(m / 60)} h ${String(m % 60).padStart(2, "0")} min`; })() : valText(q, Math.round(d * 10) / 10);
+      if (cmpOk(g.cmp, v, g.val)) return `${txt} Puffer`;
+      return `${txt} ${q.format === "clock" ? (g.cmp === "le" ? "zu spät" : "zu früh") : (g.cmp === "le" ? "zu viel" : "zu wenig")}`;
+    };
+    if (!nums.length) {
+      // noch nichts im Zeitraum: bisherigen Schnitt (letzte 30 Tage davor) zeigen
+      const before = [];
+      for (let d = addDays(per.start, -30); d < per.start; d = addDays(d, 1)) { const v = (state.answers[d] || {})[q.id]; if (typeof v === "number") before.push(v); }
+      const b = before.length ? mean(before) : null;
+      return { ...r, status: ended ? "fail" : "none", cur: "noch keine Werte", frac: null,
+        note: b === null ? "" : `bisher Ø ${valText(q, Math.round(b * 100) / 100)} (${gap(b)})` };
+    }
     const a = mean(nums);
     const ok = cmpOk(g.cmp, a, g.val);
-    return { ...r, status: ok ? (ended ? "done" : "ok") : (ended ? "fail" : "behind"), cur: `Ø ${valText(q, Math.round(a * 100) / 100)}`, frac: null, curVal: a };
+    // was ab jetzt im Schnitt nötig ist, damit das Ziel am Ende des Zeitraums erreicht wird
+    let need = "";
+    const left = ended ? 0 : dayCount(t, per.end) - (!isHealthQ(q) && isAnswered((state.answers[t] || {})[q.id]) ? 1 : 0);
+    if (!ok && left > 0) {
+      const w = (g.val * (nums.length + left) - nums.reduce((x, y) => x + y, 0)) / left;
+      const [lo, hi] = q.type === "scale" ? [q.min, q.max] : q.format === "duration" ? [0, 16] : q.format === "clock" && q.healthKey !== "aufwachzeit" ? [18, 32] : [0, Infinity];
+      if (w < lo || w > hi) need = " · im Zeitraum nicht mehr aufzuholen";
+      else need = ` · ab jetzt Ø ${cmpWord(q, g.cmp)} ${valText(q, Math.round((q.format ? (g.cmp === "le" ? Math.floor(w * 12 + 1e-9) : Math.ceil(w * 12 - 1e-9)) / 12 : w) * 100) / 100 /* Zeiten auf 5 min, zur sicheren Seite */)} nötig`;
+    }
+    return { ...r, status: ok ? (ended ? "done" : "ok") : (ended ? "fail" : "behind"), cur: `Ø ${valText(q, Math.round(a * 100) / 100)}`, frac: null, curVal: a,
+      note: gap(a) + need };
   }
 
   let c;

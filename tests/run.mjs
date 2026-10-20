@@ -207,6 +207,30 @@ test("Ziele mit Startdatum: Zeiträume ab dem gewählten Tag", async () => {
   await ctx.close();
 });
 
+test("Ziel „im Schnitt“: Puffer, was ab jetzt nötig ist, bisheriger Schnitt", async () => {
+  const { page, ctx, errors } = await open();
+  const r = await page.evaluate(() => {
+    const t = todayIso();
+    state.questions.push({ id: "ez", text: "Einschlafzeit", type: "number", format: "clock", healthKey: "schlafenszeit", source: "health", options: [], archived: false, cond: null });
+    const g = { id: "ga", qid: "ez", kind: "avg", cmp: "le", val: 23.5, period: "week", repeat: true, created: "2020-01-01" };
+    // zwei Tage im Zeitraum: 23:50 und 0:10 → Ø 0:00, 30 min zu spät
+    const per = { kind: "week", start: addDays(t, -2), end: addDays(t, 4), key: "x", name: "x" };
+    state.answers[addDays(t, -2)] = { ez: 23 + 50 / 60 };
+    state.answers[addDays(t, -1)] = { ez: 24 + 10 / 60 };
+    const e1 = evalGoal(g, per);
+    // leerer Zeitraum: bisheriger Schnitt der 30 Tage davor
+    state.answers[addDays(t, -20)] = { ez: 23 };
+    const e2 = evalGoal(g, { kind: "week", start: t, end: addDays(t, 6), key: "y", name: "y" });
+    return [e1.cur, e1.note, e2.note];
+  });
+  assert.equal(r[0], "Ø 00:00");
+  // 5 Tage übrig: (23,5 · 7 − 48) / 5 = 23,3 → auf 5 min zur sicheren Seite 23:15
+  assert.equal(r[1], "30 min zu spät · ab jetzt Ø spätestens 23:15 nötig");
+  assert.equal(r[2], "bisher Ø 23:40 (10 min zu spät)"); // 23:50, 0:10, 23:00
+  assert.deepEqual(errors, []);
+  await ctx.close();
+});
+
 test("Schlaf aus Health: Wachphasen abgezogen, doppelte Messungen einmal, Einschlaf- und Aufwachzeit", async () => {
   const { listEntries } = await import("../worker/src/index.js");
   const t = (x) => `2026-10-${x}:00+02:00`;
