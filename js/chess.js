@@ -145,6 +145,7 @@ function chessDays() {
 // Bedenkzeit lesbar: „600+5“ → „10 min + 5 s“, „1/86400“ → „1 Tag je Zug“
 function fmtTc(tc) {
   if (!tc) return "–";
+  if (!/^\d/.test(tc)) return "ohne Zeitlimit"; // z. B. „-“ bei Partien gegen Coach/Bots ohne Uhr
   if (tc.includes("/")) { const d = Math.round(+tc.split("/")[1] / 86400); return `${d} ${d === 1 ? "Tag" : "Tage"} je Zug`; }
   const [base, inc] = tc.split("+").map(Number);
   const b = base >= 60 ? `${fmtNum(Math.round((base / 60) * 10) / 10)} min` : `${base} s`;
