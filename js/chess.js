@@ -120,10 +120,12 @@ function chessCompact(games, user) {
   }
   return out;
 }
-// alle gespeicherten Partien, nach Ende sortiert
+// Partien gegen Coaches/Bots (ungewertet, ohne Uhr oder Name wie „Coach-Mae“, „…-BOT“) zählen nicht
+const chessIsBot = (g) => !g.rated && (!/^\d/.test(g.tc || "") || /^coach-|(^|-)bot(-|$)/i.test(g.on || ""));
+// alle gespeicherten Partien gegen echte Spieler, nach Ende sortiert
 function chessGames() {
   const all = [];
-  for (const list of Object.values(chessData().months)) if (Array.isArray(list)) all.push(...list);
+  for (const list of Object.values(chessData().months)) if (Array.isArray(list)) all.push(...list.filter((g) => !chessIsBot(g)));
   return all.sort((a, b) => a.t - b.t);
 }
 const chessDate = (g) => iso(new Date(g.t * 1000));
@@ -534,4 +536,13 @@ function wireChessSettings() {
     if (settings.chess.on) run(); else { toast("chess.com aus"); renderData(); }
   });
   $("#chessnow")?.addEventListener("click", run);
+}
+
+// einmalig: Bot-/Coach-Partien aus den gespeicherten Tageswerten nehmen; Elo-Felder, die dadurch leer sind, entfernen
+if (state.chess && state.chess.months && Object.keys(state.chess.months).length && !state.chess.noBots) {
+  applyChessAnswers();
+  const used = new Set(Object.values(state.answers).flatMap((a) => Object.keys(a)));
+  state.questions = state.questions.filter((q) => !(q.source === "chess" && String(q.chessKey || "").startsWith("elo:") && !used.has(q.id)));
+  state.chess.noBots = true;
+  save();
 }

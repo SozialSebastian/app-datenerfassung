@@ -524,7 +524,9 @@ function chessMock(cors) {
     { end_time: at(10, 12), time_class: "blitz", time_control: "180+2", rules: "chess", rated: true, white: me(1100, "agreed"), black: op("agreed"), pgn: pgn("11:00:00", "11:05:00", "Sicilian-Defense-Open-2...Nc6") },
     { end_time: at(1, 10), time_class: "rapid", time_control: "600", rules: "chess", rated: true, url: "https://www.chess.com/game/live/1", white: me(1210, "win"), black: op("checkmated"), accuracies: { white: 80, black: 60 }, pgn: pgn("10:00:00", "10:15:00", "Italian-Game-Two-Knights-Defense-4.d3") },
     { end_time: at(1, 11), time_class: "rapid", time_control: "600", rules: "chess", rated: true, black: me(1200, "resigned"), white: op("win"), pgn: pgn("11:00:00", "11:20:00", "Sicilian-Defense-Open-2...Nc6") },
-    { end_time: at(0, 9), time_class: "rapid", time_control: "600", rules: "chess", rated: true, white: me(1220, "win"), black: op("timeout"), pgn: pgn("08:50:00", "09:00:00", "Italian-Game") }
+    { end_time: at(0, 9), time_class: "rapid", time_control: "600", rules: "chess", rated: true, white: me(1220, "win"), black: op("timeout"), pgn: pgn("08:50:00", "09:00:00", "Italian-Game") },
+    // Coach-Partie (ungewertet, ohne Uhr) – darf nirgends zählen
+    { end_time: at(0, 10), time_class: "daily", time_control: "-", rules: "chess", rated: false, white: me(400, "win"), black: { username: "Coach-Mae", rating: 1200, result: "resigned" } }
   ];
   const ym = (t) => { const d = new Date(t * 1000); return `${d.getUTCFullYear()}/${String(d.getUTCMonth() + 1).padStart(2, "0")}`; };
   const months = {};
