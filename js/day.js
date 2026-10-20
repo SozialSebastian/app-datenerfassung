@@ -47,9 +47,17 @@ function renderDay() {
     const startLabel = done === 0 ? "Abfrage starten" : done < qs.length ? "Abfrage fortsetzen" : "Abfrage nochmal durchgehen";
     body = `<button class="btn block ${done < qs.length ? "hold-btn" : "ghost"}" id="startquiz">${startLabel}</button>
       <p class="progress">${done} von ${qs.length} beantwortet</p>`;
-    body += healthHtml;
+    // Filter nach Thema wie in der Analyse (nur die Anzeige; Abfrage und Zähler gelten für alle Fragen)
+    const usedThemes = THEMES.filter((th) => qs.some((q) => themeOf(q) === th.k));
+    if (prefs.dayTheme && !usedThemes.some((th) => th.k === prefs.dayTheme)) prefs.dayTheme = "";
+    const ft = usedThemes.length > 1 ? prefs.dayTheme : "";
+    if (usedThemes.length > 1) body += `<div class="tfilter" role="group" aria-label="Thema">
+      <button data-dth="" aria-pressed="${!ft}">Alle</button>
+      ${usedThemes.map((th) => `<button data-dth="${th.k}" aria-pressed="${ft === th.k}">${th.i} ${esc(th.l)}</button>`).join("")}
+    </div>`;
+    if (!ft || ft === "health") body += healthHtml;
     let lastTheme = null;
-    body += qs.map((q) => {
+    body += qs.filter((q) => !ft || themeOf(q) === ft).map((q) => {
       const val = a[q.id];
       const th = q.cond ? null : themeOf(q);
       const head = th && th !== lastTheme ? `<h3 class="themehead">${themeById(th).i} ${esc(themeById(th).l)}</h3>` : "";
@@ -95,6 +103,7 @@ function renderDay() {
     inp.addEventListener("keydown", (e) => { if (e.key === "Enter") inp.blur(); });
   });
   $("#startquiz")?.addEventListener("click", () => startQuiz(current));
+  view.querySelectorAll("[data-dth]").forEach((b) => b.addEventListener("click", () => { prefs.dayTheme = b.dataset.dth; savePrefs(); renderDay(); }));
 
   view.querySelectorAll(".q[data-qid]").forEach((card) => wireInput(card, qById(card.dataset.qid), current, (kind) => {
     if (kind !== "input") return renderDay();

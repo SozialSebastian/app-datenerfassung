@@ -235,6 +235,20 @@ test("Ziel „im Schnitt“: Puffer, was ab jetzt nötig ist, bisheriger Schnitt
   await ctx.close();
 });
 
+test("Tag: Filter nach Thema wie in der Analyse", async () => {
+  const data = { version: 1, lastBackup: null, answers: {}, questions: [
+    { ...yesNo("b", "Heute bouldern?"), theme: "sport" }, { ...yesNo("s", "Süßigkeiten?"), theme: "food" }, { ...yesNo("k", "Kaffee?"), theme: "food" }] };
+  const { page, ctx, errors } = await open({ data });
+  assert.equal(await page.locator(".q[data-qid]").count(), 3);
+  await page.click('[data-dth="food"]');
+  assert.equal(await page.locator(".q[data-qid]").count(), 2);
+  assert.match(await page.textContent(".progress"), /0 von 3/); // Zähler gilt weiter für alle
+  await page.click('[data-dth=""]');
+  assert.equal(await page.locator(".q[data-qid]").count(), 3);
+  assert.deepEqual(errors, []);
+  await ctx.close();
+});
+
 test("Schlaf aus Health: Wachphasen abgezogen, doppelte Messungen einmal, Einschlaf- und Aufwachzeit", async () => {
   const { listEntries } = await import("../worker/src/index.js");
   const t = (x) => `2026-10-${x}:00+02:00`;
