@@ -156,10 +156,37 @@ function setAnswer(date, qid, value) {
       if (q.cond && a[q.id] !== undefined && !condMet(q, a)) { delete a[q.id]; changed = true; }
     }
   }
+  lastDerived = workDerive(date, qid);
   if (Object.keys(a).length === 0) delete state.answers[date];
   save();
   if (typeof reportStatus === "function" && date === todayIso()) reportStatus();
 }
+
+// Arbeit: Beginn, Ende und Dauer – aus zwei Angaben ergibt sich die dritte (über Mitternacht möglich)
+let lastDerived = [];
+const workQ = (t) => state.questions.find((q) => q.template === t && !q.archived);
+function workDerive(date, qid) {
+  const s = workQ("work-start"), e = workQ("work-end"), h = workQ("work-hours");
+  const a = state.answers[date];
+  if (!s || !e || !h || !a || ![s.id, e.id, h.id].includes(qid)) return [];
+  const num = (q) => (typeof a[q.id] === "number" ? a[q.id] : null);
+  const r4 = (x) => Math.round(x * 10000) / 10000;
+  const wrap = (x) => r4(((x % 24) + 24) % 24);
+  const S = num(s), E = num(e), H = num(h);
+  if (qid === h.id) { // Dauer geändert: Ende aus Beginn, sonst Beginn aus Ende
+    if (H === null) return [];
+    if (S !== null) { a[e.id] = wrap(S + H); return [e.id]; }
+    if (E !== null) { a[s.id] = wrap(E - H); return [s.id]; }
+    return [];
+  }
+  const other = qid === s.id ? E : S;
+  if (num(qid === s.id ? s : e) === null) return [];
+  if (other !== null) { let d = E - S; if (d <= 0) d += 24; a[h.id] = r4(d); return [h.id]; }
+  if (H !== null) { if (qid === s.id) a[e.id] = wrap(S + H); else a[s.id] = wrap(E - H); return [qid === s.id ? e.id : s.id]; }
+  return [];
+}
+// In der Abfrage überspringen: Dauer, wenn Beginn und Ende schon da sind
+const autoSkip = (q, a) => q.template === "work-hours" && [workQ("work-start"), workQ("work-end")].every((x) => x && typeof a[x.id] === "number") && isAnswered(a[q.id]);
 
 function dayProgress(date) {
   const qs = askQuestions(date);
@@ -213,7 +240,7 @@ function parseQ(q, text) {
     const m = t.match(/^(\d{1,2})\s*(?:[:.h]|\s)\s*(\d{1,2})(?:\s*min)?$/i);
     let h = m ? Number(m[1]) + Number(m[2]) / 60 : parseNum(t);
     if (Number.isNaN(h)) return NaN;
-    if (q.format === "clock" && h < 12 && q.healthKey !== "aufwachzeit") h += 24; // abends: nach Mitternacht → 24+ (für Durchschnitt und Grafik); Aufwachzeit bleibt morgens
+    if (q.format === "clock" && h < 12 && q.healthKey !== "aufwachzeit" && !q.clockDay) h += 24; // abends: nach Mitternacht → 24+ (für Durchschnitt und Grafik); Aufwachzeit bleibt morgens
     return Math.round(h * 10000) / 10000;
   }
   return parseNum(t);

@@ -491,14 +491,26 @@ test("Neue Frage aus Vorlage „Arbeit“ mit Vertrag und effektivem Stundenlohn
   await page.click('[data-cper="week"]');
   await page.click("#savebtn");
   const qs = await page.evaluate(() => state.questions.map((q) => ({ t: q.text, type: q.type, f: q.format, c: q.cond, k: q.contract, th: q.theme })));
-  assert.equal(qs.length, 2);
+  assert.equal(qs.length, 4);
   assert.equal(qs[0].t, "Hast du heute gearbeitet?");
   assert.deepEqual(qs[0].k, { h: 20, wage: 15, per: "week" });
   assert.equal(qs[0].th, "work");
-  assert.equal(qs[1].f, "duration");
+  assert.deepEqual(qs.slice(1).map((q) => q.f), ["clock", "clock", "duration"]);
+  // zwei Angaben reichen, die dritte rechnet Mosaik aus
+  const der = await page.evaluate(() => {
+    const [p, s, e, h] = state.questions, d = "2026-01-05", v = () => { const a = state.answers[d]; return [a[s.id], a[e.id], a[h.id]]; };
+    setAnswer(d, p.id, "Ja");
+    setAnswer(d, s.id, parseQ(s, "8:30")); setAnswer(d, e.id, parseQ(e, "17:00")); const r1 = v();     // Beginn + Ende → 8,5 h
+    setAnswer(d, h.id, 9); const r2 = v();                                                                 // Dauer geändert → Ende 17:30
+    delete state.answers[d][s.id]; setAnswer(d, e.id, parseQ(e, "6:00")); const r3 = v();               // Ende + Dauer → Beginn 21:00 (über Mitternacht)
+    setAnswer(d, s.id, 22); const r4 = v();                                                                // Beginn + Ende → 8 h
+    delete state.answers[d];
+    return [r1, r2, r3, r4];
+  });
+  assert.deepEqual(der, [[8.5, 17, 8.5], [8.5, 17.5, 9], [21, 6, 9], [22, 6, 8]]);
   // 7 Tage: 5× gearbeitet je 5 h = 25 h; Vertrag 20 h → Lohn 300 €, effektiv 12,00 €
   await page.evaluate(() => {
-    const [p, c] = state.questions;
+    const [p, , , c] = state.questions;
     for (let i = 0; i < 7; i++) { const d = addDays(todayIso(), -i); state.answers[d] = i < 5 ? { [p.id]: "Ja", [c.id]: 5 } : { [p.id]: "Nein" }; }
     save();
   });

@@ -27,13 +27,25 @@ const TEMPLATES = [
       return true;
     },
     make: () => [{ id: uid(), text: "Was hast du heute gekocht?", type: "choice", options: Array.from(new Set([...recipeNames(), ...RECIPE_EXTRA])), extra: [...RECIPE_EXTRA], tplv: 2, notion: { src: "recipes" }, multi: true, min: 1, max: 5, minLabel: "", maxLabel: "", unit: "", healthKey: "", archived: false, cond: null, theme: "food", template: "recipes" }] },
-  { k: "work", icon: "💼", title: "Arbeit", desc: "„Hast du heute gearbeitet?“ und bei Ja „Wie lange hast du gearbeitet?“. Mit Vertrag (Stunden und Stundenlohn) zeigt die Analyse deinen effektiven Stundenlohn.",
+  { k: "work", icon: "💼", title: "Arbeit", desc: "„Hast du heute gearbeitet?“ und bei Ja Beginn, Ende und Dauer – zwei davon reichen, das Dritte rechnet Mosaik aus. Mit Vertrag (Stunden und Stundenlohn) zeigt die Analyse deinen effektiven Stundenlohn.",
     make: () => {
       const p = { id: uid(), text: "Hast du heute gearbeitet?", type: "choice", options: ["Ja", "Nein"], multi: false, min: 1, max: 5, minLabel: "", maxLabel: "", unit: "", healthKey: "", archived: false, cond: null, theme: "work", template: "work" };
       const c = { id: uid(), text: "Wie lange hast du gearbeitet?", type: "number", options: [], multi: false, min: 1, max: 5, minLabel: "", maxLabel: "", unit: "", format: "duration", healthKey: "", archived: false, cond: { qid: p.id, values: ["Ja"] }, better: "none", template: "work-hours" };
-      return [p, c];
+      return [p, ...workTimes(c), c];
     } }
 ];
+// Beginn und Ende zur Arbeitsdauer (Uhrzeiten tagsüber, kein „nach Mitternacht = später“)
+function workTimes(hours) {
+  const base = { type: "number", options: [], multi: false, min: 1, max: 5, minLabel: "", maxLabel: "", unit: "", format: "clock", clockDay: true, healthKey: "", archived: false, cond: hours.cond ? { ...hours.cond, values: [...hours.cond.values] } : null, better: "none", theme: hours.theme };
+  return [{ ...base, id: uid(), text: "Wann hast du angefangen?", template: "work-start" }, { ...base, id: uid(), text: "Wann hast du aufgehört?", template: "work-end" }];
+}
+// bestehende Vorlage „Arbeit“: Beginn und Ende einmalig vor der Dauer ergänzen
+(() => {
+  const h = state.questions.find((q) => q.template === "work-hours");
+  if (!h || state.questions.some((q) => q.template === "work-start")) return;
+  state.questions.splice(state.questions.indexOf(h), 0, ...workTimes(h));
+  save();
+})();
 function openNewQuestion() {
   const dlg = $("#sheet");
   dlg.innerHTML = `<div class="sheet-inner">
@@ -59,7 +71,7 @@ function openNewQuestion() {
 }
 
 // Arbeitszeit: Ja/Nein-Frage mit einer Zahl-Folgefrage (Stunden) – nur dann gibt es einen Vertrag
-const hoursChildOf = (p) => p && p.type === "choice" && p.options.includes("Ja") ? childrenOf(p.id).find((c) => c.type === "number" && !c.archived) : null;
+const hoursChildOf = (p) => p && p.type === "choice" && p.options.includes("Ja") ? childrenOf(p.id).find((c) => c.type === "number" && c.format !== "clock" && !c.archived) : null;
 // Wert der Stunden-Frage in Stunden
 const asHours = (q, v) => (typeof v !== "number" ? null : q.format === "duration" ? v : /^min/i.test(q.unit || "") ? v / 60 : v);
 

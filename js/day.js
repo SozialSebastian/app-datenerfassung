@@ -101,6 +101,13 @@ function renderDay() {
     // Zahlen können keine Folgefragen auslösen → nur Markierung und Zähler aktualisieren
     const aa = state.answers[current] || {};
     card.classList.toggle("done", isAnswered(aa[card.dataset.qid]));
+    // abgeleitete Werte (Arbeit: Beginn/Ende/Dauer) direkt anzeigen
+    for (const id of lastDerived) {
+      const c2 = view.querySelector(`.q[data-qid="${id}"]`), dq = qById(id);
+      if (!c2 || !dq) continue;
+      const inp = c2.querySelector("input"); if (inp) inp.value = fmtQ(dq, aa[id]);
+      c2.classList.toggle("done", isAnswered(aa[id]));
+    }
     const vq = askQuestions(current);
     $(".progress").textContent = `${vq.filter((x) => isAnswered(aa[x.id])).length} von ${vq.length} beantwortet`;
   }));
@@ -172,6 +179,7 @@ function renderQuiz() {
     const qs2 = askQuestions(date), a2 = state.answers[date] || {};
     let i = quiz.idx + 1;
     if (quiz.only) while (i < qs2.length && isAnswered(a2[qs2[i].id])) i++; // schon Beantwortetes überspringen
+    while (i < qs2.length && autoSkip(qs2[i], a2)) i++; // ergibt sich aus anderen Antworten
     quiz.idx = i;
     renderQuiz(); window.scrollTo(0, 0);
   };

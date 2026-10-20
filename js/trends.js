@@ -325,7 +325,7 @@ function numberInsights() {
     let rule = null;
     if (q.healthKey === "schritte") rule = { ok: (v) => v >= 10000, text: (n) => `${n} Tage in Folge über 10.000 Schritte` };
     else if (q.format === "duration") rule = { ok: (v) => v >= 7, text: (n) => `${n} Nächte in Folge mindestens 7 h geschlafen` };
-    else if (q.format === "clock" && q.healthKey !== "aufwachzeit") rule = { ok: (v) => v < 24, text: (n) => `${n} Nächte in Folge vor Mitternacht eingeschlafen` };
+    else if (q.format === "clock" && q.healthKey !== "aufwachzeit" && !q.clockDay) rule = { ok: (v) => v < 24, text: (n) => `${n} Nächte in Folge vor Mitternacht eingeschlafen` };
     else if (betterDir(q)) {
       const m = mean(all), lowGood = betterDir(q) === "low";
       rule = { ok: (v) => (lowGood ? v < m : v > m), text: (n) => `${n} Tage in Folge „${name}“ ${lowGood ? "unter" : "über"} deinem Schnitt (Ø ${fmtNice(q, m)})` };
