@@ -4,7 +4,7 @@
 /* ================= Orte (Standort beim Öffnen) ================= */
 // Gespeichert in state.places: { "2026-10-16": [{ c: "Wedel", t: "08:12" }, { c: "Hamburg", t: "12:40" }] }
 // Aufeinanderfolgende gleiche Orte werden zusammengefasst. Koordinaten werden nicht gespeichert.
-const PLACE_MIN_GAP = 20 * 60 * 1000; // höchstens alle 20 Minuten abfragen
+const PLACE_MIN_GAP = 60 * 60 * 1000; // höchstens einmal pro Stunde abfragen
 const PLACE_ASK_GAP = 4 * 60 * 60 * 1000; // ohne dauerhafte Erlaubnis: höchstens alle 4 Stunden nachfragen lassen
 const P = () => { if (!state.places || typeof state.places !== "object") state.places = {}; return state.places; };
 const placesOn = (d) => (P()[d] || []).map((x) => x.c);
