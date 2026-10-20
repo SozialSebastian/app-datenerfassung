@@ -211,11 +211,74 @@ function parseWhen(v) {
 }
 const minusDays = (d, n) => { const t = new Date(d + "T12:00:00Z"); t.setUTCDate(t.getUTCDate() - n); return t.toISOString().slice(0, 10); };
 
+// Schlaf aus einzelnen Health-Messungen (Phasen Kern/Tief/REM, „Schlafend“ usw.):
+//  - mit schlaf_wert: „Im Bett“ fällt weg, „Wach“ wird abgezogen, Watch-Phasen haben Vorrang vor allgemeinem „Schlafend“
+//  - überlappende Messungen (z. B. Watch + iPhone) werden zusammengelegt, nichts doppelt gezählt
+//  - Messungen mit weniger als 3 h Abstand bilden eine Nacht; je Tag (des Aufwachens) zählt die längste
+//  → schlaf = tatsächlich geschlafene Zeit (ohne Wachphasen), schlafenszeit = Einschlafen, aufwachzeit = letztes Aufwachen
+const SLEEP_WAKE = /wach|awake/i, SLEEP_BED = /bett|in ?bed/i, SLEEP_STAGE = /kern|tief|rem|core|deep/i;
+// Intervalle [a, b] (ms) zusammenlegen
+const unite = (iv) => {
+  const out = [];
+  for (const [a, b] of [...iv].sort((x, y) => x[0] - y[0])) {
+    const l = out[out.length - 1];
+    if (l && a <= l[1]) l[1] = Math.max(l[1], b); else out.push([a, b]);
+  }
+  return out;
+};
+const ivLen = (iv) => iv.reduce((s, [a, b]) => s + b - a, 0);
+// Länge von iv, ohne die Teile, die in cut liegen
+const minus = (iv, cut) => {
+  let len = ivLen(iv);
+  for (const [a, b] of iv) for (const [c, d] of cut) len -= Math.max(0, Math.min(b, d) - Math.max(a, c));
+  return len;
+};
+function sleepEntries(start, end, kinds) {
+  const typed = Array.isArray(kinds) && kinds.length === start.length;
+  const sl = [], wake = [];
+  for (let i = 0; i < Math.min(start.length, end.length, 20000); i++) {
+    const a = parseWhen(start[i]), b = parseWhen(end[i]);
+    if (!a || !b || b.ms <= a.ms || b.ms - a.ms > 16 * 3600000) continue;
+    const k = typed ? String(kinds[i]) : "";
+    if (SLEEP_BED.test(k)) continue;
+    if (SLEEP_WAKE.test(k)) { wake.push([a.ms, b.ms]); continue; }
+    sl.push({ a, b, stage: SLEEP_STAGE.test(k) });
+  }
+  sl.sort((x, y) => x.a.ms - y.a.ms);
+  // Nächte: Messungen mit weniger als 3 h Abstand gehören zusammen
+  const nights = [];
+  for (const x of sl) {
+    const n = nights[nights.length - 1];
+    if (n && x.a.ms - n.endMs < 3 * 3600000) { n.items.push(x); if (x.b.ms > n.endMs) { n.endMs = x.b.ms; n.end = x.b; } }
+    else nights.push({ items: [x], start: x.a, end: x.b, endMs: x.b.ms });
+  }
+  const best = {};
+  for (const n of nights) {
+    // Gibt es Schlafphasen (Watch), zählen nur diese – allgemeines „Schlafend“ (z. B. iPhone) würde Wachphasen überdecken
+    const use = n.items.some((x) => x.stage) ? n.items.filter((x) => x.stage) : n.items;
+    const iv = unite(use.map((x) => [x.a.ms, x.b.ms]));
+    n.sleep = minus(iv, unite(wake));
+    n.start = use[0].a;
+    n.end = use.reduce((m, x) => (x.b.ms > m.ms ? x.b : m), use[0].b);
+    const d = n.end.local;
+    if (!best[d] || n.sleep > best[d].sleep) best[d] = n;
+  }
+  const out = [];
+  for (const [d, n] of Object.entries(best)) {
+    if (n.sleep < 3600000) continue; // kürzer als 1 h: Nickerchen, keine Nacht
+    const c = n.start.clock, w = n.end.clock;
+    out.push(["schlaf", String(Math.round(n.sleep / 360) / 10000), d]);
+    out.push(["schlafenszeit", String(Math.round((c < 12 ? c + 24 : c) * 10000) / 10000), d]);
+    out.push(["aufwachzeit", String(Math.round(w * 10000) / 10000), d]);
+  }
+  return out;
+}
+
 // Wandelt Listen in Tageswerte um:
-//  schlaf_start + schlaf_ende  → Summe der Stunden je Nacht (Tag des Aufwachens)
+//  schlaf_start + schlaf_ende (+ schlaf_wert) → je Nacht Schlafdauer, Einschlaf- und Aufwachzeit (Tag des Aufwachens)
 //  schritte + schritte_datum   → Wert je Datum
 //  schritte allein             → neuester zuerst: heute, gestern, vorgestern …
-function listEntries(lists, today) {
+export function listEntries(lists, today) {
   const out = [];
   // Kurzbefehle packen eine Liste oft als EINEN Text mit einem Wert pro Zeile → aufteilen
   for (const k of Object.keys(lists)) {
@@ -223,10 +286,14 @@ function listEntries(lists, today) {
   }
   const done = new Set();
   for (const key of Object.keys(lists)) {
+    if (key.endsWith("_wert")) continue; // gehört zu …_start/_ende
     const base = key.replace(/_(start|ende|datum)$/, "");
     if (done.has(base)) continue;
     const start = lists[base + "_start"], end = lists[base + "_ende"], dates = lists[base + "_datum"], vals = lists[base];
-    if (Array.isArray(start) && Array.isArray(end)) {
+    if (base === "schlaf" && Array.isArray(start) && Array.isArray(end)) {
+      done.add(base);
+      out.push(...sleepEntries(start, end, lists.schlaf_wert));
+    } else if (Array.isArray(start) && Array.isArray(end)) {
       done.add(base);
       const perDay = {}, firstStart = {};
       for (let i = 0; i < Math.min(start.length, end.length, 20000); i++) {
@@ -235,12 +302,10 @@ function listEntries(lists, today) {
         perDay[b.local] = (perDay[b.local] || 0) + (b.ms - a.ms) / 3600000;
         if (!firstStart[b.local] || a.ms < firstStart[b.local].ms) firstStart[b.local] = a;
       }
-      // Dauer minutengenau (in Stunden), dazu die Uhrzeit des Einschlafens (nach Mitternacht → 24+)
-      const startKey = base === "schlaf" ? "schlafenszeit" : base + "_beginn";
       for (const [d, h] of Object.entries(perDay)) {
         out.push([base, String(Math.round(h * 60) / 60), d]);
         const c = firstStart[d].clock;
-        out.push([startKey, String(Math.round((c < 12 ? c + 24 : c) * 10000) / 10000), d]);
+        out.push([base + "_beginn", String(Math.round((c < 12 ? c + 24 : c) * 10000) / 10000), d]);
       }
     } else if (Array.isArray(vals)) {
       done.add(base);
@@ -371,7 +436,7 @@ async function handle(request, env) {
     await env.DB.batch(entries.map(([k, v, d]) => env.DB.prepare("INSERT INTO inbox (created, date, key, value) VALUES (datetime('now'), ?, ?, ?)").bind(d, k, v)));
     const byKey = {};
     const hm = (h, wrap) => { let m = Math.round(Number(h) * 60); if (wrap) m = ((m % 1440) + 1440) % 1440; return `${Math.floor(m / 60)}:${String(m % 60).padStart(2, "0")}`; };
-    const show = (k, v) => (k === "schlaf" ? hm(v) : k === "schlafenszeit" || k.endsWith("_beginn") ? hm(v, true) : v);
+    const show = (k, v) => (k === "schlaf" ? hm(v) : k === "schlafenszeit" || k === "aufwachzeit" || k.endsWith("_beginn") ? hm(v, true) : v);
     for (const [k, v, d] of entries) (byKey[k] = byKey[k] || []).push(`${d.slice(8, 10)}.${d.slice(5, 7)}.: ${show(k, v)}`);
     return text(`Gespeichert – ${Object.entries(byKey).map(([k, xs]) => `${k}: ${xs.join(", ")}`).join(" | ")}. Mosaik übernimmt das beim nächsten Öffnen.`);
   }

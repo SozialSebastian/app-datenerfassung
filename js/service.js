@@ -145,7 +145,7 @@ function reportStatus() {
 
 // Bekannte Kürzel bekommen einen schönen Namen
 const HEALTH_NAMES = {
-  schlaf: ["Schlafdauer", "", "duration"], schlafenszeit: ["Schlafenszeit", "", "clock"], schritte: ["Schritte", ""], ruhepuls: ["Ruhepuls", "bpm"], puls: ["Puls", "bpm"],
+  schlaf: ["Schlafdauer", "", "duration"], schlafenszeit: ["Einschlafzeit", "", "clock"], aufwachzeit: ["Aufwachzeit", "", "clock"], schritte: ["Schritte", ""], ruhepuls: ["Ruhepuls", "bpm"], puls: ["Puls", "bpm"],
   hrv: ["Herzfrequenzvariabilität", "ms"], kalorien: ["Aktivkalorien", "kcal"], aktivkalorien: ["Aktivkalorien", "kcal"],
   training: ["Trainingsminuten", "min"], stehen: ["Stehstunden", "h"], distanz: ["Distanz", "km"], gewicht: ["Gewicht", "kg"],
   achtsamkeit: ["Achtsamkeitsminuten", "min"], stockwerke: ["Stockwerke", ""]

@@ -146,7 +146,29 @@ test("Zeitformate: Eingabe und Anzeige", async () => {
   assert.equal(r[3], "00:45");
   assert.equal(Math.round(r[4] * 60), 425);
   assert.equal(r[5], 7.5);
+  // Aufwachzeit bleibt morgens (kein +24 h)
+  assert.equal(await page.evaluate(() => parseQ({ format: "clock", healthKey: "aufwachzeit" }, "6:40")), 6.6667);
   await ctx.close();
+});
+
+test("Schlaf aus Health: Wachphasen abgezogen, doppelte Messungen einmal, Einschlaf- und Aufwachzeit", async () => {
+  const { listEntries } = await import("../worker/src/index.js");
+  const t = (x) => `2026-10-${x}:00+02:00`;
+  // Watch: Kern 23:10–02:00, Wach 02:00–02:25, REM 02:25–06:40; iPhone „Schlafend“ 23:30–06:30 (überdeckt die Wachphase);
+  // „Im Bett“ 22:50–06:45; Nickerchen 14:00–14:30
+  const r = listEntries({
+    schlaf_start: [t("19T23:10"), t("20T02:00"), t("20T02:25"), t("19T23:30"), t("19T22:50"), t("20T14:00")],
+    schlaf_ende: [t("20T02:00"), t("20T02:25"), t("20T06:40"), t("20T06:30"), t("20T06:45"), t("20T14:30")],
+    schlaf_wert: ["Kern", "Wach", "REM", "Schlafend", "Im Bett", "Kern"]
+  }, "2026-10-20");
+  const v = Object.fromEntries(r.map(([k, x, d]) => [k, [Number(x), d]]));
+  assert.equal(Math.round(v.schlaf[0] * 60), 7 * 60 + 5); // 2:50 + 4:15
+  assert.equal(v.schlaf[1], "2026-10-20");
+  assert.equal(Math.round(v.schlafenszeit[0] * 60), 23 * 60 + 10);
+  assert.equal(Math.round(v.aufwachzeit[0] * 60), 6 * 60 + 40);
+  // ohne Phasen (Kurzbefehl filtert Wach heraus): Lücke bleibt Lücke, Überlappung zählt einmal
+  const r2 = listEntries({ schlaf_start: [t("19T23:10"), t("20T02:25"), t("20T03:00")], schlaf_ende: [t("20T02:00"), t("20T06:40"), t("20T05:00")] }, "2026-10-20");
+  assert.equal(Math.round(Number(r2.find((x) => x[0] === "schlaf")[1]) * 60), 425);
 });
 
 test("Excel enthält alle Fragen, Datumsformat, Dauer und Orte", async () => {
@@ -160,7 +182,7 @@ test("Excel enthält alle Fragen, Datumsformat, Dauer und Orte", async () => {
     return { header, rows: range.e.r, a2: ws.A2.z, dur: ws[XLSX.utils.encode_cell({ r: 1, c: header.indexOf("Schlafdauer") })].z, last: ws[XLSX.utils.encode_cell({ r: range.e.r, c: header.indexOf("Orte") })]?.v };
   });
   // Spalten nach Thema sortiert: Sport, Gesundheit, Wohlbefinden
-  assert.deepEqual(r.header, ["Datum", "Wochentag", "Heute bouldern?", "Schritte", "Schlafdauer", "Schlafenszeit", "Laune", "Orte"]);
+  assert.deepEqual(r.header, ["Datum", "Wochentag", "Heute bouldern?", "Schritte", "Schlafdauer", "Einschlafzeit", "Laune", "Orte"]);
   assert.equal(r.rows, 400);
   assert.equal(r.a2, "dd.mm.yyyy");
   assert.equal(r.dur, "[h]:mm");

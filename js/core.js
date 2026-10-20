@@ -22,7 +22,8 @@ let state = load();
 for (const q of state.questions) if (!q.theme && !q.cond) q.theme = guessTheme(q);
 for (const q of state.questions) {
   if (!q.format && q.healthKey === "schlaf") { q.format = "duration"; if (q.unit === "Stunden") q.unit = ""; }
-  if (!q.format && q.healthKey === "schlafenszeit") q.format = "clock";
+  if (q.healthKey === "schlafenszeit" && q.text === "Schlafenszeit") q.text = "Einschlafzeit"; // eindeutiger als „Schlafenszeit“
+  if (!q.format && (q.healthKey === "schlafenszeit" || q.healthKey === "aufwachzeit")) q.format = "clock";
 }
 function save() {
   localStorage.setItem(KEY, JSON.stringify(state));
@@ -203,7 +204,7 @@ function parseQ(q, text) {
     const m = t.match(/^(\d{1,2})\s*(?:[:.h]|\s)\s*(\d{1,2})(?:\s*min)?$/i);
     let h = m ? Number(m[1]) + Number(m[2]) / 60 : parseNum(t);
     if (Number.isNaN(h)) return NaN;
-    if (q.format === "clock" && h < 12) h += 24; // nach Mitternacht → 24+ (für Durchschnitt und Grafik)
+    if (q.format === "clock" && h < 12 && q.healthKey !== "aufwachzeit") h += 24; // abends: nach Mitternacht → 24+ (für Durchschnitt und Grafik); Aufwachzeit bleibt morgens
     return Math.round(h * 10000) / 10000;
   }
   return parseNum(t);

@@ -110,6 +110,7 @@ function renderData() {
       <details ${settings.shortcutDone ? "" : "open"}>
         <summary><strong>Anleitung: Kurzbefehl anlegen</strong></summary>
         <p class="small" style="margin:8px 0 4px">Der Kurzbefehl schickt die letzten 7 Tage auf einmal. Mosaik ordnet jeden Wert seinem Tag zu: Schritte von 0–24 Uhr, Schlaf beim Tag des Aufwachens. Ältere Werte werden dabei aktualisiert.</p>
+        <p class="small" style="margin:4px 0">Beim Schlaf zählt nur die tatsächlich geschlafene Zeit: Wachphasen in der Nacht werden abgezogen, doppelte Messungen (Watch und iPhone) nur einmal gezählt, kurze Nickerchen ignoriert. Dazu kommen Einschlaf- und Aufwachzeit.</p>
         <p class="small" style="margin:10px 0 4px"><strong>1. Schritte</strong></p>
         <ol class="steps small">
           <li><strong>Health-Messungen suchen</strong>: Typ <em>Schritte</em>, Startdatum <em>in den letzten 7 Tagen</em>, Gruppieren nach <em>Tag</em>.</li>
@@ -125,7 +126,8 @@ function renderData() {
             <br><code>schritte</code> → Schritte-Messungen → <em>Wert</em>
             <br><code>schritte_datum</code> → Schritte-Messungen → <em>Startdatum</em>
             <br><code>schlaf_start</code> → Schlaf-Messungen → <em>Startdatum</em>
-            <br><code>schlaf_ende</code> → Schlaf-Messungen → <em>Enddatum</em></li>
+            <br><code>schlaf_ende</code> → Schlaf-Messungen → <em>Enddatum</em>
+            <br><code>schlaf_wert</code> → Schlaf-Messungen → <em>Wert</em> (Kern, Tief, REM, Wach …; damit werden Wachphasen sicher erkannt)</li>
           <li>Bei den Datumsfeldern das Datumsformat auf <em>ISO 8601</em> stellen (Variable antippen → Datumsformat), dann ist die Zuordnung eindeutig.</li>
           <li>Kurzbefehle → <strong>Automation</strong> → <em>Tageszeit</em> (z. B. 10:00, täglich) → <em>Sofort ausführen</em>. Morgens ist das iPhone meist entsperrt, dann darf der Kurzbefehl Health lesen.</li>
         </ol>
