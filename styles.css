@@ -680,6 +680,17 @@ svg.cline .hover { fill: var(--hold); stroke: var(--surface); stroke-width: 2; }
 .vb em { font-style: normal; font-size: 11px; font-weight: 700; color: var(--ink); font-variant-numeric: tabular-nums; white-space: nowrap; line-height: 14px; }
 .vb .cbar { display: block; width: 100%; max-width: 34px; border-radius: 6px; background: var(--hold); opacity: .8; }
 .vb.cur .cbar { opacity: 1; box-shadow: 0 0 0 2px var(--surface), 0 0 0 3.5px var(--hold); }
+.vb .cbar.stack { display: flex; flex-direction: column-reverse; overflow: hidden; opacity: 1; background: none; gap: 1px; }
+.vb .cbar.stack > span { display: block; min-height: 2px; }
+.vb.cur .cbar.stack { box-shadow: 0 0 0 2px var(--surface), 0 0 0 3.5px var(--ink-2); }
+.kids { margin-top: 12px; border-top: 1px solid var(--line); padding-top: 10px; display: grid; gap: 10px; }
+.kid .kq { display: block; font-size: 13px; font-weight: 600; color: var(--ink-2); margin-bottom: 4px; }
+.klegend { display: flex; flex-wrap: wrap; gap: 4px 14px; font-size: 14px; }
+.klegend span { display: inline-flex; align-items: center; gap: 6px; }
+.klegend i { width: 10px; height: 10px; border-radius: 3px; display: inline-block; }
+.klegend b, .kstats b { font-variant-numeric: tabular-nums; }
+.kstats { display: flex; flex-wrap: wrap; gap: 2px 14px; font-size: 14px; }
+.kstats span { color: var(--ink-2); }
 .vb.sel .cbar { opacity: 1; box-shadow: 0 0 0 2px var(--surface), 0 0 0 3.5px var(--ink); }
 .vavg { position: absolute; left: 0; right: 0; border-top: 1.5px dashed var(--ink-2); opacity: .7; pointer-events: none; }
 .vavg b { position: absolute; right: 0; top: -9px; font-size: 10px; line-height: 16px; font-weight: 700; color: var(--ink-2); background: var(--surface); border: 1px solid var(--line); border-radius: 8px; padding: 0 5px; }

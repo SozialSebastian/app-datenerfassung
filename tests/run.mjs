@@ -297,6 +297,28 @@ test("Analyse: leere Kacheln ausblenden (je Frage und für alle)", async () => {
   await ctx.close();
 });
 
+test("Analyse: Folgefragen in der Kachel der Hauptfrage, Säulen nach Antwort eingefärbt", async () => {
+  const d0 = new Date(); const ds = (i) => { const d = new Date(d0); d.setDate(d.getDate() - i); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`; };
+  const answers = {}; for (let i = 0; i < 6; i++) answers[ds(i)] = i % 2 ? { t: "Nein" } : { t: "Ja", w: i === 2 ? "Milonga" : "Kurs" };
+  const data = { version: 1, lastBackup: null, answers, questions: [yesNo("t", "Tango tanzen?"), { id: "w", text: "Wo?", type: "choice", options: ["Kurs", "Milonga"], multi: false, cond: { qid: "t", values: ["Ja"] } }] };
+  const { page, ctx, errors } = await open({ data });
+  await page.evaluate(() => { setQ("t", { trend: true }); });
+  await page.click('[data-tab="analysis"]');
+  await page.click('[data-range="7"]');
+  assert.equal(await page.locator('.acard[data-qid="w"]').count(), 0); // keine eigene Kachel
+  const card = page.locator('.acard[data-qid="t"]');
+  assert.match(await card.innerText(), /Wo\?[\s\S]*Kurs\s*2×[\s\S]*Milonga\s*1×/);
+  assert.equal(await card.locator(".cbar.stack").count(), 3);
+  // abschalten per Gedrückthalten
+  await page.click('.acard[data-qid="t"] .atitle', { button: "right" });
+  await page.uncheck('[data-q="t"][data-f="merge"]');
+  await page.click("#adone");
+  assert.equal(await page.locator('.acard[data-qid="w"]').count(), 1);
+  assert.equal(await page.locator('.acard[data-qid="t"] .cbar.stack').count(), 0);
+  assert.deepEqual(errors, []);
+  await ctx.close();
+});
+
 test("Schlaf aus Health: Wachphasen abgezogen, doppelte Messungen einmal, Einschlaf- und Aufwachzeit", async () => {
   const { listEntries } = await import("../worker/src/index.js");
   const t = (x) => `2026-10-${x}:00+02:00`;

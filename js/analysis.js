@@ -102,7 +102,10 @@ function renderAnalysis() {
   // Filter nach Thema (nur wenn es mehrere Themen gibt)
   const usedThemes = THEMES.filter((t) => all.some((q) => themeOf(q) === t.k));
   if (prefs.theme && !usedThemes.some((t) => t.k === prefs.theme)) prefs.theme = "";
-  const qs = all.filter((q) => !qset(q).hidden && (!prefs.theme || themeOf(q) === prefs.theme) && !(qset(q).hideZero && zeroCard(q, days)));
+  let qs = all.filter((q) => !qset(q).hidden && (!prefs.theme || themeOf(q) === prefs.theme) && !(qset(q).hideZero && zeroCard(q, days)));
+  // Folgefragen stehen in der Kachel ihrer Hauptfrage (wenn die angezeigt wird und zusammengefasst ist)
+  const shown = new Set(qs.map((q) => q.id));
+  qs = qs.filter((q) => !(q.cond && shown.has(q.cond.qid) && mergedKids(qById(q.cond.qid), days).includes(q)));
 
   view.innerHTML = `
     <div class="dayhead">
@@ -185,8 +188,49 @@ function distribution(q, vals) {
   return out;
 }
 
+// Folgefragen, die in der Kachel der Hauptfrage stehen (Einstellung „Folgefragen in dieser Kachel“, Standard an)
+function mergedKids(p, days) {
+  if (!p || qset(p).merge === false) return [];
+  const list = analysisQuestions(days);
+  return childrenOf(p.id).filter((c) => list.includes(c) && !qset(c).hidden);
+}
+// Folgefrage, nach der die Säulen eingefärbt werden (Auswahl-Frage; einstellbar)
+function stackKid(p, kids) {
+  const ch = kids.filter((c) => c.type === "choice");
+  return ch.find((c) => c.id === qset(p).stackBy) || ch[0] || null;
+}
+// Je Tag: Anteile der Antworten der Folgefrage (Mehrfachauswahl wird aufgeteilt), sonst „ohne Angabe“
+const stackOf = (c) => (d) => {
+  const v = (state.answers[d] || {})[c.id];
+  const xs = Array.isArray(v) ? v : isAnswered(v) ? [v] : [];
+  return xs.length ? xs.map((k) => [k, 1 / xs.length]) : [["__none", 1]];
+};
+const stackColor = (c, k) => (k === "__none" ? "var(--line)" : `var(--s${(Math.max(0, c.options.indexOf(k)) % SERIES) + 1})`);
+// kurze Zusammenfassung einer Folgefrage in der Kachel der Hauptfrage
+function kidLine(c, days, skipStack) {
+  const vals = days.map((d) => (state.answers[d] || {})[c.id]).filter(isAnswered);
+  if (!vals.length) return "";
+  const head = `<span class="kq">↳ ${esc(c.text)}</span>`;
+  if (c.type === "choice") {
+    const cnt = {};
+    vals.forEach((v) => (Array.isArray(v) ? v : [v]).forEach((k) => (cnt[k] = (cnt[k] || 0) + 1)));
+    const rows = Object.entries(cnt).sort((a, b) => b[1] - a[1]);
+    return `<div class="kid">${head}<div class="klegend">${rows.map(([k, n]) => `<span>${skipStack ? `<i style="background:${stackColor(c, k)}"></i>` : ""}${esc(k)} <b>${n}×</b></span>`).join("")}</div></div>`;
+  }
+  const nums = vals.filter((v) => typeof v === "number");
+  if (!nums.length) return "";
+  const avg = nums.reduce((s, x) => s + x, 0) / nums.length;
+  const f = (v) => (c.format ? fmtQ(c, v) : fmt1(v) + (c.unit ? " " + c.unit : ""));
+  // kompakt: Uhrzeit mit Spanne, Dauer und Zahl mit Summe
+  const sum = nums.reduce((s, x) => s + x, 0);
+  const extra = c.format === "clock" ? (nums.length > 1 ? `<span>${fmtQ(c, Math.min(...nums))}–${fmtQ(c, Math.max(...nums))} Uhr</span>` : "")
+    : c.type === "number" ? `<span>Summe ${c.format ? fmtQ(c, sum) : fmt1(sum) + (c.unit ? " " + c.unit : "")}</span>` : "";
+  return `<div class="kid">${head}<div class="kstats"><b>Ø ${f(avg)}</b>${extra}</div>${contractBlock(c, days)}</div>`;
+}
+
 function analysisCard(q, days) {
   const set = qset(q);
+  const kids = mergedKids(q, days);
   const vals = days.map((d) => ({ d, v: (state.answers[d] || {})[q.id] })).filter((x) => isAnswered(x.v));
   const n = vals.length;
   let body = "";
@@ -254,8 +298,9 @@ function analysisCard(q, days) {
     }
 
     if (set.trend) {
+      const sk = yesNo ? stackKid(q, kids) : null;
       body += q.type === "scale" ? (n >= 2 ? lineChart(q, days, vals, vals.reduce((s, x) => s + x.v, 0) / n) : "")
-        : columnChart(q, days, focusKey, yesNo ? "abs" : set.unit);
+        : columnChart(q, days, focusKey, yesNo ? "abs" : set.unit, null, sk ? { of: stackOf(sk), color: (k) => stackColor(sk, k), name: (k) => (k === "__none" ? "ohne Angabe" : k), order: (k) => (k === "__none" ? 999 : sk.options.indexOf(k) < 0 ? 998 : sk.options.indexOf(k)) } : null);
     }
   } else {
     const nums = vals.map((x) => x.v);
@@ -274,10 +319,13 @@ function analysisCard(q, days) {
       ${set.trend && n >= 2 ? lineChart(q, days, vals, avg) : ""}`;
   }
 
-  return `<section class="panel acard" data-qid="${q.id}">
+  const sk0 = kids.length && set.trend ? stackKid(q, kids) : null;
+  const kidsHtml = kids.map((c) => kidLine(c, days, c === sk0)).join("");
+  return `<section class="panel acard ${kids.length ? "merged" : ""}" data-qid="${q.id}">
     ${title}
     ${body}
     ${contractBlock(q, days)}
+    ${kidsHtml ? `<div class="kids">${kidsHtml}</div>` : ""}
     <p class="acap small" aria-live="polite"></p>
   </section>`;
 }
@@ -451,7 +499,7 @@ function labeledPie(items, unit) {
 
 // Säulen über die Zeit: wie oft die gewählte Antwort vorkam (pro Tag, Woche oder Monat)
 // hitOf(d): optional eigene Zählung je Tag (null = nicht beantwortet, true/false = Treffer)
-function columnChart(q, days, focusKey, unit, hitOf) {
+function columnChart(q, days, focusKey, unit, hitOf, stack) {
   const span = days.length;
   const mode = span <= 14 ? "day" : span <= 92 ? "week" : "month";
   const buckets = [];
@@ -462,7 +510,13 @@ function columnChart(q, days, focusKey, unit, hitOf) {
     if (!b || b.k !== k) { b = { k, first: d, n: 0, hit: 0 }; buckets.push(b); }
     if (hitOf) { const h = hitOf(d); if (h !== null) { b.n++; if (h) b.hit++; } continue; }
     const v = (state.answers[d] || {})[q.id];
-    if (isAnswered(v)) { b.n++; if (Array.isArray(v) ? v.includes(focusKey) : v === focusKey) b.hit++; }
+    if (isAnswered(v)) {
+      b.n++;
+      if (Array.isArray(v) ? v.includes(focusKey) : v === focusKey) {
+        b.hit++;
+        if (stack) { b.seg = b.seg || {}; for (const [k, w] of stack.of(d)) b.seg[k] = (b.seg[k] || 0) + w; }
+      }
+    }
   }
   const val = (b) => (unit === "pct" ? (b.n ? (b.hit / b.n) * 100 : 0) : b.hit);
   const fmtV = (b) => (unit === "pct" ? `${Math.round(val(b))} %` : String(b.hit));
@@ -482,9 +536,15 @@ function columnChart(q, days, focusKey, unit, hitOf) {
   const capName = (b) => (mode === "month" ? `${MON_SHORT[parseIso(b.first).getMonth()]} ${parseIso(b.first).getFullYear()}` : `${name}${lab(b)}`);
   return `<div class="vcols" style="--n:${buckets.length}">
       <div class="vbars" style="height:${H + (many ? 4 : 20)}px">
-        ${buckets.map((b, i) => `<button type="button" class="col vb ${i === buckets.length - 1 ? "cur" : ""}" data-cap="${esc(`${capName(b)}: ${unit === "pct" ? Math.round(val(b)) + " %" : b.hit + "×"} „${focusKey}“ (${b.n} Tag${b.n === 1 ? "" : "e"} beantwortet)`)}">
-          ${many ? "" : `<em>${unit === "pct" && buckets.length > 8 ? Math.round(val(b)) : fmtV(b)}</em>`}<span class="cbar" style="height:${Math.max(val(b) > 0 ? 3 : 0, (val(b) / max) * H)}px"></span>
-        </button>`).join("")}
+        ${buckets.map((b, i) => {
+          const segs = stack && b.seg ? Object.entries(b.seg).sort((x, y) => stack.order(x[0]) - stack.order(y[0])) : null; // feste Reihenfolge wie die Antworten
+          const segTxt = segs ? ` – ${segs.map(([k, w]) => `${stack.name(k)} ${fmt1(w)}`).join(", ")}` : "";
+          const h = Math.max(val(b) > 0 ? 3 : 0, (val(b) / max) * H);
+          const inner = segs ? segs.map(([k, w]) => `<span style="flex:${w};background:${stack.color(k)}"></span>`).join("") : "";
+          return `<button type="button" class="col vb ${i === buckets.length - 1 ? "cur" : ""}" data-cap="${esc(`${capName(b)}: ${unit === "pct" ? Math.round(val(b)) + " %" : b.hit + "×"} „${focusKey}“${segTxt} (${b.n} Tag${b.n === 1 ? "" : "e"} beantwortet)`)}">
+          ${many ? "" : `<em>${unit === "pct" && buckets.length > 8 ? Math.round(val(b)) : fmtV(b)}</em>`}<span class="cbar ${segs ? "stack" : ""}" style="height:${h}px">${inner}</span>
+        </button>`;
+        }).join("")}
         ${avg > 0 && mode !== "day" ? `<div class="vavg" style="bottom:${(avg / max) * H}px" title="Durchschnitt ${unit === "pct" ? Math.round(avg) + " %" : fmt1(avg) + "× pro " + (mode === "week" ? "Woche" : "Monat")}"><b>Ø ${unit === "pct" ? Math.round(avg) + " %" : fmt1(avg)}</b></div>` : ""}
       </div>
       <div class="vlabs">${buckets.map((b, i) => `<span>${i % every === 0 || i === buckets.length - 1 && !many ? lab(b) : ""}</span>`).join("")}</div>
@@ -525,7 +585,8 @@ function lineChart(q, days, vals, avg) {
 // onlyQid: nur die Darstellung dieser einen Frage (lange auf eine Karte drücken)
 function openAnalysisSettings(onlyQid) {
   const dlg = $("#sheet");
-  const qs = analysisQuestions(rangeDays()).filter((q) => !onlyQid || q.id === onlyQid);
+  // gedrückte Kachel: die Frage und ihre Folgefragen
+  const qs = analysisQuestions(rangeDays()).filter((q) => !onlyQid || q.id === onlyQid || (q.cond && q.cond.qid === onlyQid));
   const seg = (q, field, opts, cur) => `<div class="seg seg-${opts.length}" role="group">${opts.map(([v, l]) =>
     `<button type="button" data-q="${q.id}" data-f="${field}" data-v="${v}" aria-pressed="${cur === v}">${l}</button>`).join("")}</div>`;
   const draw = () => {
@@ -595,7 +656,15 @@ function openAnalysisSettings(onlyQid) {
                <p class="muted small" style="margin:6px 0 0">Zeigt nur: an wie vielen Tagen im Zeitraum diese Antwort kam.</p>`
             : q.type === "scale" && s.chart === "count" ? `<p class="muted small" style="margin:6px 0 0">Zeigt nur den Durchschnitt.</p>` : `<div class="sq-row"><span>Werte</span>${seg(q, "unit", [["pct", "%"], ["abs", "Anzahl"]], s.unit)}</div>`}` : ""}
           <label class="switch row"><input type="checkbox" data-q="${q.id}" data-f="trend" ${s.trend ? "checked" : ""}><span>Verlauf über die Zeit</span></label>
-          <label class="switch row"><input type="checkbox" data-q="${q.id}" data-f="hideZeroQ" ${s.hideZero ? "checked" : ""}><span>Ausblenden, solange der Wert 0 ist</span></label>`}
+          <label class="switch row"><input type="checkbox" data-q="${q.id}" data-f="hideZeroQ" ${s.hideZero ? "checked" : ""}><span>Ausblenden, solange der Wert 0 ist</span></label>
+          ${(() => {
+            const kids = childrenOf(q.id).filter((c) => !c.archived);
+            if (!kids.length) return "";
+            const ch = kids.filter((c) => c.type === "choice");
+            const sk = stackKid(q, ch);
+            return `<label class="switch row"><input type="checkbox" data-q="${q.id}" data-f="merge" ${s.merge !== false ? "checked" : ""}><span>Folgefragen in dieser Kachel</span></label>
+              ${s.merge !== false && ch.length > 1 ? `<div class="sq-row"><span>Farben nach</span><select data-q="${q.id}" data-f="stackBy">${ch.map((c) => `<option value="${c.id}" ${c === sk ? "selected" : ""}>${esc(c.text)}</option>`).join("")}</select></div>` : ""}`;
+          })()}`}
         </section>`;
       }).join("")}
     </div>`;
@@ -613,10 +682,11 @@ function openAnalysisSettings(onlyQid) {
       else if (i.dataset.f === "show") setQ(i.dataset.q, { hidden: !i.checked });
       else if (i.dataset.f === "hideZero") { prefs.hideZero = i.checked; Object.values(prefs.q).forEach((x) => delete x.hideZero); savePrefs(); }
       else if (i.dataset.f === "hideZeroQ") setQ(i.dataset.q, { hideZero: i.checked });
+      else if (i.dataset.f === "merge") setQ(i.dataset.q, { merge: i.checked });
       else setQ(i.dataset.q, { trend: i.checked });
       draw(); renderAnalysis();
     }));
-    dlg.querySelectorAll("select[data-f]").forEach((sel) => sel.addEventListener("change", () => { setQ(sel.dataset.q, { countKey: sel.value }); renderAnalysis(); }));
+    dlg.querySelectorAll("select[data-f]").forEach((sel) => sel.addEventListener("change", () => { setQ(sel.dataset.q, { [sel.dataset.f === "stackBy" ? "stackBy" : "countKey"]: sel.value }); renderAnalysis(); }));
   };
   draw();
   dlg.showModal();
