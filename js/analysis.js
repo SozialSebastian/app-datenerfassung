@@ -347,7 +347,7 @@ function analysisCard(q, days) {
       const lo = q.format === "clock" ? "früheste" : "kürzeste", hi = q.format === "clock" ? "späteste" : "längste";
       body = `
       <p class="hero"><span class="big">Ø ${fmtQ(q, avg)}</span>${q.format === "clock" ? `<span class="muted">Uhr</span>` : ""}</p>
-      <p class="stats small">${chg}${chart ? "" : `<span>${lo} ${fmtQ(q, Math.min(...nums))}</span><span>${hi} ${fmtQ(q, Math.max(...nums))}</span>`}${n > 1 ? `<span>Streuung ± ${sdMin} min</span>` : ""}${q.format === "duration" ? `<span>Summe ${fmtQ(q, sum)}</span>` : ""}</p>
+      <p class="stats small">${chg}${chart ? "" : `<span>${lo} ${fmtQ(q, Math.min(...nums))}</span><span>${hi} ${fmtQ(q, Math.max(...nums))}</span>`}${n > 1 ? `<span>Streuung ± ${sdMin} min</span>` : ""}${q.format === "duration" && !NIGHT_KEYS.includes(q.healthKey) ? `<span>Summe ${fmtQ(q, sum)}</span>` : ""}</p>
       ${chart ? lineChart(q, days, vals, avg) : ""}`;
     } else body = `
       <p class="hero"><span class="big">Ø ${fmtBig(avg)}</span><span class="muted">${q.unit ? esc(q.unit) : ""}</span></p>
