@@ -90,8 +90,6 @@ function renderAnalysis() {
   const usedThemes = THEMES.filter((t) => all.some((q) => themeOf(q) === t.k));
   if (prefs.theme && !usedThemes.some((t) => t.k === prefs.theme)) prefs.theme = "";
   const qs = all.filter((q) => !qset(q).hidden && (!prefs.theme || themeOf(q) === prefs.theme));
-  const tracked = days.filter((d) => state.answers[d]).length;
-  const hiddenN = all.length - qs.length;
 
   view.innerHTML = `
     <div class="dayhead">
@@ -99,7 +97,7 @@ function renderAnalysis() {
       ${all.length ? `<button class="gear" id="asettings" aria-label="Darstellung einstellen">${GEAR}</button>` : ""}
     </div>
     ${rangeControl(prefs.range, "range")}
-    <p class="muted small" style="margin:0 0 16px">${days.length === 1 ? `${tracked ? "Erfasst" : "Noch nicht erfasst"} · ${shortDate(days[0])}` : `${tracked} von ${days.length} Tagen erfasst · ${shortDate(days[0])} – ${shortDate(days[days.length - 1])}`}${hiddenN ? ` · ${hiddenN} Frage${hiddenN > 1 ? "n" : ""} ausgeblendet` : ""}</p>
+    <p class="muted small" style="margin:0 0 16px">${days.length === 1 ? shortDate(days[0]) : `${shortDate(days[0])} – ${shortDate(days[days.length - 1])}`}</p>
     ${all.length && prefs.trends !== false ? trendsPanel(days) : ""}
     ${all.length && prefs.goals !== false ? goalsPanel() : ""}
     ${prefs.sport !== false && sportQs().length ? sportPanel(days) : ""}
@@ -113,28 +111,15 @@ function renderAnalysis() {
     ${qs.length ? qs.map((q) => analysisCard(q, days)).join("") : prefs.theme ? `<p class="muted">Keine Fragen in diesem Thema.</p>` : `<p class="muted">${all.length ? "Alle Fragen sind über das Zahnrad ausgeblendet." : "Noch keine Fragen angelegt."}</p>`}`;
 
   $("#asettings")?.addEventListener("click", () => openAnalysisSettings());
-  // lange auf eine Fragen-Karte drücken (oder Rechtsklick): Darstellung nur dieser Frage anpassen
-  view.querySelectorAll(".acard[data-qid]").forEach((card) => {
-    let timer = null, fired = false;
-    const stop = () => { clearTimeout(timer); timer = null; };
-    card.addEventListener("pointerdown", (e) => {
-      if (e.button > 0) return;
-      fired = false;
-      const x0 = e.clientX, y0 = e.clientY;
-      const move = (ev) => { if (Math.abs(ev.clientX - x0) > 8 || Math.abs(ev.clientY - y0) > 8) stop(); };
-      const end = () => { stop(); window.removeEventListener("pointermove", move); window.removeEventListener("pointerup", end); window.removeEventListener("pointercancel", end); };
-      window.addEventListener("pointermove", move); window.addEventListener("pointerup", end); window.addEventListener("pointercancel", end);
-      timer = setTimeout(() => { timer = null; fired = true; if (navigator.vibrate) navigator.vibrate(15); openAnalysisSettings(card.dataset.qid); }, 550);
-    });
-    card.addEventListener("click", (e) => { if (fired) { e.stopPropagation(); e.preventDefault(); fired = false; } }, true);
-    card.addEventListener("contextmenu", (e) => { e.preventDefault(); if (!fired) openAnalysisSettings(card.dataset.qid); });
-  });
+  // lange auf eine Karte drücken (oder Rechtsklick): Darstellung dieser Karte anpassen
+  view.querySelectorAll(".acard[data-qid]").forEach((card) => onHold(card, () => openAnalysisSettings(card.dataset.qid)));
+  view.querySelectorAll(".acard.sport").forEach((card) => onHold(card, openSportView));
+  view.querySelectorAll(".acard.chess").forEach((card) => onHold(card, () => openChessView(days)));
   view.querySelectorAll("[data-th]").forEach((b) => b.addEventListener("click", () => { prefs.theme = b.dataset.th; savePrefs(); renderAnalysis(); }));
   $("#tmore")?.addEventListener("click", () => { showAllTrends = !showAllTrends; renderAnalysis(); });
-  $("#trendgear")?.addEventListener("click", openTrendSettings);
+  view.querySelectorAll(".panel.trends").forEach((card) => onHold(card, openTrendSettings));
   $("#pmore")?.addEventListener("click", () => { showAllPlaces = !showAllPlaces; renderAnalysis(); });
   $("#chessgames")?.addEventListener("click", () => openChessGames(days));
-  $("#chessgear")?.addEventListener("click", () => openChessView(days));
   wireChessCharts(view);
   wireRange(view, "range", (k) => { prefs.range = k; savePrefs(); renderAnalysis(); });
   view.querySelectorAll("[data-focus]").forEach((b) => b.addEventListener("click", () => {
@@ -335,6 +320,40 @@ function donut(slices, total, center, focusKey) {
 }
 
 // Sport-Kachel: Sporttage im Zeitraum (alle Fragen mit Haken „Ist eine Sportart“)
+
+// Gedrückthalten (oder Rechtsklick) auf ein Element löst fn aus; ein normaler Tipp bleibt ein Tipp
+function onHold(card, fn) {
+  let timer = null, fired = false;
+  const stop = () => { clearTimeout(timer); timer = null; };
+  card.addEventListener("pointerdown", (e) => {
+    if (e.button > 0) return;
+    fired = false;
+    const x0 = e.clientX, y0 = e.clientY;
+    const move = (ev) => { if (Math.abs(ev.clientX - x0) > 8 || Math.abs(ev.clientY - y0) > 8) stop(); };
+    const end = () => { stop(); window.removeEventListener("pointermove", move); window.removeEventListener("pointerup", end); window.removeEventListener("pointercancel", end); };
+    window.addEventListener("pointermove", move); window.addEventListener("pointerup", end); window.addEventListener("pointercancel", end);
+    timer = setTimeout(() => { timer = null; fired = true; if (navigator.vibrate) navigator.vibrate(15); fn(); }, 550);
+  });
+  card.addEventListener("click", (e) => { if (fired) { e.stopPropagation(); e.preventDefault(); fired = false; } }, true);
+  card.addEventListener("contextmenu", (e) => { e.preventDefault(); if (!fired) fn(); });
+}
+
+// Einstellungen der Sport-Kachel (Gedrückthalten)
+function openSportView() {
+  const dlg = $("#sheet");
+  const row = (k, l) => `<label class="switch row"><input type="checkbox" data-sv="${k}" ${prefs[k] !== false ? "checked" : ""}><span>${l}</span></label>`;
+  dlg.innerHTML = `<div class="sheet-inner">
+    <div class="sheet-head"><span></span><h2>Sport</h2><button type="button" class="linkbtn" id="svdone">Fertig</button></div>
+    <section class="sq">${row("sportKpi", "Kennzahlen (Sporttage, Ø pro Woche, Anteil)").replace('class="switch row"', 'class="switch row" style="margin-top:0"')}${row("sportBars", "Sportarten")}${row("sportChart", "Verlauf")}</section>
+    <section class="sq">${row("sport", "Kachel anzeigen").replace('class="switch row"', 'class="switch row" style="margin-top:0"')}
+      <p class="muted small" style="margin:6px 0 0">Wieder einblenden über das Zahnrad oben in der Analyse.</p></section>
+  </div>`;
+  $("#svdone", dlg).addEventListener("click", () => dlg.close());
+  dlg.querySelectorAll("[data-sv]").forEach((i) => i.addEventListener("change", () => { prefs[i.dataset.sv] = i.checked; savePrefs(); renderAnalysis(); }));
+  if (!dlg.open) dlg.showModal();
+  document.activeElement?.blur();
+}
+
 function sportPanel(days) {
   const qs = sportQs();
   let n = 0, ans = 0;
@@ -349,13 +368,13 @@ function sportPanel(days) {
   const max = Math.max(1, ...rows.map(([, c]) => c));
   return `<section class="panel acard sport">
     <h2 class="atitle">🏃 Sport</h2>
-    ${ans ? `<div class="kpi">
+    ${ans ? `${prefs.sportKpi === false ? "" : `<div class="kpi">
         <div><strong>${n}</strong><span>${n === 1 ? "Sporttag" : "Sporttage"}</span></div>
         ${days.length >= 7 ? `<div><strong>${fmt1(n / (days.length / 7))}</strong><span>Ø pro Woche</span></div>` : ""}
         <div><strong>${pct(n, ans)} %</strong><span>der Tage</span></div>
-      </div>
-      ${rows.length ? `<div class="bars">${rows.map(([q, c]) => `<div class="barrow static"><span class="bl">${esc(shortQ(q).replace(/^./, (c) => c.toUpperCase()))}</span><span class="bt"><span style="width:${(c / max) * 100}%"></span></span><span class="bv">${c}×</span></div>`).join("")}</div>` : ""}
-      ${days.length > 1 ? columnChart({ id: "__sport" }, days, "Sport", "abs", sportDay) : ""}`
+      </div>`}
+      ${rows.length && prefs.sportBars !== false ? `<div class="bars">${rows.map(([q, c]) => `<div class="barrow static"><span class="bl">${esc(shortQ(q).replace(/^./, (c) => c.toUpperCase()))}</span><span class="bt"><span style="width:${(c / max) * 100}%"></span></span><span class="bv">${c}×</span></div>`).join("")}</div>` : ""}
+      ${days.length > 1 && prefs.sportChart !== false ? columnChart({ id: "__sport" }, days, "Sport", "abs", sportDay) : ""}`
     : `<p class="muted small" style="margin:0">Im gewählten Zeitraum noch keine Antworten zu deinen Sportarten.</p>`}
   </section>`;
 }

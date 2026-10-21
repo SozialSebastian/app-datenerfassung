@@ -369,7 +369,7 @@ function trendsPanel(days) {
       <ul class="tlist">${pick[k].map((x) => row(x, k)).join("")}</ul>
     </div>`).join("");
   return `<section class="panel trends">
-    <div class="thead"><h2 class="atitle">Trends</h2><button type="button" class="gear" id="trendgear" aria-label="Trends einstellen">${GEAR}</button></div>
+    <h2 class="atitle">Trends</h2>
     ${total ? `${groups}
       ${total > T_SHOW ? `<button class="btn ghost block" id="tmore" style="margin-top:12px">${showAllTrends ? "Weniger anzeigen" : `Alle Trends anzeigen (${total - shown} weitere)`}</button>` : ""}
       ${pick.rel.length ? `<p class="small muted tfoot">Zusammenhänge: nur deutliche Unterschiede ab ${MIN_GROUP} Tagen je Gruppe, keine Ursache.</p>` : ""}`

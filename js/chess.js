@@ -299,7 +299,7 @@ function chessPanel(days) {
     return xs.length ? `<p class="small" style="margin:4px 0 0"><strong>${label}:</strong> ${xs.map(([k, v]) => `${esc(CHESS_HOW[k.split(":")[1]] || k.split(":")[1])} ${v}×`).join(", ")}</p>` : "";
   };
   return `<section class="panel acard chess">
-    <div class="chead"><h2 class="atitle">Schach</h2><button type="button" class="gear" id="chessgear" aria-label="Schach-Ansicht einstellen">${GEAR}</button></div>
+    <h2 class="atitle">Schach</h2>
     <p class="hero"><span class="big">${sum.n}</span><span class="muted">${sum.n === 1 ? "Partie" : "Partien"} an ${ds.length} von ${days.length} Tagen${sum.s ? ` · ${fmtDur(sum.s / 3600)} gespielt` : ""}</span></p>
     <div class="wdl" role="img" aria-label="${sum.w} Siege, ${sum.dr} Remis, ${sum.l} Niederlagen">
       <span class="w" style="flex:${sum.w}"></span><span class="d" style="flex:${sum.dr}"></span><span class="l" style="flex:${sum.l}"></span>

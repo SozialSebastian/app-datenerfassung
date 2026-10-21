@@ -249,6 +249,23 @@ test("Tag: Filter nach Thema wie in der Analyse", async () => {
   await ctx.close();
 });
 
+test("Sport-Kachel: Gedrückthalten öffnet Einstellungen, Verlauf ausblendbar", async () => {
+  const d0 = new Date(); const ds = (i) => { const d = new Date(d0); d.setDate(d.getDate() - i); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`; };
+  const answers = {}; for (let i = 0; i < 10; i++) answers[ds(i)] = { b: i % 2 ? "Ja" : "Nein" };
+  const data = { version: 1, lastBackup: null, answers, questions: [{ ...yesNo("b", "Heute bouldern?"), theme: "sport", sport: true }] };
+  const { page, ctx, errors } = await open({ data });
+  await page.click('[data-tab="analysis"]');
+  await page.click('[data-range="30"]');
+  assert.equal(await page.locator(".acard.sport .vcols, .acard.sport svg").count() > 0, true);
+  await page.click(".acard.sport .atitle", { button: "right" });
+  await page.uncheck('[data-sv="sportChart"]');
+  await page.click("#svdone");
+  assert.equal(await page.locator(".acard.sport .vcols, .acard.sport svg").count(), 0);
+  assert.ok(await page.locator(".acard.sport .kpi").count());
+  assert.deepEqual(errors, []);
+  await ctx.close();
+});
+
 test("Schlaf aus Health: Wachphasen abgezogen, doppelte Messungen einmal, Einschlaf- und Aufwachzeit", async () => {
   const { listEntries } = await import("../worker/src/index.js");
   const t = (x) => `2026-10-${x}:00+02:00`;
@@ -623,7 +640,7 @@ for (const cors of [true, false]) test(`chess.com: Einschalten lädt alles, Wert
   assert.match(txt, /Elo Rapid am Ende des Zeitraums[\s\S]*Elo im Verlauf/);
   assert.doesNotMatch(txt, /Daten von chess\.com/);
   // Zahnrad der Kachel: Elo für Blitz
-  await page.click("#chessgear");
+  await page.click(".acard.chess .atitle", { button: "right" }); // wie Gedrückthalten
   await page.click('#sheet [data-cls="blitz"]');
   await page.click("#cvdone");
   assert.match(await page.locator(".chess").innerText(), /Elo Blitz am Ende des Zeitraums\s*Blitz\s*1100\s*±0/);
@@ -672,7 +689,7 @@ test("Zeitraum: 1 Tag, Mehr-Auswahl und eigener Zeitraum (Analyse und Grafik)", 
   assert.deepEqual(await page.locator(".rseg > button, .rseg > label > span").allInnerTexts(), ["1 Tag", "7 Tage", "30 Tage", "Mehr ▾"]);
   await page.click('[data-range="1"]');
   assert.equal(await page.evaluate(() => rangeDays().length), 1);
-  assert.match(await page.locator("#view").innerText(), /Erfasst · |Noch nicht erfasst · /);
+  assert.doesNotMatch(await page.locator("#view").innerText(), /erfasst/i); // 1 Tag: nur das Datum
   await page.selectOption("[data-range-sel]", "ytd");
   assert.match(await page.locator(".rmore").innerText(), /Seit 1\.1\. ▾/);
   await page.selectOption("[data-range-sel]", "custom");
@@ -681,7 +698,7 @@ test("Zeitraum: 1 Tag, Mehr-Auswahl und eigener Zeitraum (Analyse und Grafik)", 
   await page.fill("[data-range-to]", await page.evaluate(() => addDays(todayIso(), -5)));
   await page.locator("[data-range-to]").dispatchEvent("change");
   assert.equal(await page.evaluate(() => rangeDays().length), 5);
-  assert.match(await page.locator("#view").innerText(), /von 5 Tagen erfasst/);
+  assert.doesNotMatch(await page.locator("#view").innerText(), /Tagen erfasst|ausgeblendet/); // nur noch das Datum
   await page.locator(".rseg").screenshot({ path: path.join(shots, "zeitraum.png") });
   // Grafik erstellen übernimmt den Zeitraum und hat dieselbe Auswahl
   await page.click('[data-tab="data"]'); await page.click("#exportopen");
@@ -897,7 +914,7 @@ test("Trends: ruhig nach Art gruppiert, höchstens 5, Arten über das Zahnrad ab
   assert.equal(await page.locator(".trends .tmark").count(), 0); // keine bunten Quadrate mehr
   const heads = await page.locator(".trends .tsub").allInnerTexts();
   assert.ok(heads.length >= 2);
-  await page.click("#trendgear");
+  await page.click(".panel.trends .atitle", { button: "right" }); // wie Gedrückthalten
   await page.locator('#sheet [data-tk="season"]').uncheck();
   await page.locator('#sheet [data-tk="rel"]').uncheck();
   await page.click("#tsdone");
