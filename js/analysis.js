@@ -188,9 +188,9 @@ function distribution(q, vals) {
   return out;
 }
 
-// Folgefragen, die in der Kachel der Hauptfrage stehen (Einstellung „Folgefragen in dieser Kachel“, Standard an)
+// Folgefragen stehen immer in der Kachel der Hauptfrage
 function mergedKids(p, days) {
-  if (!p || qset(p).merge === false) return [];
+  if (!p) return [];
   const list = analysisQuestions(days);
   return childrenOf(p.id).filter((c) => list.includes(c) && !qset(c).hidden);
 }
@@ -215,6 +215,8 @@ function kidLine(c, days, skipStack) {
     const cnt = {};
     vals.forEach((v) => (Array.isArray(v) ? v : [v]).forEach((k) => (cnt[k] = (cnt[k] || 0) + 1)));
     const rows = Object.entries(cnt).sort((a, b) => b[1] - a[1]);
+    // eingestellt „Kuchen“: Kuchen auch in der gemeinsamen Kachel (gleiche Farben wie die Säulen)
+    if (qset(c).chart === "pie") return `<div class="kid">${head}${labeledPie(rows.map(([k, n]) => ({ label: k, c: n, color: stackColor(c, k) })), qset(c).unit)}</div>`;
     return `<div class="kid">${head}<div class="klegend">${rows.map(([k, n]) => `<span>${skipStack ? `<i style="background:${stackColor(c, k)}"></i>` : ""}${esc(k)} <b>${n}×</b></span>`).join("")}</div></div>`;
   }
   const nums = vals.filter((v) => typeof v === "number");
@@ -662,8 +664,7 @@ function openAnalysisSettings(onlyQid) {
             if (!kids.length) return "";
             const ch = kids.filter((c) => c.type === "choice");
             const sk = stackKid(q, ch);
-            return `<label class="switch row"><input type="checkbox" data-q="${q.id}" data-f="merge" ${s.merge !== false ? "checked" : ""}><span>Folgefragen in dieser Kachel</span></label>
-              ${s.merge !== false && ch.length > 1 ? `<div class="sq-row"><span>Farben nach</span><select data-q="${q.id}" data-f="stackBy">${ch.map((c) => `<option value="${c.id}" ${c === sk ? "selected" : ""}>${esc(c.text)}</option>`).join("")}</select></div>` : ""}`;
+            return `${ch.length > 1 ? `<div class="sq-row"><span>Farben nach</span><select data-q="${q.id}" data-f="stackBy">${ch.map((c) => `<option value="${c.id}" ${c === sk ? "selected" : ""}>${esc(c.text)}</option>`).join("")}</select></div>` : ""}`;
           })()}`}
         </section>`;
       }).join("")}
@@ -682,7 +683,6 @@ function openAnalysisSettings(onlyQid) {
       else if (i.dataset.f === "show") setQ(i.dataset.q, { hidden: !i.checked });
       else if (i.dataset.f === "hideZero") { prefs.hideZero = i.checked; Object.values(prefs.q).forEach((x) => delete x.hideZero); savePrefs(); }
       else if (i.dataset.f === "hideZeroQ") setQ(i.dataset.q, { hideZero: i.checked });
-      else if (i.dataset.f === "merge") setQ(i.dataset.q, { merge: i.checked });
       else setQ(i.dataset.q, { trend: i.checked });
       draw(); renderAnalysis();
     }));

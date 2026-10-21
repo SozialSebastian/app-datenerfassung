@@ -309,12 +309,12 @@ test("Analyse: Folgefragen in der Kachel der Hauptfrage, Säulen nach Antwort ei
   const card = page.locator('.acard[data-qid="t"]');
   assert.match(await card.innerText(), /Wo\?[\s\S]*Kurs\s*2×[\s\S]*Milonga\s*1×/);
   assert.equal(await card.locator(".cbar.stack").count(), 3);
-  // abschalten per Gedrückthalten
+  // Folgefrage auf „Kuchen“: Kuchen in derselben Kachel
   await page.click('.acard[data-qid="t"] .atitle', { button: "right" });
-  await page.uncheck('[data-q="t"][data-f="merge"]');
+  await page.click('[data-q="w"][data-f="chart"][data-v="pie"]');
   await page.click("#adone");
-  assert.equal(await page.locator('.acard[data-qid="w"]').count(), 1);
-  assert.equal(await page.locator('.acard[data-qid="t"] .cbar.stack').count(), 0);
+  assert.equal(await page.locator('.acard[data-qid="w"]').count(), 0);
+  assert.equal(await card.locator(".kid svg.spie").count(), 1);
   assert.deepEqual(errors, []);
   await ctx.close();
 });
