@@ -8,7 +8,20 @@ try { const p = JSON.parse(localStorage.getItem(PREF_KEY) || "{}"); prefs = { ..
 const savePrefs = () => { try { localStorage.setItem(PREF_KEY, JSON.stringify(prefs)); } catch (e) { /* egal */ } };
 
 // Einstellungen pro Frage, mit sinnvollen Vorgaben
-const qset = (q) => ({ chart: "bars", unit: q.notion ? "abs" : "pct", trend: q.type !== "choice", hidden: false, ...(prefs.q[q.id] || {}) });
+const qset = (q) => ({ chart: "bars", unit: q.notion ? "abs" : "pct", trend: q.type !== "choice", hidden: false, hideZero: !!prefs.hideZero, ...(prefs.q[q.id] || {}) });
+// Hat die Karte im Zeitraum nichts zu sagen? (keine Antworten; Ja/Nein bzw. „Kompakt“ 0×; Zahlen nur 0)
+function zeroCard(q, days) {
+  const vals = days.map((d) => (state.answers[d] || {})[q.id]).filter(isAnswered);
+  if (!vals.length) return true;
+  const set = qset(q);
+  if (q.type === "choice") {
+    const yesNo = !q.multi && q.options.length === 2 && q.options.includes("Ja") && q.options.includes("Nein");
+    const key = set.chart === "count" ? (q.options.includes(set.countKey) ? set.countKey : q.options[0]) : yesNo ? "Ja" : null;
+    return key !== null && !vals.some((v) => (Array.isArray(v) ? v.includes(key) : v === key));
+  }
+  if (q.type === "number") return vals.every((v) => v === 0);
+  return false;
+}
 const setQ = (qid, patch) => { prefs.q[qid] = { ...(prefs.q[qid] || {}), ...patch }; savePrefs(); };
 
 const RANGES = [["1", "1 Tag"], ["7", "7 Tage"], ["30", "30 Tage"], ["ytd", "Seit 1.1."], ["365", "12 Monate"], ["all", "Alles"], ["custom", "Eigener Zeitraum"]];
@@ -89,7 +102,7 @@ function renderAnalysis() {
   // Filter nach Thema (nur wenn es mehrere Themen gibt)
   const usedThemes = THEMES.filter((t) => all.some((q) => themeOf(q) === t.k));
   if (prefs.theme && !usedThemes.some((t) => t.k === prefs.theme)) prefs.theme = "";
-  const qs = all.filter((q) => !qset(q).hidden && (!prefs.theme || themeOf(q) === prefs.theme));
+  const qs = all.filter((q) => !qset(q).hidden && (!prefs.theme || themeOf(q) === prefs.theme) && !(qset(q).hideZero && zeroCard(q, days)));
 
   view.innerHTML = `
     <div class="dayhead">
@@ -100,15 +113,15 @@ function renderAnalysis() {
     <p class="muted small" style="margin:0 0 16px">${days.length === 1 ? shortDate(days[0]) : `${shortDate(days[0])} – ${shortDate(days[days.length - 1])}`}</p>
     ${all.length && prefs.trends !== false ? trendsPanel(days) : ""}
     ${all.length && prefs.goals !== false ? goalsPanel() : ""}
-    ${prefs.sport !== false && sportQs().length ? sportPanel(days) : ""}
+    ${prefs.sport !== false && sportQs().length && !(prefs.hideZero && !days.some((d) => sportDay(d))) ? sportPanel(days) : ""}
     ${prefs.intol !== false ? intolPanel() : ""}
-    ${prefs.places !== false && (Object.keys(state.places || {}).length || (settings.places && settings.places.on)) ? placesPanel(days) : ""}
-    ${prefs.chess !== false && (settings.chess.on || Object.keys(chessData().months).length) ? chessPanel(days) : ""}
+    ${prefs.places !== false && !(prefs.hideZero && !days.some((d) => placeCities(d).length)) && (Object.keys(state.places || {}).length || (settings.places && settings.places.on)) ? placesPanel(days) : ""}
+    ${prefs.chess !== false && !(prefs.hideZero && !days.some((d) => (chessDays()[d] || {}).n)) && (settings.chess.on || Object.keys(chessData().months).length) ? chessPanel(days) : ""}
     ${usedThemes.length > 1 ? `<div class="tfilter" role="group" aria-label="Thema">
       <button data-th="" aria-pressed="${!prefs.theme}">Alle</button>
       ${usedThemes.map((t) => `<button data-th="${t.k}" aria-pressed="${prefs.theme === t.k}">${t.i} ${esc(t.l)}</button>`).join("")}
     </div>` : ""}
-    ${qs.length ? qs.map((q) => analysisCard(q, days)).join("") : prefs.theme ? `<p class="muted">Keine Fragen in diesem Thema.</p>` : `<p class="muted">${all.length ? "Alle Fragen sind über das Zahnrad ausgeblendet." : "Noch keine Fragen angelegt."}</p>`}`;
+    ${qs.length ? qs.map((q) => analysisCard(q, days)).join("") : prefs.theme ? `<p class="muted">Keine Fragen in diesem Thema.</p>` : `<p class="muted">${all.length ? "Alle Fragen sind ausgeblendet oder im Zeitraum leer (Zahnrad)." : "Noch keine Fragen angelegt."}</p>`}`;
 
   $("#asettings")?.addEventListener("click", () => openAnalysisSettings());
   // lange auf eine Karte drücken (oder Rechtsklick): Darstellung dieser Karte anpassen
@@ -525,6 +538,10 @@ function openAnalysisSettings(onlyQid) {
       </div>
       ${onlyQid ? "" : `
       <section class="sq">
+        <label class="switch row" style="margin-top:0"><input type="checkbox" data-f="hideZero" ${prefs.hideZero ? "checked" : ""}><span><strong>Leere Kacheln ausblenden</strong></span></label>
+        <p class="muted small" style="margin:6px 0 0">Kacheln ohne Aussage im Zeitraum (keine Antworten, 0× „Ja“, nur Nullen, kein Sport, keine Partien, keine Orte) erscheinen erst, wenn dort etwas steht. Einzelne Fragen lassen sich unten abweichend einstellen.</p>
+      </section>
+      <section class="sq">
         <div class="sq-head"><strong>Trends</strong>
           <label class="switch"><input type="checkbox" data-f="trends" ${prefs.trends !== false ? "checked" : ""}><span>Anzeigen</span></label>
         </div>
@@ -577,7 +594,8 @@ function openAnalysisSettings(onlyQid) {
             ? `<div class="sq-row"><span>Zählt</span><select data-q="${q.id}" data-f="countKey">${q.options.map((o) => `<option ${o === (q.options.includes(s.countKey) ? s.countKey : q.options[0]) ? "selected" : ""}>${esc(o)}</option>`).join("")}</select></div>
                <p class="muted small" style="margin:6px 0 0">Zeigt nur: an wie vielen Tagen im Zeitraum diese Antwort kam.</p>`
             : q.type === "scale" && s.chart === "count" ? `<p class="muted small" style="margin:6px 0 0">Zeigt nur den Durchschnitt.</p>` : `<div class="sq-row"><span>Werte</span>${seg(q, "unit", [["pct", "%"], ["abs", "Anzahl"]], s.unit)}</div>`}` : ""}
-          <label class="switch row"><input type="checkbox" data-q="${q.id}" data-f="trend" ${s.trend ? "checked" : ""}><span>Verlauf über die Zeit</span></label>`}
+          <label class="switch row"><input type="checkbox" data-q="${q.id}" data-f="trend" ${s.trend ? "checked" : ""}><span>Verlauf über die Zeit</span></label>
+          <label class="switch row"><input type="checkbox" data-q="${q.id}" data-f="hideZeroQ" ${s.hideZero ? "checked" : ""}><span>Ausblenden, solange der Wert 0 ist</span></label>`}
         </section>`;
       }).join("")}
     </div>`;
@@ -593,6 +611,8 @@ function openAnalysisSettings(onlyQid) {
       else if (i.dataset.f === "chess") { prefs.chess = i.checked; savePrefs(); }
       else if (i.dataset.f === "chessElo" || i.dataset.f === "chessAcc") { prefs[i.dataset.f] = i.checked; savePrefs(); }
       else if (i.dataset.f === "show") setQ(i.dataset.q, { hidden: !i.checked });
+      else if (i.dataset.f === "hideZero") { prefs.hideZero = i.checked; Object.values(prefs.q).forEach((x) => delete x.hideZero); savePrefs(); }
+      else if (i.dataset.f === "hideZeroQ") setQ(i.dataset.q, { hideZero: i.checked });
       else setQ(i.dataset.q, { trend: i.checked });
       draw(); renderAnalysis();
     }));

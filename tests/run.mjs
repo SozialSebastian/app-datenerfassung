@@ -273,6 +273,29 @@ test("Sport-Kachel: Gedrückthalten öffnet Einstellungen, Verlauf ausblendbar",
   await ctx.close();
 });
 
+test("Analyse: leere Kacheln ausblenden (je Frage und für alle)", async () => {
+  const d0 = new Date(); const ds = (i) => { const d = new Date(d0); d.setDate(d.getDate() - i); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`; };
+  const answers = {}; for (let i = 0; i < 5; i++) answers[ds(i)] = { a: "Nein", b: "Ja", n: 0 };
+  const data = { version: 1, lastBackup: null, answers, questions: [yesNo("a", "Alkohol?"), yesNo("b", "Bouldern?"), { id: "n", text: "Kaffee", type: "number", options: [], unit: "Tassen" }, yesNo("x", "Nie beantwortet?")] };
+  const { page, ctx, errors } = await open({ data });
+  await page.click('[data-tab="analysis"]');
+  await page.click('[data-range="7"]');
+  const ids = async () => (await page.$$eval(".acard[data-qid]", (xs) => xs.map((x) => x.dataset.qid))).sort();
+  assert.deepEqual(await ids(), ["a", "b", "n", "x"]);
+  // nur eine Frage per Gedrückthalten
+  await page.click('.acard[data-qid="a"] .atitle', { button: "right" });
+  await page.check('[data-q="a"][data-f="hideZeroQ"]');
+  await page.click("#adone");
+  assert.deepEqual(await ids(), ["b", "n", "x"]);
+  // für alle
+  await page.click("#asettings");
+  await page.check('[data-f="hideZero"]');
+  await page.click("#adone");
+  assert.deepEqual(await ids(), ["b"]);
+  assert.deepEqual(errors, []);
+  await ctx.close();
+});
+
 test("Schlaf aus Health: Wachphasen abgezogen, doppelte Messungen einmal, Einschlaf- und Aufwachzeit", async () => {
   const { listEntries } = await import("../worker/src/index.js");
   const t = (x) => `2026-10-${x}:00+02:00`;
