@@ -336,6 +336,8 @@ test("Zahlen-Verlauf: Sprechblase mit Wert und Abstand zum Ø, Veränderung zum 
   const bb = await card.locator("svg.line").boundingBox();
   await card.locator("svg.line").tap({ position: { x: bb.width - 8, y: bb.height / 2 } }); // letzter Punkt = heute
   assert.match(await card.locator(".ltip").innerText(), /8\.000\s*genau Ø|8\.000/);
+  await card.locator(".atitle").tap(); // woanders hintippen
+  assert.equal(await card.locator(".ltip").isVisible(), false);
   assert.deepEqual(errors, []);
   await ctx.close();
 });

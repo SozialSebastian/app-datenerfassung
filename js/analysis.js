@@ -173,12 +173,16 @@ function renderAnalysis() {
         t3.className = "lt3 " + (!dir || Math.abs(d) < 1e-9 ? "" : (d > 0) === (dir === "high") ? "good" : "bad");
         tip.hidden = false;
         // Sprechblase über dem Punkt, am Rand eingerückt
-        const bw = tip.offsetWidth, cw = box.clientWidth, px = (best.x / 340) * cw, py = (best.y / 168) * r.height;
+        const bw = tip.offsetWidth, cw = box.clientWidth, px = (best.x / 340) * cw, py = (best.y / 172) * r.height;
         tip.style.left = `${Math.min(Math.max(px - bw / 2, 0), cw - bw)}px`;
         tip.style.top = `${py - tip.offsetHeight - 12}px`;
         tip.style.setProperty("--ax", `${px - Math.min(Math.max(px - bw / 2, 0), cw - bw)}px`);
       };
       svg.addEventListener("pointerdown", pick);
+      // woanders hintippen blendet die Sprechblase wieder aus
+      const hide = () => { tip.hidden = true; mark.style.display = "none"; guide.style.display = "none"; svg.querySelectorAll(".xl.on").forEach((t) => t.classList.remove("on")); };
+      const out = (e) => { if (!svg.isConnected) return document.removeEventListener("pointerdown", out, true); if (!tip.hidden && !svg.contains(e.target)) hide(); };
+      document.addEventListener("pointerdown", out, true);
       svg.addEventListener("pointermove", (e) => { if (e.buttons || e.pointerType === "mouse") pick(e); });
     }
     card.querySelectorAll(".col[data-cap]").forEach((c) => c.addEventListener("click", () => {
@@ -586,7 +590,7 @@ function columnChart(q, days, focusKey, unit, hitOf, stack) {
 
 // Verlauf über die Zeit: weiche Kurve, Fläche zum Durchschnitt (darüber/darunter eingefärbt), Höchst- und Tiefstwert am Punkt
 function lineChart(q, days, vals, avg) {
-  const W = 340, H = 168, PL = 6, PR = 6, PT = 26, PB = 26;
+  const W = 340, H = 172, PL = 12, PR = 12, PT = 24, PB = 34;
   const nums = vals.map((x) => x.v);
   const mn = Math.min(...nums), mx = Math.max(...nums);
   let lo = mn, hi = mx;
@@ -600,11 +604,16 @@ function lineChart(q, days, vals, avg) {
   // Abschnitte ohne Lücke (fehlende Tage unterbrechen die Kurve)
   const segs = [];
   pts.forEach((p, i) => { if (!i || days.indexOf(p.d) - days.indexOf(pts[i - 1].d) > 1) segs.push([]); segs[segs.length - 1].push(p); });
+  // monotone Kurve (Fritsch–Carlson): geht genau durch jeden Punkt und schießt nie über Höchst-/Tiefstwerte hinaus
   const curve = (s) => {
+    const n = s.length, dx = [], m = [], t = [];
+    for (let i = 0; i < n - 1; i++) { dx[i] = s[i + 1].x - s[i].x; m[i] = (s[i + 1].y - s[i].y) / dx[i]; }
+    t[0] = m[0]; t[n - 1] = m[n - 2];
+    for (let i = 1; i < n - 1; i++) t[i] = m[i - 1] * m[i] <= 0 ? 0 : (3 * (dx[i - 1] + dx[i])) / ((2 * dx[i] + dx[i - 1]) / m[i - 1] + (dx[i] + 2 * dx[i - 1]) / m[i]);
     let d = `M${s[0].x},${s[0].y}`;
-    for (let i = 0; i < s.length - 1; i++) {
-      const p0 = s[i - 1] || s[i], p1 = s[i], p2 = s[i + 1], p3 = s[i + 2] || p2, t = 0.18;
-      d += ` C${r1(p1.x + (p2.x - p0.x) * t)},${r1(p1.y + (p2.y - p0.y) * t)} ${r1(p2.x - (p3.x - p1.x) * t)},${r1(p2.y - (p3.y - p1.y) * t)} ${p2.x},${p2.y}`;
+    for (let i = 0; i < n - 1; i++) {
+      const h = dx[i] / 3;
+      d += ` C${r1(s[i].x + h)},${r1(s[i].y + t[i] * h)} ${r1(s[i + 1].x - h)},${r1(s[i + 1].y - t[i + 1] * h)} ${s[i + 1].x},${s[i + 1].y}`;
     }
     return d;
   };
@@ -617,7 +626,12 @@ function lineChart(q, days, vals, avg) {
   const id = "lc" + q.id.replace(/[^\w]/g, "");
   const f = (v) => (q.format ? fmtQ(q, v) : fmtBig(v));
   const pMax = pts.find((p) => p.v === mx), pMin = pts.find((p) => p.v === mn);
-  const tag = (p, up) => { const x = Math.min(Math.max(p.x, PL + 22), W - PR - 22); return `<text x="${x}" y="${up ? p.y - 9 : p.y + 17}" text-anchor="middle" class="mm">${up ? "▲" : "▼"} ${esc(f(p.v))}</text>`; };
+  // Beschriftung direkt über bzw. unter dem Punkt; am Rand bündig, damit sie nicht abgeschnitten wird
+  const tag = (p, up) => {
+    const anchor = p.x < PL + 26 ? "start" : p.x > W - PR - 26 ? "end" : "middle";
+    const x = anchor === "start" ? p.x - 5 : anchor === "end" ? p.x + 5 : p.x;
+    return `<text x="${x}" y="${up ? p.y - 8 : p.y + 15}" text-anchor="${anchor}" class="mm">${up ? "▲" : "▼"} ${esc(f(p.v))}</text>`;
+  };
   // Beschriftung unten: Wochentage (bis 14 Tage) bzw. einige Daten
   const step = days.length <= 14 ? 1 : Math.ceil(days.length / 5);
   const xl = days.map((d, i) => (i % step === 0 || i === days.length - 1) && (days.length <= 14 || i === days.length - 1 || days.length - 1 - i >= step * 0.6)
