@@ -28,6 +28,8 @@ const RANGES = [["1", "1 Tag"], ["7", "7 Tage"], ["30", "30 Tage"], ["ytd", "Sei
 const RANGE_MAIN = ["1", "7", "30"]; // direkt sichtbar, der Rest über „Mehr“
 const SERIES = 8; // Farben für Kuchendiagramme, weitere Antworten → „Weitere“
 const fmt1 = (n) => (Math.round(n * 10) / 10).toLocaleString("de-DE");
+// große Zahlen (z. B. Schritte) ohne Nachkommastelle
+const fmtBig = (n) => (Math.abs(n) >= 100 ? Math.round(n).toLocaleString("de-DE") : fmt1(n));
 const pct = (a, b) => (b ? Math.round((a / b) * 100) : 0);
 const shortDate = (s) => { const d = parseIso(s); return `${WD_SHORT[d.getDay()]} ${d.getDate()}.${d.getMonth() + 1}.`; };
 const MON_SHORT = ["Jan", "Feb", "Mär", "Apr", "Mai", "Jun", "Jul", "Aug", "Sep", "Okt", "Nov", "Dez"];
@@ -148,16 +150,33 @@ function renderAnalysis() {
     const q = qById(card.dataset.qid);
     const svg = card.querySelector("svg.line");
     if (svg) {
-      const pts = JSON.parse(svg.dataset.pts);
-      const mark = svg.querySelector(".hover");
+      const pts = JSON.parse(svg.dataset.pts), avg = +svg.dataset.avg;
+      const mark = svg.querySelector(".hover"), guide = svg.querySelector(".guide");
+      const tip = card.querySelector(".ltip"), box = card.querySelector(".lchart");
+      const dir = betterDir(q);
       const pick = (ev) => {
         const r = svg.getBoundingClientRect();
-        const x = ((ev.clientX - r.left) / r.width) * 300;
+        const x = ((ev.clientX - r.left) / r.width) * 340;
         let best = pts[0];
         for (const p of pts) if (Math.abs(p.x - x) < Math.abs(best.x - x)) best = p;
         mark.setAttribute("cx", best.x); mark.setAttribute("cy", best.y); mark.style.display = "";
+        guide.setAttribute("x1", best.x); guide.setAttribute("x2", best.x); guide.setAttribute("y1", best.y); guide.style.display = "";
+        svg.querySelectorAll(".xl").forEach((t) => t.classList.toggle("on", t.dataset.d === best.d));
         const v = (state.answers[best.d] || {})[q.id];
-        cap.textContent = `${shortDate(best.d)}: ${fmtQ(q, v)}`;
+        const d = v - avg;
+        const dTxt = q.format ? (() => { const m = Math.round(Math.abs(d) * 60); return m >= 60 ? `${Math.floor(m / 60)} h ${String(m % 60).padStart(2, "0")} min` : `${m} min`; })() : fmtBig(Math.abs(d));
+        const word = q.format === "clock" ? (d > 0 ? "später als Ø" : "früher als Ø") : d > 0 ? "über Ø" : "unter Ø";
+        tip.querySelector(".lt1").textContent = shortDate(best.d);
+        tip.querySelector(".lt2").textContent = q.format ? fmtQ(q, v) : fmtBig(v) + (q.unit ? " " + q.unit : "");
+        const t3 = tip.querySelector(".lt3");
+        t3.textContent = Math.abs(d) < 1e-9 ? "genau Ø" : `${d > 0 ? "+" : "−"}${dTxt} ${word}`;
+        t3.className = "lt3 " + (!dir || Math.abs(d) < 1e-9 ? "" : (d > 0) === (dir === "high") ? "good" : "bad");
+        tip.hidden = false;
+        // Sprechblase über dem Punkt, am Rand eingerückt
+        const bw = tip.offsetWidth, cw = box.clientWidth, px = (best.x / 340) * cw, py = (best.y / 168) * r.height;
+        tip.style.left = `${Math.min(Math.max(px - bw / 2, 0), cw - bw)}px`;
+        tip.style.top = `${py - tip.offsetHeight - 12}px`;
+        tip.style.setProperty("--ax", `${px - Math.min(Math.max(px - bw / 2, 0), cw - bw)}px`);
       };
       svg.addEventListener("pointerdown", pick);
       svg.addEventListener("pointermove", (e) => { if (e.buttons || e.pointerType === "mouse") pick(e); });
@@ -307,18 +326,30 @@ function analysisCard(q, days) {
   } else {
     const nums = vals.map((x) => x.v);
     const avg = nums.reduce((s, x) => s + x, 0) / n;
+    const chart = set.trend && n >= 2;
+    const sum = nums.reduce((s, x) => s + x, 0);
+    // Veränderung zum gleich langen Zeitraum davor (Ø gegen Ø)
+    const pv = []; for (let i = 1; i <= days.length; i++) { const v = (state.answers[addDays(days[0], -i)] || {})[q.id]; if (typeof v === "number") pv.push(v); }
+    let chg = "";
+    if (pv.length && days.length > 1) {
+      const pa = pv.reduce((s, x) => s + x, 0) / pv.length, d = avg - pa, dir = betterDir(q);
+      const tone = Math.abs(d) < 1e-9 || !dir ? "" : (d > 0) === (dir === "high") ? "good" : "bad";
+      const txt = q.format ? (() => { const m = Math.round(Math.abs(d) * 60); return `${m >= 60 ? `${Math.floor(m / 60)} h ${String(m % 60).padStart(2, "0")} min` : `${m} min`} ${q.format === "clock" ? (d > 0 ? "später" : "früher") : d > 0 ? "mehr" : "weniger"}`; })()
+        : pa ? `${Math.round(Math.abs(d / pa) * 100)} %` : fmtBig(Math.abs(d));
+      chg = `<span class="chgw"><span class="chg ${tone}">${Math.abs(d) < 1e-9 ? "±0" : `${d > 0 ? "▲" : "▼"} ${txt}`}</span> ggü. ${days.length} Tagen davor</span>`;
+    }
     if (q.format) {
-      // Dauer bzw. Uhrzeit: Durchschnitt, Spanne und Streuung (Standardabweichung) in Minuten
+      // Dauer bzw. Uhrzeit: Durchschnitt und Streuung (Standardabweichung) in Minuten; früheste/späteste stehen in der Grafik
       const sdMin = n > 1 ? Math.round(Math.sqrt(nums.reduce((s, x) => s + (x - avg) ** 2, 0) / (n - 1)) * 60) : 0;
       const lo = q.format === "clock" ? "früheste" : "kürzeste", hi = q.format === "clock" ? "späteste" : "längste";
       body = `
       <p class="hero"><span class="big">Ø ${fmtQ(q, avg)}</span>${q.format === "clock" ? `<span class="muted">Uhr</span>` : ""}</p>
-      <p class="stats small"><span>${lo} ${fmtQ(q, Math.min(...nums))}</span><span>${hi} ${fmtQ(q, Math.max(...nums))}</span><span>Streuung ± ${sdMin} min</span></p>
-      ${set.trend && n >= 2 ? lineChart(q, days, vals, avg) : ""}`;
+      <p class="stats small">${chg}${chart ? "" : `<span>${lo} ${fmtQ(q, Math.min(...nums))}</span><span>${hi} ${fmtQ(q, Math.max(...nums))}</span>`}${n > 1 ? `<span>Streuung ± ${sdMin} min</span>` : ""}${q.format === "duration" ? `<span>Summe ${fmtQ(q, sum)}</span>` : ""}</p>
+      ${chart ? lineChart(q, days, vals, avg) : ""}`;
     } else body = `
-      <p class="hero"><span class="big">Ø ${fmt1(avg)}</span><span class="muted">${q.unit ? esc(q.unit) : ""}</span></p>
-      <p class="stats small"><span>Min ${fmt1(Math.min(...nums))}</span><span>Max ${fmt1(Math.max(...nums))}</span><span>Summe ${fmt1(nums.reduce((s, x) => s + x, 0))}</span></p>
-      ${set.trend && n >= 2 ? lineChart(q, days, vals, avg) : ""}`;
+      <p class="hero"><span class="big">Ø ${fmtBig(avg)}</span><span class="muted">${q.unit ? esc(q.unit) : ""}</span></p>
+      <p class="stats small">${chg}${chart ? "" : `<span>Min ${fmtBig(Math.min(...nums))}</span><span>Max ${fmtBig(Math.max(...nums))}</span>`}<span>Summe ${fmtBig(sum)}</span></p>
+      ${chart ? lineChart(q, days, vals, avg) : ""}`;
   }
 
   const sk0 = kids.length && set.trend ? stackKid(q, kids) : null;
@@ -553,34 +584,64 @@ function columnChart(q, days, focusKey, unit, hitOf, stack) {
     </div>`;
 }
 
-// Verlauf über die Zeit, gestrichelt der Durchschnitt
+// Verlauf über die Zeit: weiche Kurve, Fläche zum Durchschnitt (darüber/darunter eingefärbt), Höchst- und Tiefstwert am Punkt
 function lineChart(q, days, vals, avg) {
-  const W = 300, H = 110, P = 8;
+  const W = 340, H = 168, PL = 6, PR = 6, PT = 26, PB = 26;
   const nums = vals.map((x) => x.v);
-  let lo = Math.min(...nums), hi = Math.max(...nums);
+  const mn = Math.min(...nums), mx = Math.max(...nums);
+  let lo = mn, hi = mx;
   if (q.type === "scale") { lo = q.min; hi = q.max; }
   if (hi === lo) { hi += 1; lo -= 1; }
-  const xi = (d) => (days.length === 1 ? W / 2 : P + (days.indexOf(d) / (days.length - 1)) * (W - 2 * P));
-  const yi = (v) => H - P - ((v - lo) / (hi - lo)) * (H - 2 * P);
-  const pts = vals.map((x) => ({ d: x.d, x: +xi(x.d).toFixed(1), y: +yi(x.v).toFixed(1) }));
-  let path = "";
-  pts.forEach((p, i) => {
-    const gap = i === 0 || days.indexOf(p.d) - days.indexOf(pts[i - 1].d) > 1; // Lücke bei fehlenden Tagen
-    path += `${gap ? "M" : "L"}${p.x},${p.y}`;
-  });
-  const dots = pts.length <= 40 ? pts.map((p) => `<circle cx="${p.x}" cy="${p.y}" r="3" class="dot"/>`).join("") : "";
-  return `<div class="chart">
-    <div class="yax small muted"><span>${q.format ? fmtQ(q, hi) : fmt1(hi)}</span><span>${q.format ? fmtQ(q, lo) : fmt1(lo)}</span><span class="avgtag" style="top:${(yi(avg) / H) * 100}%" title="Durchschnitt">Ø</span></div>
-    <div class="plot">
-    <svg class="line" viewBox="0 0 ${W} ${H}" data-pts='${JSON.stringify(pts)}' role="img" aria-label="Verlauf von ${esc(q.text)}">
-      <line x1="0" x2="${W}" y1="${yi(avg)}" y2="${yi(avg)}" class="avg"/>
-      <path d="${path}" class="ln"/>
-      ${dots}
-      <circle class="hover" r="5" style="display:none"/>
+  const pad = (hi - lo) * 0.08; lo -= pad; hi += pad;
+  const xi = (d) => (days.length === 1 ? W / 2 : PL + (days.indexOf(d) / (days.length - 1)) * (W - PL - PR));
+  const yi = (v) => PT + (1 - (v - lo) / (hi - lo)) * (H - PT - PB);
+  const r1 = (n) => Math.round(n * 10) / 10;
+  const pts = vals.map((x) => ({ d: x.d, v: x.v, x: r1(xi(x.d)), y: r1(yi(x.v)) }));
+  // Abschnitte ohne Lücke (fehlende Tage unterbrechen die Kurve)
+  const segs = [];
+  pts.forEach((p, i) => { if (!i || days.indexOf(p.d) - days.indexOf(pts[i - 1].d) > 1) segs.push([]); segs[segs.length - 1].push(p); });
+  const curve = (s) => {
+    let d = `M${s[0].x},${s[0].y}`;
+    for (let i = 0; i < s.length - 1; i++) {
+      const p0 = s[i - 1] || s[i], p1 = s[i], p2 = s[i + 1], p3 = s[i + 2] || p2, t = 0.18;
+      d += ` C${r1(p1.x + (p2.x - p0.x) * t)},${r1(p1.y + (p2.y - p0.y) * t)} ${r1(p2.x - (p3.x - p1.x) * t)},${r1(p2.y - (p3.y - p1.y) * t)} ${p2.x},${p2.y}`;
+    }
+    return d;
+  };
+  const ya = r1(yi(avg));
+  const lines = segs.filter((s) => s.length > 1).map(curve);
+  const areas = segs.filter((s) => s.length > 1).map((s) => `${curve(s)} L${s[s.length - 1].x},${ya} L${s[0].x},${ya} Z`);
+  // Farben: „Was ist besser?“ → darüber grün/darunter orange (bzw. umgekehrt), neutral in der App-Farbe
+  const dir = betterDir(q);
+  const [cUp, cDn] = dir === "high" ? ["var(--s3)", "var(--s2)"] : dir === "low" ? ["var(--s2)", "var(--s3)"] : ["var(--hold)", "var(--hold)"];
+  const id = "lc" + q.id.replace(/[^\w]/g, "");
+  const f = (v) => (q.format ? fmtQ(q, v) : fmtBig(v));
+  const pMax = pts.find((p) => p.v === mx), pMin = pts.find((p) => p.v === mn);
+  const tag = (p, up) => { const x = Math.min(Math.max(p.x, PL + 22), W - PR - 22); return `<text x="${x}" y="${up ? p.y - 9 : p.y + 17}" text-anchor="middle" class="mm">${up ? "▲" : "▼"} ${esc(f(p.v))}</text>`; };
+  // Beschriftung unten: Wochentage (bis 14 Tage) bzw. einige Daten
+  const step = days.length <= 14 ? 1 : Math.ceil(days.length / 5);
+  const xl = days.map((d, i) => (i % step === 0 || i === days.length - 1) && (days.length <= 14 || i === days.length - 1 || days.length - 1 - i >= step * 0.6)
+    ? `<text x="${r1(xi(d))}" y="${H - 7}" text-anchor="${days.length > 14 && i === 0 ? "start" : days.length > 14 && i === days.length - 1 ? "end" : "middle"}" class="xl" data-d="${d}">${days.length <= 14 ? WD_SHORT[parseIso(d).getDay()] : `${parseIso(d).getDate()}.${parseIso(d).getMonth() + 1}.`}</text>` : "").join("");
+  return `<div class="lchart">
+    <svg class="line" viewBox="0 0 ${W} ${H}" data-pts='${JSON.stringify(pts.map(({ d, x, y }) => ({ d, x, y })))}' data-avg="${avg}" role="img" aria-label="Verlauf von ${esc(q.text)}">
+      <defs>
+        <linearGradient id="${id}u" x1="0" y1="${PT}" x2="0" y2="${ya}" gradientUnits="userSpaceOnUse"><stop offset="0" style="stop-color:${cUp};stop-opacity:.45"/><stop offset="1" style="stop-color:${cUp};stop-opacity:.05"/></linearGradient>
+        <linearGradient id="${id}d" x1="0" y1="${ya}" x2="0" y2="${H - PB}" gradientUnits="userSpaceOnUse"><stop offset="0" style="stop-color:${cDn};stop-opacity:.05"/><stop offset="1" style="stop-color:${cDn};stop-opacity:.4"/></linearGradient>
+        <clipPath id="${id}cu"><rect x="0" y="0" width="${W}" height="${ya}"/></clipPath>
+        <clipPath id="${id}cd"><rect x="0" y="${ya}" width="${W}" height="${H - ya}"/></clipPath>
+      </defs>
+      ${areas.map((a) => `<path d="${a}" fill="url(#${id}u)" clip-path="url(#${id}cu)"/><path d="${a}" fill="url(#${id}d)" clip-path="url(#${id}cd)"/>`).join("")}
+      <line x1="${PL}" x2="${W - PR}" y1="${ya}" y2="${ya}" class="avg"/>
+      ${lines.map((l) => `<path d="${l}" class="ln"/>`).join("")}
+      ${pts.length <= 45 ? pts.map((p) => `<circle cx="${p.x}" cy="${p.y}" r="${pts.length > 20 ? 2 : 3}" class="dot"/>`).join("") : ""}
+      ${pMax ? tag(pMax, true) : ""}${pMin && pMin !== pMax ? tag(pMin, false) : ""}
+      <g class="avgpill" transform="translate(${W - PR - 60},${r1(ya - 9)})"><rect width="60" height="18" rx="9"/><text x="30" y="12.5" text-anchor="middle">Ø ${esc(f(avg))}</text></g>
+      <line class="guide" x1="0" x2="0" y1="${PT - 6}" y2="${H - PB}" style="display:none"/>
+      <circle class="hover" r="6" style="display:none"/>
+      ${xl}
     </svg>
-    </div>
-  </div>
-  `;
+    <div class="ltip" hidden><span class="lt1"></span><strong class="lt2"></strong><span class="lt3"></span></div>
+  </div>`;
 }
 
 // Zahnrad: Darstellung pro Frage einstellen

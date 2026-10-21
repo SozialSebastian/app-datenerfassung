@@ -319,6 +319,27 @@ test("Analyse: Folgefragen in der Kachel der Hauptfrage, Säulen nach Antwort ei
   await ctx.close();
 });
 
+test("Zahlen-Verlauf: Sprechblase mit Wert und Abstand zum Ø, Veränderung zum Zeitraum davor", async () => {
+  const d0 = new Date(); const ds = (i) => { const d = new Date(d0); d.setDate(d.getDate() - i); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`; };
+  const answers = {}; [8000, 6000, 10000, 7000, 9000, 4000, 12000, 5000, 5000, 5000, 5000, 5000, 5000, 5000].forEach((v, i) => (answers[ds(i)] = { s: v }));
+  const data = { version: 1, lastBackup: null, answers, questions: [{ id: "s", text: "Schritte", type: "number", options: [], unit: "", healthKey: "schritte", source: "health" }] };
+  const { page, ctx, errors } = await open({ data });
+  await page.click('[data-tab="analysis"]');
+  await page.click('[data-range="7"]');
+  const card = page.locator('.acard[data-qid="s"]');
+  const txt = await card.innerText();
+  assert.match(txt, /Ø 8\.000/); // ganzzahlig
+  assert.match(txt, /▲ 60 %\s*ggü\. 7 Tagen davor/); // 8.000 gegen 5.000
+  assert.doesNotMatch(txt, /Min |Max /); // stehen in der Grafik
+  assert.match(txt, /▲ 12\.000[\s\S]*▼ 4\.000/);
+  assert.equal(await card.locator(".ltip").isVisible(), false);
+  const bb = await card.locator("svg.line").boundingBox();
+  await card.locator("svg.line").tap({ position: { x: bb.width - 8, y: bb.height / 2 } }); // letzter Punkt = heute
+  assert.match(await card.locator(".ltip").innerText(), /8\.000\s*genau Ø|8\.000/);
+  assert.deepEqual(errors, []);
+  await ctx.close();
+});
+
 test("Schlaf aus Health: Wachphasen abgezogen, doppelte Messungen einmal, Einschlaf- und Aufwachzeit", async () => {
   const { listEntries } = await import("../worker/src/index.js");
   const t = (x) => `2026-10-${x}:00+02:00`;
@@ -1082,7 +1103,7 @@ test("Dunkelmodus: alle Bereiche ohne Fehler (Bilder unter tests/screens)", asyn
 
 // ---------- Ausführen ----------
 let failed = 0;
-for (const t of tests) {
+for (const t of tests.filter((x) => !process.env.ONLY || x.name.includes(process.env.ONLY))) {
   const t0 = Date.now();
   try { await t.fn(); console.log(`✓ ${t.name} (${Date.now() - t0} ms)`); }
   catch (e) { failed++; console.log(`✗ ${t.name}\n  ${String(e && e.stack || e).split("\n").slice(0, 6).join("\n  ")}`); }
