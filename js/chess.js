@@ -323,44 +323,6 @@ function chessPanel(days) {
   </section>`;
 }
 
-// Verlauf mit mehreren Linien (z. B. Elo je Bedenkzeit), Punkte über Lücken hinweg verbunden
-function chessLineChart(series, days, { fmt = (v) => String(Math.round(v)), avg = null, label = "" } = {}) {
-  const W = 300, H = 110, P = 8;
-  const nums = series.flatMap((s) => s.pts.map((p) => p.v));
-  if (!nums.length) return "";
-  let lo = Math.min(...nums), hi = Math.max(...nums);
-  if (hi === lo) { hi += 1; lo -= 1; }
-  const idx = new Map(days.map((d, i) => [d, i]));
-  const xi = (d) => (days.length === 1 ? W / 2 : P + (idx.get(d) / (days.length - 1)) * (W - 2 * P));
-  const yi = (v) => H - P - ((v - lo) / (hi - lo)) * (H - 2 * P);
-  const total = series.reduce((s, x) => s + x.pts.length, 0);
-  // eine Linie: gleiche Optik wie die Verläufe der Fragen (z. B. Schritte); mehrere: farbig
-  const col = (k) => (series.length === 1 ? "var(--ink)" : `var(--s${(k % 8) + 1})`);
-  const lines = series.map((s, k) => {
-    const path = s.pts.map((p, i) => `${i ? "L" : "M"}${xi(p.d).toFixed(1)},${yi(p.v).toFixed(1)}`).join("");
-    const dots = total <= 40 || s.pts.length === 1 ? s.pts.map((p) => `<circle cx="${xi(p.d).toFixed(1)}" cy="${yi(p.v).toFixed(1)}" r="3" style="fill:${col(k)}"/>`).join("") : "";
-    return `<path d="${path}" class="ln" style="stroke:${col(k)}"/>${dots}`;
-  }).join("");
-  // zum Antippen: je Tag die Werte aller Linien
-  const byDay = {};
-  series.forEach((s) => s.pts.forEach((p) => { (byDay[p.d] ||= []).push(`${s.name ? s.name + " " : ""}${fmt(p.v)}`); }));
-  // Punkt zum Mitziehen wie bei den Fragen-Verläufen (y der ersten Linie)
-  const yOf = {};
-  series.forEach((s) => s.pts.forEach((p) => { if (yOf[p.d] === undefined) yOf[p.d] = +yi(p.v).toFixed(1); }));
-  const tips = Object.entries(byDay).map(([d, t]) => ({ d, x: +xi(d).toFixed(1), y: yOf[d], t: `${shortDate(d)}: ${t.join(" · ")}` }));
-  return `<div class="chart">
-      <div class="yax small muted"><span>${fmt(hi)}</span><span>${fmt(lo)}</span>${avg !== null ? `<span class="avgtag" style="top:${(yi(avg) / H) * 100}%" title="Durchschnitt">Ø</span>` : ""}</div>
-      <div class="plot">
-        <svg class="cline" viewBox="0 0 ${W} ${H}" data-tips='${esc(JSON.stringify(tips))}' role="img" aria-label="${esc(label)}">
-          ${avg !== null ? `<line x1="0" x2="${W}" y1="${yi(avg)}" y2="${yi(avg)}" class="avg"/>` : ""}
-          ${lines}
-          <circle class="hover" r="5" style="display:none"/>
-        </svg>
-      </div>
-    </div>
-    ${series.length > 1 ? `<p class="legend small">${series.map((s, k) => `<span class="ln-key" style="border-color:var(--s${(k % 8) + 1})"></span>${esc(s.name)}`).join(" ")}</p>` : ""}
-    <p class="ccap small muted" aria-live="polite"></p>`;
-}
 // Elo je Bedenkzeit: Wert nach der letzten gewerteten Partie des Tages
 // gewählter Spielmodus für die Elo (über das Zahnrad der Kachel), sonst der meistgespielte im Zeitraum
 function chessSelCls(cls, games) {
@@ -375,7 +337,7 @@ function chessEloChart(days, c) {
   const pts = days.filter((d) => all[d] && all[d].r[c]).map((d) => ({ d, v: all[d].r[c][0] }));
   if (!pts.length) return "";
   const a = pts.reduce((s, p) => s + p.v, 0) / pts.length;
-  return `<h3 class="csub">Elo im Verlauf</h3>${chessLineChart([{ name: "", pts }], days, { avg: a, label: `Elo ${chessClsName(c)} im Verlauf` })}`;
+  return `<h3 class="csub">Elo im Verlauf</h3>${curveChart(pts, days, { avg: a, dir: "high", id: "elo" + c, connect: true, label: `Elo ${chessClsName(c)} im Verlauf`, fmt: (v) => String(Math.round(v)), tipFmt: (v) => `Elo ${Math.round(v)}`, dev: (d) => (Math.abs(d) < 0.5 ? "genau Ø" : `${d > 0 ? "+" : "−"}${Math.round(Math.abs(d))} ${d > 0 ? "über" : "unter"} Ø`) })}`;
 }
 // Zahnrad der Schach-Kachel: Spielmodus für die Elo und welche Verläufe
 function openChessView(days) {
@@ -413,27 +375,8 @@ function chessAccChart(days) {
   const pts = days.filter((d) => all[d] && all[d].an).map((d) => ({ d, v: all[d].a / all[d].an }));
   if (!pts.length) return "";
   const a = pts.reduce((s, p) => s + p.v, 0) / pts.length;
-  return `<h3 class="csub">Genauigkeit im Verlauf</h3>${chessLineChart([{ name: "", pts }], days, { fmt: (v) => `${fmtNum(Math.round(v * 10) / 10)} %`, avg: a, label: "Genauigkeit im Verlauf" })}`;
-}
-function wireChessCharts(root) {
-  root.querySelectorAll("svg.cline").forEach((svg) => {
-    const tips = JSON.parse(svg.dataset.tips);
-    const cap = svg.closest(".chart").parentElement.querySelector(".ccap");
-    const mark = svg.querySelector(".hover");
-    const pick = (ev) => {
-      const r = svg.getBoundingClientRect();
-      const x = ((ev.clientX - r.left) / r.width) * 300;
-      let best = tips[0];
-      for (const t of tips) if (Math.abs(t.x - x) < Math.abs(best.x - x)) best = t;
-      mark.setAttribute("cx", best.x); mark.setAttribute("cy", best.y); mark.style.display = "";
-      // passende Beschriftung direkt unter diesem Diagramm
-      let c = svg.closest(".chart").nextElementSibling;
-      if (c && !c.classList.contains("ccap")) c = c.nextElementSibling;
-      (c && c.classList.contains("ccap") ? c : cap).textContent = best.t;
-    };
-    svg.addEventListener("pointerdown", pick);
-    svg.addEventListener("pointermove", (e) => { if (e.buttons || e.pointerType === "mouse") pick(e); });
-  });
+  const pf = (v) => `${fmtNum(Math.round(v * 10) / 10)} %`;
+  return `<h3 class="csub">Genauigkeit im Verlauf</h3>${curveChart(pts, days, { avg: a, dir: "high", id: "acc", connect: true, label: "Genauigkeit im Verlauf", fmt: pf, dev: (d) => (Math.abs(d) < 0.05 ? "genau Ø" : `${d > 0 ? "+" : "−"}${fmtNum(Math.round(Math.abs(d) * 10) / 10)} Punkte ${d > 0 ? "über" : "unter"} Ø`) })}`;
 }
 
 // Liste aller Partien im Zeitraum, je Partie aufklappbar

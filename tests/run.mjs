@@ -712,7 +712,7 @@ for (const cors of [true, false]) test(`chess.com: Einschalten lädt alles, Wert
   assert.equal(await page.locator('.acard[data-qid]').filter({ hasText: "Schach:" }).count(), 0); // keine einzelnen Schach-Karten mehr
   if (cors) await page.locator(".chess").screenshot({ path: path.join(shots, "schach.png") });
   // Elo und Genauigkeit im Verlauf, abschaltbar über das Zahnrad
-  assert.equal(await page.locator(".chess svg.cline").count(), 2); // Elo des gewählten Modus, Genauigkeit
+  assert.equal(await page.locator(".chess svg.line").count(), 2); // Elo des gewählten Modus, Genauigkeit
   assert.match(txt, /Elo Rapid am Ende des Zeitraums[\s\S]*Elo im Verlauf/);
   assert.doesNotMatch(txt, /Daten von chess\.com/);
   // Zahnrad der Kachel: Elo für Blitz
@@ -723,14 +723,14 @@ for (const cors of [true, false]) test(`chess.com: Einschalten lädt alles, Wert
   assert.match(await page.locator(".chess").innerText(), /32|4\s*Partien/); // Partien zählen weiter alle Modi
   await page.evaluate(() => { prefs.chessCls = "rapid"; savePrefs(); renderAnalysis(); });
   assert.match(txt, /Genauigkeit im Verlauf/);
-  await page.locator(".chess svg.cline").first().evaluate((el) => el.scrollIntoView({ block: "center" })); // nicht unter der Leiste unten
-  const box = await page.locator(".chess svg.cline").first().boundingBox();
-  await page.mouse.click(box.x + box.width - 3, box.y + box.height / 2);
-  assert.match(await page.locator(".chess .ccap").first().innerText(), /: 1220$/);
+  await page.locator(".chess svg.line").first().evaluate((el) => el.scrollIntoView({ block: "center" })); // nicht unter der Leiste unten
+  const box = await page.locator(".chess svg.line").first().boundingBox();
+  await page.locator(".chess svg.line").first().tap({ position: { x: box.width - 3, y: box.height / 2 } });
+  assert.match(await page.locator(".chess .ltip").first().innerText(), /Elo 1220/);
   await page.click("#asettings");
   await page.locator('#sheet [data-f="chessElo"]').uncheck();
   await page.evaluate(() => document.querySelector("#sheet").close());
-  assert.equal(await page.locator(".chess svg.cline").count(), 1);
+  assert.equal(await page.locator(".chess svg.line").count(), 1);
   await page.evaluate(() => { prefs.chessElo = true; savePrefs(); renderAnalysis(); });
   // Partienliste: neueste zuerst, Details je Partie
   await page.click("#chessgames");

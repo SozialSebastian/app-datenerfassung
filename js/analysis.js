@@ -138,58 +138,55 @@ function renderAnalysis() {
   view.querySelectorAll(".panel.trends").forEach((card) => onHold(card, openTrendSettings));
   $("#pmore")?.addEventListener("click", () => { showAllPlaces = !showAllPlaces; renderAnalysis(); });
   $("#chessgames")?.addEventListener("click", () => openChessGames(days));
-  wireChessCharts(view);
   wireRange(view, "range", (k) => { prefs.range = k; savePrefs(); renderAnalysis(); });
   view.querySelectorAll("[data-focus]").forEach((b) => b.addEventListener("click", () => {
     prefs.focus[b.dataset.qid] = b.dataset.focus; savePrefs(); renderAnalysis();
   }));
 
-  // Antippen im Verlauf zeigt den Wert darunter
+  wireCurves(view);
+  // Antippen einer Säule zeigt den Wert darunter
   view.querySelectorAll(".acard").forEach((card) => {
     const cap = card.querySelector(".acap");
-    const q = qById(card.dataset.qid);
-    const svg = card.querySelector("svg.line");
-    if (svg) {
-      const pts = JSON.parse(svg.dataset.pts), avg = +svg.dataset.avg;
-      const mark = svg.querySelector(".hover"), guide = svg.querySelector(".guide");
-      const tip = card.querySelector(".ltip"), box = card.querySelector(".lchart");
-      const dir = betterDir(q);
-      const pick = (ev) => {
-        const r = svg.getBoundingClientRect();
-        const x = ((ev.clientX - r.left) / r.width) * 340;
-        let best = pts[0];
-        for (const p of pts) if (Math.abs(p.x - x) < Math.abs(best.x - x)) best = p;
-        mark.setAttribute("cx", best.x); mark.setAttribute("cy", best.y); mark.style.display = "";
-        guide.setAttribute("x1", best.x); guide.setAttribute("x2", best.x); guide.setAttribute("y1", best.y); guide.style.display = "";
-        svg.querySelectorAll(".xl").forEach((t) => t.classList.toggle("on", t.dataset.d === best.d));
-        const v = (state.answers[best.d] || {})[q.id];
-        const d = v - avg;
-        const dTxt = q.format ? (() => { const m = Math.round(Math.abs(d) * 60); return m >= 60 ? `${Math.floor(m / 60)} h ${String(m % 60).padStart(2, "0")} min` : `${m} min`; })() : fmtBig(Math.abs(d));
-        const word = q.format === "clock" ? (d > 0 ? "später als Ø" : "früher als Ø") : d > 0 ? "über Ø" : "unter Ø";
-        tip.querySelector(".lt1").textContent = shortDate(best.d);
-        tip.querySelector(".lt2").textContent = q.format ? fmtQ(q, v) : fmtBig(v) + (q.unit ? " " + q.unit : "");
-        const t3 = tip.querySelector(".lt3");
-        t3.textContent = Math.abs(d) < 1e-9 ? "genau Ø" : `${d > 0 ? "+" : "−"}${dTxt} ${word}`;
-        t3.className = "lt3 " + (!dir || Math.abs(d) < 1e-9 ? "" : (d > 0) === (dir === "high") ? "good" : "bad");
-        tip.hidden = false;
-        // Sprechblase über dem Punkt, am Rand eingerückt
-        const bw = tip.offsetWidth, cw = box.clientWidth, px = (best.x / 340) * cw, py = (best.y / 172) * r.height;
-        tip.style.left = `${Math.min(Math.max(px - bw / 2, 0), cw - bw)}px`;
-        tip.style.top = `${py - tip.offsetHeight - 12}px`;
-        tip.style.setProperty("--ax", `${px - Math.min(Math.max(px - bw / 2, 0), cw - bw)}px`);
-      };
-      svg.addEventListener("pointerdown", pick);
-      // woanders hintippen blendet die Sprechblase wieder aus
-      const hide = () => { tip.hidden = true; mark.style.display = "none"; guide.style.display = "none"; svg.querySelectorAll(".xl.on").forEach((t) => t.classList.remove("on")); };
-      const out = (e) => { if (!svg.isConnected) return document.removeEventListener("pointerdown", out, true); if (!tip.hidden && !svg.contains(e.target)) hide(); };
-      document.addEventListener("pointerdown", out, true);
-      svg.addEventListener("pointermove", (e) => { if (e.buttons || e.pointerType === "mouse") pick(e); });
-    }
     card.querySelectorAll(".col[data-cap]").forEach((c) => c.addEventListener("click", () => {
       card.querySelectorAll(".col.sel").forEach((x) => x.classList.remove("sel"));
       c.classList.add("sel");
       cap.textContent = c.dataset.cap;
     }));
+  });
+}
+
+// Verläufe antippen bzw. darüberziehen: Sprechblase mit Datum, Wert und Abstand zum Ø; woanders tippen blendet sie aus
+function wireCurves(root) {
+  root.querySelectorAll(".lchart").forEach((box) => {
+    const svg = box.querySelector("svg.line"), tip = box.querySelector(".ltip");
+    if (!svg || !tip || svg._wired) return;
+    svg._wired = true;
+    const pts = JSON.parse(svg.dataset.pts);
+    const mark = svg.querySelector(".hover"), guide = svg.querySelector(".guide");
+    const vb = svg.viewBox.baseVal;
+    const pick = (ev) => {
+      const r = svg.getBoundingClientRect();
+      const x = ((ev.clientX - r.left) / r.width) * vb.width;
+      let best = pts[0];
+      for (const p of pts) if (Math.abs(p.x - x) < Math.abs(best.x - x)) best = p;
+      mark.setAttribute("cx", best.x); mark.setAttribute("cy", best.y); mark.style.display = "";
+      guide.setAttribute("x1", best.x); guide.setAttribute("x2", best.x); guide.setAttribute("y1", best.y); guide.style.display = "";
+      svg.querySelectorAll(".xl").forEach((t) => t.classList.toggle("on", t.dataset.d === best.d));
+      tip.querySelector(".lt1").textContent = shortDate(best.d);
+      tip.querySelector(".lt2").textContent = best.t;
+      const t3 = tip.querySelector(".lt3");
+      t3.textContent = best.dv; t3.className = "lt3 " + best.tone;
+      tip.hidden = false;
+      // Sprechblase über dem Punkt, am Rand eingerückt
+      const bw = tip.offsetWidth, cw = box.clientWidth, px = (best.x / vb.width) * cw, py = (best.y / vb.height) * r.height;
+      const left = Math.min(Math.max(px - bw / 2, 0), cw - bw);
+      tip.style.left = `${left}px`; tip.style.top = `${py - tip.offsetHeight - 12}px`; tip.style.setProperty("--ax", `${px - left}px`);
+    };
+    svg.addEventListener("pointerdown", pick);
+    svg.addEventListener("pointermove", (e) => { if (e.buttons || e.pointerType === "mouse") pick(e); });
+    const hide = () => { tip.hidden = true; mark.style.display = "none"; guide.style.display = "none"; svg.querySelectorAll(".xl.on").forEach((t) => t.classList.remove("on")); };
+    const out = (e) => { if (!svg.isConnected) return document.removeEventListener("pointerdown", out, true); if (!tip.hidden && !svg.contains(e.target)) hide(); };
+    document.addEventListener("pointerdown", out, true);
   });
 }
 
@@ -588,22 +585,42 @@ function columnChart(q, days, focusKey, unit, hitOf, stack) {
     </div>`;
 }
 
-// Verlauf über die Zeit: weiche Kurve, Fläche zum Durchschnitt (darüber/darunter eingefärbt), Höchst- und Tiefstwert am Punkt
+// Abstand zum Durchschnitt als Text, z. B. „+2.611 über Ø“, „23 min früher als Ø“
+const devMin = (h) => { const m = Math.round(Math.abs(h) * 60); return m >= 60 ? `${Math.floor(m / 60)} h ${String(m % 60).padStart(2, "0")} min` : `${m} min`; };
+function devText(q, d) {
+  if (Math.abs(d) < 1e-9) return "genau Ø";
+  const t = q.format ? devMin(d) : fmtBig(Math.abs(d)) + (q.unit ? " " + q.unit : "");
+  return `${d > 0 ? "+" : "−"}${t} ${q.format === "clock" ? (d > 0 ? "später als Ø" : "früher als Ø") : d > 0 ? "über Ø" : "unter Ø"}`;
+}
+// Verlauf einer Frage
 function lineChart(q, days, vals, avg) {
+  return curveChart(vals, days, {
+    avg, dir: betterDir(q), id: q.id, label: `Verlauf von ${q.text}`,
+    range: q.type === "scale" ? [q.min, q.max] : null,
+    fmt: (v) => (q.format ? fmtQ(q, v) : fmtBig(v)),
+    tipFmt: (v) => (q.format ? fmtQ(q, v) : fmtBig(v) + (q.unit ? " " + q.unit : "")),
+    dev: (d) => devText(q, d)
+  });
+}
+// Verlauf über die Zeit: monotone Kurve, Fläche zum Durchschnitt (darüber/darunter eingefärbt), Höchst- und Tiefstwert am Punkt,
+// Antippen zeigt eine Sprechblase (wireCurves). pts: [{ d, v }]
+// connect: Lücken überbrücken (z. B. Elo bleibt an Tagen ohne Partie gleich)
+function curveChart(pts0, days, { avg, dir = null, id = "", label = "", range = null, fmt = fmtBig, tipFmt = null, dev = null, connect = false }) {
+  if (!pts0.length) return "";
   const W = 340, H = 172, PL = 12, PR = 12, PT = 24, PB = 34;
-  const nums = vals.map((x) => x.v);
+  const nums = pts0.map((x) => x.v);
   const mn = Math.min(...nums), mx = Math.max(...nums);
   let lo = mn, hi = mx;
-  if (q.type === "scale") { lo = q.min; hi = q.max; }
+  if (range) [lo, hi] = range;
   if (hi === lo) { hi += 1; lo -= 1; }
   const pad = (hi - lo) * 0.08; lo -= pad; hi += pad;
   const xi = (d) => (days.length === 1 ? W / 2 : PL + (days.indexOf(d) / (days.length - 1)) * (W - PL - PR));
   const yi = (v) => PT + (1 - (v - lo) / (hi - lo)) * (H - PT - PB);
   const r1 = (n) => Math.round(n * 10) / 10;
-  const pts = vals.map((x) => ({ d: x.d, v: x.v, x: r1(xi(x.d)), y: r1(yi(x.v)) }));
+  const pts = pts0.map((x) => ({ d: x.d, v: x.v, x: r1(xi(x.d)), y: r1(yi(x.v)) }));
   // Abschnitte ohne Lücke (fehlende Tage unterbrechen die Kurve)
   const segs = [];
-  pts.forEach((p, i) => { if (!i || days.indexOf(p.d) - days.indexOf(pts[i - 1].d) > 1) segs.push([]); segs[segs.length - 1].push(p); });
+  pts.forEach((p, i) => { if (!i || (!connect && days.indexOf(p.d) - days.indexOf(pts[i - 1].d) > 1)) segs.push([]); segs[segs.length - 1].push(p); });
   // monotone Kurve (Fritsch–Carlson): geht genau durch jeden Punkt und schießt nie über Höchst-/Tiefstwerte hinaus
   const curve = (s) => {
     const n = s.length, dx = [], m = [], t = [];
@@ -621,11 +638,16 @@ function lineChart(q, days, vals, avg) {
   const lines = segs.filter((s) => s.length > 1).map(curve);
   const areas = segs.filter((s) => s.length > 1).map((s) => `${curve(s)} L${s[s.length - 1].x},${ya} L${s[0].x},${ya} Z`);
   // Farben: „Was ist besser?“ → darüber grün/darunter orange (bzw. umgekehrt), neutral in der App-Farbe
-  const dir = betterDir(q);
   const [cUp, cDn] = dir === "high" ? ["var(--s3)", "var(--s2)"] : dir === "low" ? ["var(--s2)", "var(--s3)"] : ["var(--hold)", "var(--hold)"];
-  const id = "lc" + q.id.replace(/[^\w]/g, "");
-  const f = (v) => (q.format ? fmtQ(q, v) : fmtBig(v));
+  const gid = "lc" + String(id).replace(/[^\w]/g, "") + Math.random().toString(36).slice(2, 6);
+  const f = fmt, tf = tipFmt || fmt;
+  // für die Sprechblase: Datum, Wert, Abstand zum Ø und ob das gut ist
+  const tips = pts.map((p) => { const d = p.v - avg; return { d: p.d, x: p.x, y: p.y, t: tf(p.v), dv: dev ? dev(d) : "", tone: !dir || Math.abs(d) < 1e-9 ? "" : (d > 0) === (dir === "high") ? "good" : "bad" }; });
   const pMax = pts.find((p) => p.v === mx), pMin = pts.find((p) => p.v === mn);
+  // Ø-Pille rechts, außer dort liegt ein Punkt oder eine Beschriftung auf Höhe der Ø-Linie → dann links
+  const near = (side) => pts.some((p) => (side ? p.x > W - PR - 75 : p.x < PL + 75) && Math.abs(p.y - ya) < 26);
+  const lastX = pts[pts.length - 1].x, firstX = pts[0].x;
+  const pillLeft = (near(true) || (lastX > W - PR - 75 && pts.length > 1 && lastX - firstX < 120)) && !near(false);
   // Beschriftung direkt über bzw. unter dem Punkt; am Rand bündig, damit sie nicht abgeschnitten wird
   const tag = (p, up) => {
     const anchor = p.x < PL + 26 ? "start" : p.x > W - PR - 26 ? "end" : "middle";
@@ -637,19 +659,19 @@ function lineChart(q, days, vals, avg) {
   const xl = days.map((d, i) => (i % step === 0 || i === days.length - 1) && (days.length <= 14 || i === days.length - 1 || days.length - 1 - i >= step * 0.6)
     ? `<text x="${r1(xi(d))}" y="${H - 7}" text-anchor="${days.length > 14 && i === 0 ? "start" : days.length > 14 && i === days.length - 1 ? "end" : "middle"}" class="xl" data-d="${d}">${days.length <= 14 ? WD_SHORT[parseIso(d).getDay()] : `${parseIso(d).getDate()}.${parseIso(d).getMonth() + 1}.`}</text>` : "").join("");
   return `<div class="lchart">
-    <svg class="line" viewBox="0 0 ${W} ${H}" data-pts='${JSON.stringify(pts.map(({ d, x, y }) => ({ d, x, y })))}' data-avg="${avg}" role="img" aria-label="Verlauf von ${esc(q.text)}">
+    <svg class="line" viewBox="0 0 ${W} ${H}" data-pts='${esc(JSON.stringify(tips))}' role="img" aria-label="${esc(label)}">
       <defs>
-        <linearGradient id="${id}u" x1="0" y1="${PT}" x2="0" y2="${ya}" gradientUnits="userSpaceOnUse"><stop offset="0" style="stop-color:${cUp};stop-opacity:.45"/><stop offset="1" style="stop-color:${cUp};stop-opacity:.05"/></linearGradient>
-        <linearGradient id="${id}d" x1="0" y1="${ya}" x2="0" y2="${H - PB}" gradientUnits="userSpaceOnUse"><stop offset="0" style="stop-color:${cDn};stop-opacity:.05"/><stop offset="1" style="stop-color:${cDn};stop-opacity:.4"/></linearGradient>
-        <clipPath id="${id}cu"><rect x="0" y="0" width="${W}" height="${ya}"/></clipPath>
-        <clipPath id="${id}cd"><rect x="0" y="${ya}" width="${W}" height="${H - ya}"/></clipPath>
+        <linearGradient id="${gid}u" x1="0" y1="${PT}" x2="0" y2="${ya}" gradientUnits="userSpaceOnUse"><stop offset="0" style="stop-color:${cUp};stop-opacity:.45"/><stop offset="1" style="stop-color:${cUp};stop-opacity:.05"/></linearGradient>
+        <linearGradient id="${gid}d" x1="0" y1="${ya}" x2="0" y2="${H - PB}" gradientUnits="userSpaceOnUse"><stop offset="0" style="stop-color:${cDn};stop-opacity:.05"/><stop offset="1" style="stop-color:${cDn};stop-opacity:.4"/></linearGradient>
+        <clipPath id="${gid}cu"><rect x="0" y="0" width="${W}" height="${ya}"/></clipPath>
+        <clipPath id="${gid}cd"><rect x="0" y="${ya}" width="${W}" height="${H - ya}"/></clipPath>
       </defs>
-      ${areas.map((a) => `<path d="${a}" fill="url(#${id}u)" clip-path="url(#${id}cu)"/><path d="${a}" fill="url(#${id}d)" clip-path="url(#${id}cd)"/>`).join("")}
+      ${areas.map((a) => `<path d="${a}" fill="url(#${gid}u)" clip-path="url(#${gid}cu)"/><path d="${a}" fill="url(#${gid}d)" clip-path="url(#${gid}cd)"/>`).join("")}
       <line x1="${PL}" x2="${W - PR}" y1="${ya}" y2="${ya}" class="avg"/>
       ${lines.map((l) => `<path d="${l}" class="ln"/>`).join("")}
       ${pts.length <= 45 ? pts.map((p) => `<circle cx="${p.x}" cy="${p.y}" r="${pts.length > 20 ? 2 : 3}" class="dot"/>`).join("") : ""}
       ${pMax ? tag(pMax, true) : ""}${pMin && pMin !== pMax ? tag(pMin, false) : ""}
-      <g class="avgpill" transform="translate(${W - PR - 60},${r1(ya - 9)})"><rect width="60" height="18" rx="9"/><text x="30" y="12.5" text-anchor="middle">Ø ${esc(f(avg))}</text></g>
+      <g class="avgpill" transform="translate(${pillLeft ? PL : W - PR - 60},${r1(ya - 9)})"><rect width="60" height="18" rx="9"/><text x="30" y="12.5" text-anchor="middle">Ø ${esc(f(avg))}</text></g>
       <line class="guide" x1="0" x2="0" y1="${PT - 6}" y2="${H - PB}" style="display:none"/>
       <circle class="hover" r="6" style="display:none"/>
       ${xl}
