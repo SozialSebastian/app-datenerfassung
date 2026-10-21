@@ -262,7 +262,7 @@ test("Sport-Kachel: Gedrückthalten öffnet Einstellungen, Verlauf ausblendbar",
   await page.click('[data-range="7"]');
   assert.match(await page.locator(".acard.sport").innerText(), /\+1\s*ggü\. 7 Tagen davor/);
   await page.click('[data-range="1"]');
-  assert.doesNotMatch(await page.locator(".acard.sport").innerText(), /davor/);
+  assert.doesNotMatch(await page.locator("#view").innerText(), /davor/); // heute kein Sport → Kachel standardmäßig ausgeblendet
   await page.click('[data-range="30"]');
   await page.click(".acard.sport .atitle", { button: "right" });
   await page.uncheck('[data-sv="sportChart"]');
@@ -281,17 +281,18 @@ test("Analyse: leere Kacheln ausblenden (je Frage und für alle)", async () => {
   await page.click('[data-tab="analysis"]');
   await page.click('[data-range="7"]');
   const ids = async () => (await page.$$eval(".acard[data-qid]", (xs) => xs.map((x) => x.dataset.qid))).sort();
+  // Standard: leere Kacheln aus
+  assert.deepEqual(await ids(), ["b"]);
+  // für alle abschalten
+  await page.click("#asettings");
+  await page.uncheck('[data-f="hideZero"]');
+  await page.click("#adone");
   assert.deepEqual(await ids(), ["a", "b", "n", "x"]);
-  // nur eine Frage per Gedrückthalten
+  // nur eine Frage per Gedrückthalten wieder ausblenden
   await page.click('.acard[data-qid="a"] .atitle', { button: "right" });
   await page.check('[data-q="a"][data-f="hideZeroQ"]');
   await page.click("#adone");
   assert.deepEqual(await ids(), ["b", "n", "x"]);
-  // für alle
-  await page.click("#asettings");
-  await page.check('[data-f="hideZero"]');
-  await page.click("#adone");
-  assert.deepEqual(await ids(), ["b"]);
   assert.deepEqual(errors, []);
   await ctx.close();
 });

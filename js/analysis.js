@@ -8,7 +8,7 @@ try { const p = JSON.parse(localStorage.getItem(PREF_KEY) || "{}"); prefs = { ..
 const savePrefs = () => { try { localStorage.setItem(PREF_KEY, JSON.stringify(prefs)); } catch (e) { /* egal */ } };
 
 // Einstellungen pro Frage, mit sinnvollen Vorgaben
-const qset = (q) => ({ chart: "bars", unit: q.notion ? "abs" : "pct", trend: q.type !== "choice", hidden: false, hideZero: !!prefs.hideZero, ...(prefs.q[q.id] || {}) });
+const qset = (q) => ({ chart: "bars", unit: q.notion ? "abs" : "pct", trend: q.type !== "choice", hidden: false, hideZero: prefs.hideZero !== false, ...(prefs.q[q.id] || {}) });
 // Hat die Karte im Zeitraum nichts zu sagen? (keine Antworten; Ja/Nein bzw. „Kompakt“ 0×; Zahlen nur 0)
 function zeroCard(q, days) {
   const vals = days.map((d) => (state.answers[d] || {})[q.id]).filter(isAnswered);
@@ -113,10 +113,10 @@ function renderAnalysis() {
     <p class="muted small" style="margin:0 0 16px">${days.length === 1 ? shortDate(days[0]) : `${shortDate(days[0])} – ${shortDate(days[days.length - 1])}`}</p>
     ${all.length && prefs.trends !== false ? trendsPanel(days) : ""}
     ${all.length && prefs.goals !== false ? goalsPanel() : ""}
-    ${prefs.sport !== false && sportQs().length && !(prefs.hideZero && !days.some((d) => sportDay(d))) ? sportPanel(days) : ""}
+    ${prefs.sport !== false && sportQs().length && !(prefs.hideZero !== false && !days.some((d) => sportDay(d))) ? sportPanel(days) : ""}
     ${prefs.intol !== false ? intolPanel() : ""}
-    ${prefs.places !== false && !(prefs.hideZero && !days.some((d) => placeCities(d).length)) && (Object.keys(state.places || {}).length || (settings.places && settings.places.on)) ? placesPanel(days) : ""}
-    ${prefs.chess !== false && !(prefs.hideZero && !days.some((d) => (chessDays()[d] || {}).n)) && (settings.chess.on || Object.keys(chessData().months).length) ? chessPanel(days) : ""}
+    ${prefs.places !== false && !(prefs.hideZero !== false && !days.some((d) => placeCities(d).length)) && (Object.keys(state.places || {}).length || (settings.places && settings.places.on)) ? placesPanel(days) : ""}
+    ${prefs.chess !== false && !(prefs.hideZero !== false && !days.some((d) => (chessDays()[d] || {}).n)) && (settings.chess.on || Object.keys(chessData().months).length) ? chessPanel(days) : ""}
     ${usedThemes.length > 1 ? `<div class="tfilter" role="group" aria-label="Thema">
       <button data-th="" aria-pressed="${!prefs.theme}">Alle</button>
       ${usedThemes.map((t) => `<button data-th="${t.k}" aria-pressed="${prefs.theme === t.k}">${t.i} ${esc(t.l)}</button>`).join("")}
@@ -538,7 +538,7 @@ function openAnalysisSettings(onlyQid) {
       </div>
       ${onlyQid ? "" : `
       <section class="sq">
-        <label class="switch row" style="margin-top:0"><input type="checkbox" data-f="hideZero" ${prefs.hideZero ? "checked" : ""}><span><strong>Leere Kacheln ausblenden</strong></span></label>
+        <label class="switch row" style="margin-top:0"><input type="checkbox" data-f="hideZero" ${prefs.hideZero !== false ? "checked" : ""}><span><strong>Leere Kacheln ausblenden</strong></span></label>
         <p class="muted small" style="margin:6px 0 0">Kacheln ohne Aussage im Zeitraum (keine Antworten, 0× „Ja“, nur Nullen, kein Sport, keine Partien, keine Orte) erscheinen erst, wenn dort etwas steht. Einzelne Fragen lassen sich unten abweichend einstellen.</p>
       </section>
       <section class="sq">
