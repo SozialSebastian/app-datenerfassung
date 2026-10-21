@@ -12,8 +12,7 @@ const GOAL_PERIODS = [["week", "Woche"], ["month", "Monat"], ["year", "Jahr"]];
 const PER_WORD = { week: "pro Woche", month: "im Monat", year: "im Jahr" };
 const THIS_WORD = { week: "diese Woche", month: "diesen Monat", year: "dieses Jahr" };
 const EVERY_WORD = { week: "Jede Woche", month: "Jeden Monat", year: "Jedes Jahr" };
-const GOAL_PREVIEW = 3;
-let showAllGoals = false;
+let showAllGoals = true; // Analyse zeigt immer alle Ziele (Variable bleibt für Bericht/Grafik)
 
 function G() {
   if (!state.goals || typeof state.goals !== "object") state.goals = {};
@@ -234,13 +233,12 @@ function goalsPanel() {
       <p class="muted small" style="margin:0">Noch keine aktiven Ziele. Leg sie unter „Tag“ über das Zahnrad oben rechts an.</p></section>`;
   }
   const evals = items.map((g) => evalGoal(g, goalCur(g))).sort((a, b) => STATUS_ORDER[a.status] - STATUS_ORDER[b.status]);
-  const shown = showAllGoals ? evals : evals.slice(0, GOAL_PREVIEW);
+  const shown = evals;
   const hist = goalHistory();
 
   return `<section class="panel goals">
     <h2 class="atitle">Ziele</h2>
     <ul class="glist">${shown.map(goalRow).join("")}</ul>
-    ${evals.length > GOAL_PREVIEW ? `<button class="btn ghost block" id="gmore" style="margin-top:10px">${showAllGoals ? "Weniger anzeigen" : `Alle Ziele anzeigen (${evals.length - GOAL_PREVIEW} weitere)`}</button>` : ""}
     ${hist.length ? `<details class="ghist">
       <summary>Rückblick: ${esc(hist[0].p.name)} ${hist[0].ok} von ${hist[0].all} erreicht</summary>
       <ul class="hlist">${hist.map((h) => `<li><span class="hn">${esc(h.p.name)}</span><span class="hv ${h.ok === h.all ? "all" : ""}">${h.ok}/${h.all}</span>

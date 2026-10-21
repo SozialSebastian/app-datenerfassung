@@ -130,7 +130,6 @@ function renderAnalysis() {
     card.addEventListener("contextmenu", (e) => { e.preventDefault(); if (!fired) openAnalysisSettings(card.dataset.qid); });
   });
   view.querySelectorAll("[data-th]").forEach((b) => b.addEventListener("click", () => { prefs.theme = b.dataset.th; savePrefs(); renderAnalysis(); }));
-  $("#gmore")?.addEventListener("click", () => { showAllGoals = !showAllGoals; renderAnalysis(); });
   $("#tmore")?.addEventListener("click", () => { showAllTrends = !showAllTrends; renderAnalysis(); });
   $("#trendgear")?.addEventListener("click", openTrendSettings);
   $("#pmore")?.addEventListener("click", () => { showAllPlaces = !showAllPlaces; renderAnalysis(); });
