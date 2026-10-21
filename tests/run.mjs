@@ -257,6 +257,13 @@ test("Sport-Kachel: Gedrückthalten öffnet Einstellungen, Verlauf ausblendbar",
   await page.click('[data-tab="analysis"]');
   await page.click('[data-range="30"]');
   assert.equal(await page.locator(".acard.sport .vcols, .acard.sport svg").count() > 0, true);
+  // Veränderung zu den 30 Tagen davor (dort nichts erfasst → keine Angabe); bei 7 Tagen: 3 vs. 2 → +1
+  assert.doesNotMatch(await page.locator(".acard.sport").innerText(), /Tagen davor/);
+  await page.click('[data-range="7"]');
+  assert.match(await page.locator(".acard.sport").innerText(), /\+1\s*ggü\. 7 Tagen davor/);
+  await page.click('[data-range="1"]');
+  assert.doesNotMatch(await page.locator(".acard.sport").innerText(), /davor/);
+  await page.click('[data-range="30"]');
   await page.click(".acard.sport .atitle", { button: "right" });
   await page.uncheck('[data-sv="sportChart"]');
   await page.click("#svdone");
@@ -491,7 +498,7 @@ test("Themen: Zuordnung, Überschriften, Filter und Themen-Trends", async () => 
   assert.doesNotMatch(tr, /Gesundheit|Ernährung|egal welche Frage/); // keine Trends über andere Themen
   // Sport-Kachel: Sporttage im Zeitraum, je Sportart
   const sp = await page.locator(".sport").innerText();
-  assert.match(sp, /Sport[\s\S]*\d+\s*Sporttage[\s\S]*bouldern[\s\S]*paddeln/i);
+  assert.match(sp, /Sport[\s\S]*\d+\s*Tage[\s\S]*bouldern[\s\S]*paddeln/i);
   assert.doesNotMatch(sp, /Volleyball/); // ohne Haken zählt es nicht
   await page.click('[data-th="sport"]');
   assert.equal(await page.locator(".acard[data-qid]").count(), 3);

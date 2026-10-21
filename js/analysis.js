@@ -214,11 +214,8 @@ function analysisCard(q, days) {
       // Ja/Nein: Kennzahlen statt Balken
       const c = vals.filter((x) => x.v === "Ja").length;
       const perWeek = c / (days.length / 7);
-      body = `<div class="kpi">
-          <div><strong>${c}</strong><span>${c === 1 ? "Tag" : "Tage"} mit „Ja“</span></div>
-          ${days.length >= 7 ? `<div><strong>${fmt1(perWeek)}</strong><span>Ø pro Woche</span></div>` : ""}
-          <div><strong>${pct(c, n)} %</strong><span>der Tage</span></div>
-        </div>`;
+      const prev = prevCount(days, (d) => { const v = (state.answers[d] || {})[q.id]; return isAnswered(v) ? v === "Ja" : null; });
+      body = kpiRow(c, perWeek, pct(c, n), days, prev, betterDir(q));
     } else if (set.chart === "pie") {
       // Kuchen: Anteile an allen Nennungen (bei Mehrfachauswahl ≠ Anteil der Tage)
       let slices = dist.filter((x) => x.c > 0);
@@ -338,6 +335,25 @@ function onHold(card, fn) {
   card.addEventListener("contextmenu", (e) => { e.preventDefault(); if (!fired) fn(); });
 }
 
+// Gleich langer Zeitraum direkt davor: Anzahl Treffer (null, wenn dort nichts beantwortet ist)
+function prevCount(days, hitOf) {
+  let n = 0, any = false;
+  for (let i = 1; i <= days.length; i++) { const h = hitOf(addDays(days[0], -i)); if (h !== null) { any = true; if (h) n++; } }
+  return any ? n : null;
+}
+// Kennzahlen für Ja/Nein und Sport: Tage, Ø pro Woche, Anteil, Veränderung zum Zeitraum davor
+function kpiRow(c, perWeek, share, days, prev, good) {
+  const d = prev === null || days.length < 2 ? null : c - prev; // bei „1 Tag“ keine Veränderung
+  const tone = d === null || d === 0 || !good ? "" : (d > 0) === (good === "high") ? "good" : "bad";
+  const span = `${days.length} Tagen davor`;
+  return `<div class="kpi kpi4">
+      <div><strong>${c}</strong><span>${c === 1 ? "Tag" : "Tage"}</span></div>
+      ${days.length >= 7 ? `<div><strong>${fmt1(perWeek)}</strong><span>Ø pro Woche</span></div>` : ""}
+      <div><strong>${share} %</strong><span>der Tage</span></div>
+      ${d === null ? "" : `<div><strong class="${tone}">${d > 0 ? "+" : d < 0 ? "−" : "±"}${Math.abs(d)}</strong><span>ggü. ${span}</span></div>`}
+    </div>`;
+}
+
 // Einstellungen der Sport-Kachel (Gedrückthalten)
 function openSportView() {
   const dlg = $("#sheet");
@@ -368,11 +384,7 @@ function sportPanel(days) {
   const max = Math.max(1, ...rows.map(([, c]) => c));
   return `<section class="panel acard sport">
     <h2 class="atitle">🏃 Sport</h2>
-    ${ans ? `${prefs.sportKpi === false ? "" : `<div class="kpi">
-        <div><strong>${n}</strong><span>${n === 1 ? "Sporttag" : "Sporttage"}</span></div>
-        ${days.length >= 7 ? `<div><strong>${fmt1(n / (days.length / 7))}</strong><span>Ø pro Woche</span></div>` : ""}
-        <div><strong>${pct(n, ans)} %</strong><span>der Tage</span></div>
-      </div>`}
+    ${ans ? `${prefs.sportKpi === false ? "" : kpiRow(n, n / (days.length / 7), pct(n, ans), days, prevCount(days, sportDay), "high")}
       ${rows.length && prefs.sportBars !== false ? `<div class="bars">${rows.map(([q, c]) => `<div class="barrow static"><span class="bl">${esc(shortQ(q).replace(/^./, (c) => c.toUpperCase()))}</span><span class="bt"><span style="width:${(c / max) * 100}%"></span></span><span class="bv">${c}×</span></div>`).join("")}</div>` : ""}
       ${days.length > 1 && prefs.sportChart !== false ? columnChart({ id: "__sport" }, days, "Sport", "abs", sportDay) : ""}`
     : `<p class="muted small" style="margin:0">Im gewählten Zeitraum noch keine Antworten zu deinen Sportarten.</p>`}
