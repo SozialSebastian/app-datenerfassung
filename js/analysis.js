@@ -236,7 +236,7 @@ function kidLine(c, days, skipStack) {
     vals.forEach((v) => (Array.isArray(v) ? v : [v]).forEach((k) => (cnt[k] = (cnt[k] || 0) + 1)));
     const rows = Object.entries(cnt).sort((a, b) => b[1] - a[1]);
     // eingestellt „Kuchen“: Kuchen auch in der gemeinsamen Kachel (gleiche Farben wie die Säulen)
-    if (qset(c).chart === "pie") return `<div class="kid">${head}${labeledPie(rows.map(([k, n]) => ({ label: k, c: n, color: stackColor(c, k) })), qset(c).unit)}</div>`;
+    if (qset(c).chart === "pie") return `<div class="kid">${head}${labeledPie(rows.map(([k, n]) => ({ label: k, c: n, color: stackColor(c, k) })), null, { big: String(rows.reduce((t, [, n]) => t + n, 0)), sub: c.multi ? "Nennungen" : "Antworten" })}</div>`;
     return `<div class="kid">${head}<div class="klegend">${rows.map(([k, n]) => `<span>${skipStack ? `<i style="background:${stackColor(c, k)}"></i>` : ""}${esc(k)} <b>${n}×</b></span>`).join("")}</div></div>`;
   }
   const nums = vals.filter((v) => typeof v === "number");
@@ -288,7 +288,9 @@ function analysisCard(q, days) {
     if (q.type === "scale" && set.chart === "count") {
       body = hero; // Kompakt: nur der Durchschnitt
     } else if (q.type === "scale" && set.chart === "pie") {
-      body = hero + labeledPie(dist.map((x, i) => ({ label: String(x.key), c: x.c, color: `var(--s${(i % SERIES) + 1})` })), set.unit);
+      // Ø in der Mitte des Rings statt darüber
+      const avgS = vals.reduce((t, x) => t + x.v, 0) / n;
+      body = labeledPie(dist.map((x, i) => ({ label: String(x.key) + (scaleLabel(q, +x.key) ? " · " + scaleLabel(q, +x.key) : ""), c: x.c, color: `var(--s${(i % SERIES) + 1})` })), null, { big: `Ø ${fmt1(avgS)}`, sub: `Skala ${q.min}–${q.max}` });
     } else if (yesNo && set.chart !== "pie") {
       // Ja/Nein: Kennzahlen statt Balken
       const c = vals.filter((x) => x.v === "Ja").length;
@@ -304,7 +306,7 @@ function analysisCard(q, days) {
       }
       const total = slices.reduce((s, x) => s + x.c, 0);
       const colorIdx = (k) => dist.findIndex((x) => x.key === k); // Farbe hängt an der Antwort, nicht am Rang
-      body = hero + labeledPie(slices.map((x) => ({ label: x.label, c: x.c, color: x.rest ? "var(--ink-2)" : `var(--s${(colorIdx(x.key) % SERIES) + 1})` })), set.unit);
+      body = hero + labeledPie(slices.map((x) => ({ label: x.label, c: x.c, color: x.rest ? "var(--ink-2)" : `var(--s${(colorIdx(x.key) % SERIES) + 1})` })), null, { big: String(total), sub: q.multi ? "Nennungen" : "Antworten" });
     } else {
       const max = Math.max(...dist.map((x) => x.c), 1);
       body = `${hero}
@@ -487,25 +489,25 @@ function sportPanel(days) {
 }
 
 // Kuchen mit Beschriftung direkt am Stück (Name fett, darunter der Anteil), für alle Fragentypen
-function labeledPie(items, unit) {
+function labeledPie(items, unit, center = null) {
   const sl = items.filter((x) => x.c > 0);
   const total = sl.reduce((s, x) => s + x.c, 0);
   if (!total) return "";
-  const W = 360, R = 54, w = 20, cx = W / 2, LH = 32; // LH: Mindestabstand zweizeiliger Beschriftungen
+  const W = 360, R = 60, w = 22, cx = W / 2, LH = 36; // LH: Mindestabstand zweizeiliger Beschriftungen
   // Höhe nach Anzahl der Beschriftungen je Seite
-  const H = Math.max(200, Math.ceil(sl.length / 2) * LH + 40), cy = H / 2;
+  const H = Math.max(210, Math.ceil(sl.length / 2) * LH + 50), cy = H / 2;
   let a0 = -Math.PI / 2;
   const pt = (r, a) => [cx + r * Math.cos(a), cy + r * Math.sin(a)];
   const arcs = [], labs = [];
   for (const s of sl) {
     const a1 = a0 + (s.c / total) * 2 * Math.PI;
-    const gap = sl.length > 1 ? 0.025 : 0;
+    const gap = sl.length > 1 ? 0.03 : 0;
     const [x0, y0] = pt(R, a0 + gap), [x1, y1] = pt(R, Math.max(a0 + gap, a1 - gap));
     const big = a1 - a0 > Math.PI ? 1 : 0;
     arcs.push(sl.length === 1 ? `<circle cx="${cx}" cy="${cy}" r="${R}" fill="none" stroke="${s.color}" stroke-width="${w}"/>`
       : `<path d="M${x0.toFixed(1)},${y0.toFixed(1)} A${R},${R} 0 ${big} 1 ${x1.toFixed(1)},${y1.toFixed(1)}" fill="none" stroke="${s.color}" stroke-width="${w}"/>`);
     const am = (a0 + a1) / 2;
-    const [ex, ey] = pt(R + w / 2 + 2, am), [kx, ky] = pt(R + w / 2 + 12, am);
+    const [ex, ey] = pt(R + w / 2 + 3, am), [kx, ky] = pt(R + w / 2 + 14, am);
     labs.push({ s, right: Math.cos(am) >= 0, ex, ey, kx, ky });
     a0 = a1;
   }
@@ -513,22 +515,25 @@ function labeledPie(items, unit) {
   for (const side of [true, false]) {
     const xs = labs.filter((l) => l.right === side).sort((a, b) => a.ky - b.ky);
     xs.forEach((l, i) => { if (i && l.ky - xs[i - 1].ky < LH) l.ky = xs[i - 1].ky + LH; });
-    const over = xs.length ? xs[xs.length - 1].ky - (H - 18) : 0;
+    const over = xs.length ? xs[xs.length - 1].ky - (H - 22) : 0;
     if (over > 0) xs.forEach((l) => (l.ky -= over));
-    const under = xs.length ? 14 - xs[0].ky : 0;
+    const under = xs.length ? 18 - xs[0].ky : 0;
     if (under > 0) xs.forEach((l) => (l.ky += under));
   }
-  const val = (c) => (unit === "pct" ? `${Math.round((c / total) * 100)} %` : `${c}×`);
   const short = (t) => (t.length > 15 ? t.slice(0, 14) + "…" : t);
+  // Linie in der Farbe des Stücks vom Ring zur Beschriftung, Punkt an der Beschriftung; darunter „50 % (2×)“
   const txt = labs.map(({ s, right, ex, ey, kx, ky }) => {
-    const tx = right ? cx + R + w / 2 + 22 : cx - R - w / 2 - 22;
+    const tx = right ? cx + R + w / 2 + 30 : cx - R - w / 2 - 30;
+    const dx = tx + (right ? -7 : 7);
     const anchor = right ? "start" : "end";
-    return `<polyline points="${ex.toFixed(1)},${ey.toFixed(1)} ${kx.toFixed(1)},${ky.toFixed(1)} ${(tx + (right ? -4 : 4)).toFixed(1)},${ky.toFixed(1)}" class="pl"/>
-      <circle cx="${(tx + (right ? -4 : 4)).toFixed(1)}" cy="${ky.toFixed(1)}" r="2" fill="${s.color}"/>
-      <text x="${tx.toFixed(1)}" y="${(ky - 2).toFixed(1)}" text-anchor="${anchor}" class="pk">${esc(short(s.label))}<title>${esc(s.label)}</title></text>
-      <text x="${tx.toFixed(1)}" y="${(ky + 13).toFixed(1)}" text-anchor="${anchor}" class="pv">${val(s.c)}</text>`;
+    return `<polyline points="${ex.toFixed(1)},${ey.toFixed(1)} ${kx.toFixed(1)},${ky.toFixed(1)} ${dx.toFixed(1)},${ky.toFixed(1)}" class="pl" style="stroke:${s.color}"/>
+      <circle cx="${dx.toFixed(1)}" cy="${ky.toFixed(1)}" r="2.6" style="fill:${s.color}"/>
+      <text x="${tx.toFixed(1)}" y="${(ky - 3).toFixed(1)}" text-anchor="${anchor}" class="pk">${esc(short(s.label))}<title>${esc(s.label)}</title></text>
+      <text x="${tx.toFixed(1)}" y="${(ky + 13).toFixed(1)}" text-anchor="${anchor}" class="pv"><tspan class="pp" style="fill:${s.color}">${Math.round((s.c / total) * 100)} %</tspan> (${s.c}×)</text>`;
   }).join("");
-  return `<svg class="spie" viewBox="0 0 ${W} ${H}" role="img" aria-label="Kuchendiagramm">${arcs.join("")}${txt}</svg>`;
+  // in der Mitte: Ø (Skala) bzw. Gesamtzahl
+  const mid = center ? `<text x="${cx}" y="${cy + (center.sub ? 4 : 9)}" text-anchor="middle" class="pc">${esc(center.big)}</text>${center.sub ? `<text x="${cx}" y="${cy + 21}" text-anchor="middle" class="ps">${esc(center.sub)}</text>` : ""}` : "";
+  return `<svg class="spie" viewBox="0 0 ${W} ${H}" role="img" aria-label="Kuchendiagramm">${arcs.join("")}${txt}${mid}</svg>`;
 }
 
 // Säulen über die Zeit: wie oft die gewählte Antwort vorkam (pro Tag, Woche oder Monat)
@@ -753,7 +758,7 @@ function openAnalysisSettings(onlyQid) {
           ${q.type === "choice" && s.chart === "count"
             ? `<div class="sq-row"><span>Zählt</span><select data-q="${q.id}" data-f="countKey">${q.options.map((o) => `<option ${o === (q.options.includes(s.countKey) ? s.countKey : q.options[0]) ? "selected" : ""}>${esc(o)}</option>`).join("")}</select></div>
                <p class="muted small" style="margin:6px 0 0">Zeigt nur: an wie vielen Tagen im Zeitraum diese Antwort kam.</p>`
-            : q.type === "scale" && s.chart === "count" ? `<p class="muted small" style="margin:6px 0 0">Zeigt nur den Durchschnitt.</p>` : `<div class="sq-row"><span>Werte</span>${seg(q, "unit", [["pct", "%"], ["abs", "Anzahl"]], s.unit)}</div>`}` : ""}
+            : q.type === "scale" && s.chart === "count" ? `<p class="muted small" style="margin:6px 0 0">Zeigt nur den Durchschnitt.</p>` : s.chart === "pie" ? "" : `<div class="sq-row"><span>Werte</span>${seg(q, "unit", [["pct", "%"], ["abs", "Anzahl"]], s.unit)}</div>`}` : ""}
           <label class="switch row"><input type="checkbox" data-q="${q.id}" data-f="trend" ${s.trend ? "checked" : ""}><span>Verlauf über die Zeit</span></label>
           <label class="switch row"><input type="checkbox" data-q="${q.id}" data-f="hideZeroQ" ${s.hideZero ? "checked" : ""}><span>Ausblenden, solange der Wert 0 ist</span></label>
           ${(() => {
