@@ -27,6 +27,8 @@ const TEMPLATES = [
       return true;
     },
     make: () => [{ id: uid(), text: "Was hast du heute gekocht?", type: "choice", options: Array.from(new Set([...recipeNames(), ...RECIPE_EXTRA])), extra: [...RECIPE_EXTRA], tplv: 2, notion: { src: "recipes" }, multi: true, min: 1, max: 5, minLabel: "", maxLabel: "", unit: "", healthKey: "", archived: false, cond: null, theme: "food", template: "recipes" }] },
+  { k: "grade", icon: "🧗", title: "Bouldergrad (Fb, mehrere Hallen)", desc: "„Schwerster Boulder heute?“ mit den Fontainebleau-Graden (bis 3b … 8b) als Antworten. Neben jedem Grad steht die passende Stufe deiner Hallen (Boulderwelt, FLASHH, urban apes – änderbar). Kommt nach „Warst du bouldern? – Ja“, wenn es die Frage gibt.",
+    make: () => gradeMake() },
   { k: "work", icon: "💼", title: "Arbeit", desc: "„Hast du heute gearbeitet?“ und bei Ja Beginn, Ende und Dauer – zwei davon reichen, das Dritte rechnet Mosaik aus. Mit Vertrag (Stunden und Stundenlohn) zeigt die Analyse deinen effektiven Stundenlohn.",
     make: () => {
       const p = { id: uid(), text: "Hast du heute gearbeitet?", type: "choice", options: ["Ja", "Nein"], multi: false, min: 1, max: 5, minLabel: "", maxLabel: "", unit: "", healthKey: "", archived: false, cond: null, theme: "work", template: "work" };
@@ -257,7 +259,11 @@ function openEditor(id) {
     const parentVals = parent ? (parent.type === "choice" ? parent.options : Array.from({ length: parent.max - parent.min + 1 }, (_, i) => String(parent.min + i))) : [];
 
     let typeFields = "";
-    if (draft.type === "choice") {
+    if (draft.type === "choice" && isGradeQ(draft)) {
+      typeFields = `<p class="small" style="margin:0 0 6px"><strong>Antworten:</strong> Fb-Grade ${esc(FB_GRADES[0])} bis ${esc(FB_GRADES[FB_GRADES.length - 1])}</p>
+        <label class="check"><input type="checkbox" id="multi" ${draft.multi ? "checked" : ""} ${typeLocked ? "disabled" : ""}> Mehrere Grade gleichzeitig erlauben (z. B. alle geschafften)</label>
+        ${gradeEditorHtml(draft)}`;
+    } else if (draft.type === "choice") {
       const fnames = draft.friends ? friendsOrdered(draft.friends.cats).map((x) => x.name) : [];
       typeFields = `<div class="field" style="margin-bottom:8px;font-weight:600;font-size:15px">Antwortmöglichkeiten</div>
         ${draft.notion ? `<p class="small" style="margin:0 0 4px"><strong>Rezepte aus Notion</strong>, bleiben automatisch aktuell.</p>
@@ -369,6 +375,7 @@ function openEditor(id) {
       }
       dlg.querySelectorAll("[data-opt]").forEach((inp) => (draft.options[+inp.dataset.opt] = inp.value));
       if ($("#multi", dlg)) draft.multi = $("#multi", dlg).checked;
+      gradeEditorSync(draft, dlg);
       if ($("#inltext", dlg)) draft._inl.text = $("#inltext", dlg).value;
       if ($("#inlunit", dlg)) draft._inl.unit = $("#inlunit", dlg).value.trim();
       if ($("#smin", dlg)) { draft.min = parseInt($("#smin", dlg).value, 10); draft.max = parseInt($("#smax", dlg).value, 10); 
@@ -385,6 +392,7 @@ function openEditor(id) {
       if (draft.source !== "chess" && (draft.type !== "number" || !draft.healthKey)) draft.source = null;
     };
 
+    gradeEditorWire(draft, dlg, sync, draw);
     $("#inlon", dlg)?.addEventListener("change", (e) => { sync(); draft._inl.on = e.target.checked; draw(); });
     dlg.querySelectorAll("[data-ival]").forEach((b) => b.addEventListener("click", () => { sync(); const v = b.dataset.ival, xs = draft._inl.values; draft._inl.values = xs.includes(v) ? xs.filter((x) => x !== v) : [...xs, v]; draw(); }));
     dlg.querySelectorAll("[data-ifmt]").forEach((b) => b.addEventListener("click", () => { sync(); const f = b.dataset.ifmt; const I = draft._inl; if (I.text === ({ duration: "Dauer", clock: "Uhrzeit" }[I.format] || "")) I.text = { duration: "Dauer", clock: "Uhrzeit" }[f] || ""; I.format = f; draw(); }));
@@ -485,6 +493,7 @@ function openEditor(id) {
       if (!draft.cond && !draft.theme) draft.theme = guessTheme(draft);
       delete draft._cper;
       if (draft.contract && !(draft.contract.h > 0 && draft.contract.wage > 0)) return toast("Vertrag: bitte Stunden und Stundenlohn eintragen (oder beide leeren)");
+      gradeEditorClean(draft);
       const I = draft._inl; delete draft._inl;
       if (I.on && draft.type === "choice") {
         I.values = I.values.filter((v) => draft.options.includes(v));

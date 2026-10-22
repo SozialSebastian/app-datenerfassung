@@ -374,6 +374,30 @@ test("Folgeangabe in derselben Frage: Dauer nach „Ja“, vorausgefüllt mit de
   await ctx.close();
 });
 
+test("Vorlage „Bouldergrad“: Fb-Grade mit Hallen-Stufen daneben, Zuordnung im Editor änderbar", async () => {
+  const data = { version: 1, lastBackup: null, answers: {}, questions: [yesNo("b", "Warst du heute bouldern?")] };
+  const { page, ctx, errors } = await open({ data });
+  await page.evaluate(() => { const qs = TEMPLATES.find((t) => t.k === "grade").make(); state.questions.push(...qs); save(); render(); });
+  const q = await page.evaluate(() => state.questions.find((x) => x.template === "grade"));
+  assert.equal(q.options[0], "bis 3b"); assert.equal(q.options[q.options.length - 1], "8b");
+  assert.deepEqual(q.cond, { qid: "b", values: ["Ja"] });
+  assert.deepEqual(await page.evaluate(() => gradeHints(state.questions.find((x) => x.template === "grade"), "6a").map((h) => `${h.hall} ${h.l}`)), ["Boulderwelt 5", "FLASHH Blau", "urban apes 5"]);
+  await page.click('.q[data-qid="b"] .chip[data-val="Ja"]');
+  const row = page.locator(`.q[data-qid="${q.id}"] .chip.grade[data-val="6b+"]`);
+  assert.match(await row.innerText(), /6b\+\s*6\s*Rot\s*6/);
+  assert.match(await page.locator(`.q[data-qid="${q.id}"] .ghd`).innerText(), /Fb\s*Boulderwelt\s*FLASHH\s*urban apes/);
+  await row.click();
+  assert.equal(await page.evaluate((id) => state.answers[todayIso()][id], q.id), "6b+");
+  // Editor: FLASHH Blau auf 6a+ bis 6b+ ändern
+  await page.evaluate((id) => openEditor(id), q.id);
+  await page.selectOption('[data-lfrom="1:3"]', "6a+");
+  await page.selectOption('[data-lto="1:3"]', "6b+");
+  await page.click("#savebtn");
+  assert.deepEqual(await page.evaluate(() => gradeHints(state.questions.find((x) => x.template === "grade"), "6b+").map((h) => `${h.hall} ${h.l}`)), ["Boulderwelt 6", "FLASHH Blau/Rot", "urban apes 6"]);
+  assert.deepEqual(errors, []);
+  await ctx.close();
+});
+
 test("Schlaf aus Health: Wachphasen abgezogen, doppelte Messungen einmal, Einschlaf- und Aufwachzeit", async () => {
   const { listEntries } = await import("../worker/src/index.js");
   const t = (x) => `2026-10-${x}:00+02:00`;

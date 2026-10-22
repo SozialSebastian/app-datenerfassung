@@ -294,6 +294,7 @@ function wireBlock(root, q, date, after) {
   root.querySelectorAll(".inl[data-iq]").forEach((el) => { const c = qById(el.dataset.iq); if (c) wireInput(el, c, date, (k) => after(k === "pick" || k === "enter" ? "input" : k, c)); });
 }
 function answerInput(q, val) {
+  if (isGradeQ(q)) return gradeInput(q, val);
   if (q.type === "choice") {
     const sel = (o) => (q.multi ? Array.isArray(val) && val.includes(o) : val === o);
     return `<div class="chips">${q.options.map((o) =>

@@ -1,5 +1,5 @@
 // Offline-Cache für die App. Bei jeder Änderung an den Dateien VERSION erhöhen.
-const VERSION = "mosaik-v113";
+const VERSION = "mosaik-v114";
 const FILES = [
   "./",
   "./index.html",
@@ -13,6 +13,7 @@ const FILES = [
   "./js/export.js",
   "./js/places.js",
   "./js/weather.js",
+  "./js/grades.js",
   "./js/questions.js",
   "./js/friends.js",
   "./js/talks.js",
