@@ -8,7 +8,8 @@ try { const p = JSON.parse(localStorage.getItem(PREF_KEY) || "{}"); prefs = { ..
 const savePrefs = () => { try { localStorage.setItem(PREF_KEY, JSON.stringify(prefs)); } catch (e) { /* egal */ } };
 
 // Einstellungen pro Frage, mit sinnvollen Vorgaben
-const qset = (q) => ({ chart: "bars", unit: q.notion ? "abs" : "pct", trend: q.type !== "choice", hidden: false, hideZero: prefs.hideZero !== false, ...(prefs.q[q.id] || {}) });
+// Verlauf: Standard an für Zahlen/Skalen, aus für Auswahl und für Folgefragen in der Kachel der Hauptfrage
+const qset = (q) => ({ chart: "bars", unit: q.notion ? "abs" : "pct", trend: q.type !== "choice" && !q.cond, hidden: false, hideZero: prefs.hideZero !== false, ...(prefs.q[q.id] || {}) });
 // Hat die Karte im Zeitraum nichts zu sagen? (keine Antworten; Ja/Nein bzw. „Kompakt“ 0×; Zahlen nur 0)
 function zeroCard(q, days) {
   const vals = days.map((d) => (state.answers[d] || {})[q.id]).filter(isAnswered);
@@ -229,8 +230,8 @@ const stackColor = (c, k) => (k === "__none" ? "var(--line)" : `var(--s${(Math.m
 // kurze Zusammenfassung einer Folgefrage in der Kachel der Hauptfrage
 function kidLine(c, days, skipStack) {
   const vals = days.map((d) => (state.answers[d] || {})[c.id]).filter(isAnswered);
-  if (!vals.length) return "";
   const head = `<span class="kq">↳ ${esc(c.text)}</span>`;
+  if (!vals.length) return `<div class="kid">${head}<div class="kstats"><span>im Zeitraum noch keine Angabe</span></div></div>`;
   if (c.type === "choice") {
     const cnt = {};
     vals.forEach((v) => (Array.isArray(v) ? v : [v]).forEach((k) => (cnt[k] = (cnt[k] || 0) + 1)));
@@ -247,7 +248,10 @@ function kidLine(c, days, skipStack) {
   const sum = nums.reduce((s, x) => s + x, 0);
   const extra = c.format === "clock" ? (nums.length > 1 ? `<span>${fmtQ(c, Math.min(...nums))}–${fmtQ(c, Math.max(...nums))} Uhr</span>` : "")
     : c.type === "number" ? `<span>Summe ${c.format ? fmtQ(c, sum) : fmt1(sum) + (c.unit ? " " + c.unit : "")}</span>` : "";
-  return `<div class="kid">${head}<div class="kstats"><b>Ø ${f(avg)}</b>${extra}</div>${contractBlock(c, days)}</div>`;
+  // „Verlauf über die Zeit“ (Darstellung der Folgefrage) zeigt die Kurve auch in der gemeinsamen Kachel
+  const vs = days.map((d) => ({ d, v: (state.answers[d] || {})[c.id] })).filter((x) => typeof x.v === "number");
+  const curve = qset(c).trend && vs.length >= 2 ? lineChart(c, days, vs, avg) : "";
+  return `<div class="kid">${head}<div class="kstats"><b>Ø ${f(avg)}</b>${extra}</div>${curve}${contractBlock(c, days)}</div>`;
 }
 
 function analysisCard(q, days) {
