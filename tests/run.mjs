@@ -724,7 +724,13 @@ for (const cors of [true, false]) test(`chess.com: Einschalten lädt alles, Wert
   await page.click('[data-tab="day"]');
   await page.evaluate(() => { current = addDays(todayIso(), -1); renderDay(); });
   const day = await page.locator("#view").innerText();
-  assert.match(day, /chess\.com[\s\S]*Elo Rapid[\s\S]*1200/);
+  assert.match(day, /chess\.com[\s\S]*Partien\s*2[\s\S]*Elo Rapid[\s\S]*1200/);
+  // Tag: Schach-Karte gedrückt halten → nur Blitz → an diesem Tag keine Blitz-Partien
+  await page.click(".chessday .q-title", { button: "right" });
+  await page.click('#sheet [data-cls="blitz"]');
+  await page.click("#cvdone");
+  assert.match(await page.locator(".chessday").innerText(), /chess\.com · Blitz[\s\S]*keine Blitz-Partien/);
+  await page.evaluate(() => { prefs.chessCls = ""; savePrefs(); renderDay(); });
   // Analyse: Überblick
   await page.click('[data-tab="analysis"]');
   await page.click('[data-range="30"]');
@@ -745,14 +751,14 @@ for (const cors of [true, false]) test(`chess.com: Einschalten lädt alles, Wert
   if (cors) await page.locator(".chess").screenshot({ path: path.join(shots, "schach.png") });
   // Elo und Genauigkeit im Verlauf, abschaltbar über das Zahnrad
   assert.equal(await page.locator(".chess svg.line").count(), 2); // Elo des gewählten Modus, Genauigkeit
-  assert.match(txt, /Elo Rapid am Ende des Zeitraums[\s\S]*Elo im Verlauf/);
+  assert.match(txt, /Elo am Ende des Zeitraums[\s\S]*Rapid[\s\S]*Blitz[\s\S]*Elo Rapid im Verlauf/); // „Alle“: jede Variante, Verlauf der meistgespielten
   assert.doesNotMatch(txt, /Daten von chess\.com/);
   // Zahnrad der Kachel: Elo für Blitz
   await page.click(".acard.chess .atitle", { button: "right" }); // wie Gedrückthalten
   await page.click('#sheet [data-cls="blitz"]');
   await page.click("#cvdone");
-  assert.match(await page.locator(".chess").innerText(), /Elo Blitz am Ende des Zeitraums\s*Blitz\s*1100\s*±0/);
-  assert.match(await page.locator(".chess").innerText(), /32|4\s*Partien/); // Partien zählen weiter alle Modi
+  assert.match(await page.locator(".chess").innerText(), /Schach · Blitz[\s\S]*Elo Blitz am Ende des Zeitraums\s*Blitz\s*1100\s*±0/);
+  assert.match(await page.locator(".chess").innerText(), /^1\s*Partie\b/m); // nur Blitz
   await page.evaluate(() => { prefs.chessCls = "rapid"; savePrefs(); renderAnalysis(); });
   assert.match(txt, /Genauigkeit im Verlauf/);
   await page.locator(".chess svg.line").first().evaluate((el) => el.scrollIntoView({ block: "center" })); // nicht unter der Leiste unten

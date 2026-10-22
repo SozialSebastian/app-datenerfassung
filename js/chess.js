@@ -122,17 +122,19 @@ function chessCompact(games, user) {
 }
 // Partien gegen Coaches/Bots (ungewertet, ohne Uhr oder Name wie „Coach-Mae“, „…-BOT“) zählen nicht
 const chessIsBot = (g) => !g.rated && (!/^\d/.test(g.tc || "") || /^coach-|(^|-)bot(-|$)/i.test(g.on || ""));
-// alle gespeicherten Partien gegen echte Spieler, nach Ende sortiert
-function chessGames() {
+// eingestellte Spielvariante für Kachel und Tag: "all" oder z. B. "rapid"
+const chessMode = () => prefs.chessCls || "all";
+// alle gespeicherten Partien gegen echte Spieler, nach Ende sortiert; mode: nur diese Spielvariante
+function chessGames(mode) {
   const all = [];
-  for (const list of Object.values(chessData().months)) if (Array.isArray(list)) all.push(...list.filter((g) => !chessIsBot(g)));
+  for (const list of Object.values(chessData().months)) if (Array.isArray(list)) all.push(...list.filter((g) => !chessIsBot(g) && (!mode || mode === "all" || g.c === mode)));
   return all.sort((a, b) => a.t - b.t);
 }
 const chessDate = (g) => iso(new Date(g.t * 1000));
 // je Tag (Ortszeit des Spielendes) zusammenfassen
-function chessDays() {
+function chessDays(mode) {
   const out = {};
-  for (const g of chessGames()) {
+  for (const g of chessGames(mode)) {
     const d = chessDate(g);
     const x = out[d] || (out[d] = { n: 0, w: 0, l: 0, dr: 0, s: 0, a: 0, an: 0, r: {}, e: {} });
     x.n++;
@@ -248,25 +250,35 @@ async function syncChess(manual, progress) {
 /* ---------- Anzeige ---------- */
 // Tag: Schach-Werte (falls an dem Tag gespielt)
 function chessDayCard(date) {
-  const a = state.answers[date] || {};
-  const qs = chessQuestions().filter((q) => isAnswered(a[q.id]));
-  if (!qs.length) return "";
-  return `<section class="q healthcard">
-    <p class="q-title">chess.com</p>
-    ${qs.map((q) => `<div class="hrow"><span>${esc(q.text.replace(/^Schach: /, ""))}</span><span class="hval"><strong>${esc(fmtQ(q, a[q.id]))}</strong></span></div>`).join("")}
+  if (!chessDays()[date]) return "";
+  const mode = chessMode();
+  const x = chessDays(mode)[date];
+  const title = `chess.com${mode !== "all" ? ` · ${esc(chessClsName(mode))}` : ""}`;
+  if (!x) return `<section class="q healthcard chessday"><p class="q-title">${title}</p><p class="muted small" style="margin:0">Heute keine ${esc(chessClsName(mode))}-Partien.</p></section>`;
+  const row = (l, v) => `<div class="hrow"><span>${esc(l)}</span><span class="hval"><strong>${esc(v)}</strong></span></div>`;
+  const ord = (c) => { const i = Object.keys(CHESS_CLS).indexOf(c); return i < 0 ? 99 : i; };
+  const elo = Object.entries(x.r).sort((a, b) => ord(a[0]) - ord(b[0]));
+  return `<section class="q healthcard chessday">
+    <p class="q-title">${title}</p>
+    ${row("Partien", String(x.n))}
+    ${x.s ? row("Spielzeit", fmtDur(x.s / 3600)) : ""}
+    ${row("Punktequote", `${fmtNum(Math.round(((x.w + x.dr / 2) / x.n) * 1000) / 10)} %`)}
+    ${x.an ? row("Genauigkeit", `${fmtNum(Math.round((x.a / x.an) * 10) / 10)} %`) : ""}
+    ${elo.map(([c, v]) => row(`Elo ${chessClsName(c)}`, String(v[0]))).join("")}
   </section>`;
 }
 
 // Analyse: Überblick im Zeitraum
 function chessPanel(days) {
-  const all = chessDays();
+  const mode = chessMode();
+  const all = chessDays(mode);
   const st = chessData().stats;
   const ds = days.filter((d) => all[d] && all[d].n);
   if (!ds.length) {
-    return `<section class="panel"><h2 class="atitle">Schach</h2><p class="muted small" style="margin:0">${settings.chess.on ? "Im gewählten Zeitraum keine Partien auf chess.com." : "Einschalten unter Einstellungen → Schnittstelle chess.com."}</p></section>`;
+    return `<section class="panel acard chess"><h2 class="atitle">Schach${mode !== "all" ? ` · ${esc(chessClsName(mode))}` : ""}</h2><p class="muted small" style="margin:0">${settings.chess.on ? `Im gewählten Zeitraum keine ${mode !== "all" ? esc(chessClsName(mode)) + "-" : ""}Partien auf chess.com.` : "Einschalten unter Einstellungen → Schnittstelle chess.com."}</p></section>`;
   }
   const from = days[0], to = days[days.length - 1];
-  const games = chessGames().filter((g) => { const d = chessDate(g); return d >= from && d <= to; });
+  const games = chessGames(mode).filter((g) => { const d = chessDate(g); return d >= from && d <= to; });
   const sum = { n: 0, w: 0, l: 0, dr: 0, s: 0, a: 0, an: 0 }, how = {}, first = {}, last = {};
   for (const d of ds) {
     const x = all[d];
@@ -282,7 +294,8 @@ function chessPanel(days) {
   const ord = (c) => { const i = Object.keys(CHESS_CLS).indexOf(c); return i < 0 ? 99 : i; };
   const cls = Object.keys(last).sort((a, b) => ord(a) - ord(b));
   const sel = chessSelCls(cls, games);
-  const eloRows = cls.filter((c) => c === sel).map((c) => {
+  // „Alle“: Elo jeder Variante, Verlauf der meistgespielten; sonst nur die gewählte
+  const eloRows = cls.filter((c) => mode === "all" || c === sel).map((c) => {
     const start = before[c] ?? first[c];
     const diff = last[c] - start;
     const best = st && st.cls[c] && st.cls[c].best;
@@ -299,13 +312,13 @@ function chessPanel(days) {
     return xs.length ? `<p class="small" style="margin:4px 0 0"><strong>${label}:</strong> ${xs.map(([k, v]) => `${esc(CHESS_HOW[k.split(":")[1]] || k.split(":")[1])} ${v}×`).join(", ")}</p>` : "";
   };
   return `<section class="panel acard chess">
-    <h2 class="atitle">Schach</h2>
+    <h2 class="atitle">Schach${mode !== "all" ? ` · ${esc(chessClsName(mode))}` : ""}</h2>
     <p class="hero"><span class="big">${sum.n}</span><span class="muted">${sum.n === 1 ? "Partie" : "Partien"} an ${ds.length} von ${days.length} Tagen${sum.s ? ` · ${fmtDur(sum.s / 3600)} gespielt` : ""}</span></p>
     <div class="wdl" role="img" aria-label="${sum.w} Siege, ${sum.dr} Remis, ${sum.l} Niederlagen">
       <span class="w" style="flex:${sum.w}"></span><span class="d" style="flex:${sum.dr}"></span><span class="l" style="flex:${sum.l}"></span>
     </div>
     <p class="small" style="margin:6px 0 0">${sum.w} ${sum.w === 1 ? "Sieg" : "Siege"} (${pct(sum.w)}) · ${sum.dr} Remis (${pct(sum.dr)}) · ${sum.l} ${sum.l === 1 ? "Niederlage" : "Niederlagen"} (${pct(sum.l)}) · Punktequote ${fmtNum(score)} %</p>
-    ${eloRows ? `<h3 class="csub">Elo ${esc(chessClsName(sel))} am Ende des Zeitraums</h3><div class="ctable">${eloRows}</div>` : ""}
+    ${eloRows ? `<h3 class="csub">Elo${mode === "all" ? "" : " " + esc(chessClsName(sel))} am Ende des Zeitraums</h3><div class="ctable">${eloRows}</div>` : ""}
     ${prefs.chessElo !== false && sel ? chessEloChart(days, sel) : ""}
     <h3 class="csub">Im Durchschnitt</h3>
     <div class="cavg">
@@ -333,28 +346,28 @@ function chessSelCls(cls, games) {
 }
 // Elo-Verlauf des gewählten Spielmodus, Optik wie die Verläufe der Fragen
 function chessEloChart(days, c) {
-  const all = chessDays();
+  const all = chessDays(c);
   const pts = days.filter((d) => all[d] && all[d].r[c]).map((d) => ({ d, v: all[d].r[c][0] }));
   if (!pts.length) return "";
   const a = pts.reduce((s, p) => s + p.v, 0) / pts.length;
-  return `<h3 class="csub">Elo im Verlauf</h3>${curveChart(pts, days, { avg: a, dir: "high", id: "elo" + c, connect: true, label: `Elo ${chessClsName(c)} im Verlauf`, fmt: (v) => String(Math.round(v)), tipFmt: (v) => `Elo ${Math.round(v)}`, dev: (d) => (Math.abs(d) < 0.5 ? "genau Ø" : `${d > 0 ? "+" : "−"}${Math.round(Math.abs(d))} ${d > 0 ? "über" : "unter"} Ø`) })}`;
+  return `<h3 class="csub">Elo ${esc(chessClsName(c))} im Verlauf</h3>${curveChart(pts, days, { avg: a, dir: "high", id: "elo" + c, connect: true, label: `Elo ${chessClsName(c)} im Verlauf`, fmt: (v) => String(Math.round(v)), tipFmt: (v) => `Elo ${Math.round(v)}`, dev: (d) => (Math.abs(d) < 0.5 ? "genau Ø" : `${d > 0 ? "+" : "−"}${Math.round(Math.abs(d))} ${d > 0 ? "über" : "unter"} Ø`) })}`;
 }
 // Zahnrad der Schach-Kachel: Spielmodus für die Elo und welche Verläufe
-function openChessView(days) {
+// Gedrückthalten auf die Schach-Kachel (Analyse) oder die Schach-Karte (Tag): Spielvariante und Verläufe
+function openChessView(days, onChange) {
   const dlg = $("#sheet");
   const all = chessDays();
   const ord = (c) => { const i = Object.keys(CHESS_CLS).indexOf(c); return i < 0 ? 99 : i; };
-  const cls = [...new Set(Object.values(all).flatMap((x) => Object.keys(x.r)))].sort((a, b) => ord(a) - ord(b));
-  const from = days[0], to = days[days.length - 1];
-  const games = chessGames().filter((g) => { const d = chessDate(g); return d >= from && d <= to; });
+  const cls = [...new Set(chessGames().map((g) => g.c).filter(Boolean))].sort((a, b) => ord(a) - ord(b));
+  const redraw = onChange || renderAnalysis;
   const draw = () => {
-    const sel = chessSelCls(cls, games);
+    const mode = chessMode();
     dlg.innerHTML = `<div class="sheet-inner">
       <div class="sheet-head"><span></span><h2>Schach</h2><button type="button" class="linkbtn" id="cvdone">Fertig</button></div>
       <section class="sq">
-        <strong>Elo für</strong>
-        <div class="chips" style="margin-top:10px">${cls.map((c) => `<button type="button" class="chip" data-cls="${c}" aria-pressed="${c === sel}">${esc(chessClsName(c))}</button>`).join("")}</div>
-        <p class="muted small" style="margin:8px 0 0">Partien, Bilanz und Durchschnitte zählen immer alle Spielmodi.</p>
+        <strong>Spielvariante</strong>
+        <div class="chips" style="margin-top:10px"><button type="button" class="chip" data-cls="all" aria-pressed="${mode === "all"}">Alle</button>${cls.map((c) => `<button type="button" class="chip" data-cls="${c}" aria-pressed="${c === mode}">${esc(chessClsName(c))}</button>`).join("")}</div>
+        <p class="muted small" style="margin:8px 0 0">Gilt für die Schach-Kachel in der Analyse und für Schach unter „Tag“: Partien, Bilanz, Elo und Durchschnitte nur dieser Variante.</p>
       </section>
       <section class="sq">
         <label class="switch row" style="margin-top:0"><input type="checkbox" data-cv="chessElo" ${prefs.chessElo !== false ? "checked" : ""}><span>Elo über die Zeit</span></label>
@@ -362,8 +375,8 @@ function openChessView(days) {
       </section>
     </div>`;
     $("#cvdone", dlg).addEventListener("click", () => dlg.close());
-    dlg.querySelectorAll("[data-cls]").forEach((b) => b.addEventListener("click", () => { prefs.chessCls = b.dataset.cls; savePrefs(); draw(); renderAnalysis(); }));
-    dlg.querySelectorAll("[data-cv]").forEach((i) => i.addEventListener("change", () => { prefs[i.dataset.cv] = i.checked; savePrefs(); renderAnalysis(); }));
+    dlg.querySelectorAll("[data-cls]").forEach((b) => b.addEventListener("click", () => { prefs.chessCls = b.dataset.cls === "all" ? "" : b.dataset.cls; savePrefs(); draw(); redraw(); }));
+    dlg.querySelectorAll("[data-cv]").forEach((i) => i.addEventListener("change", () => { prefs[i.dataset.cv] = i.checked; savePrefs(); redraw(); }));
   };
   draw();
   if (!dlg.open) dlg.showModal();
@@ -371,7 +384,7 @@ function openChessView(days) {
 }
 // Genauigkeit: Ø der analysierten Partien je Tag
 function chessAccChart(days) {
-  const all = chessDays();
+  const all = chessDays(chessMode());
   const pts = days.filter((d) => all[d] && all[d].an).map((d) => ({ d, v: all[d].a / all[d].an }));
   if (!pts.length) return "";
   const a = pts.reduce((s, p) => s + p.v, 0) / pts.length;

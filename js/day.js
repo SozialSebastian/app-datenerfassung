@@ -103,6 +103,8 @@ function renderDay() {
     inp.addEventListener("keydown", (e) => { if (e.key === "Enter") inp.blur(); });
   });
   $("#startquiz")?.addEventListener("click", () => startQuiz(current));
+  // Schach-Karte gedrückt halten: Spielvariante wählen (wie in der Analyse)
+  view.querySelectorAll(".chessday").forEach((card) => onHold(card, () => openChessView([current], renderDay)));
   view.querySelectorAll("[data-dth]").forEach((b) => b.addEventListener("click", () => { prefs.dayTheme = b.dataset.dth; savePrefs(); renderDay(); }));
 
   view.querySelectorAll(".q[data-qid]").forEach((card) => wireBlock(card, qById(card.dataset.qid), current, (kind) => {
