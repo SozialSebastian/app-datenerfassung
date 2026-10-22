@@ -342,6 +342,38 @@ test("Zahlen-Verlauf: Sprechblase mit Wert und Abstand zum Ø, Veränderung zum 
   await ctx.close();
 });
 
+test("Folgeangabe in derselben Frage: Dauer nach „Ja“, vorausgefüllt mit dem letzten Wert, auch in der Abfrage", async () => {
+  const d0 = new Date(); const ds = (i) => { const d = new Date(d0); d.setDate(d.getDate() - i); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`; };
+  const data = { version: 1, lastBackup: null, answers: {}, questions: [yesNo("b", "Warst du bouldern?"), yesNo("k", "Kaffee?")] };
+  const { page, ctx, errors } = await open({ data });
+  await page.evaluate(() => openEditor("b"));
+  await page.click("details.adv summary >> text=Folgeangabe");
+  await page.check("#inlon");
+  await page.click("#savebtn");
+  const kid = await page.evaluate(() => state.questions.find((q) => q.inline));
+  assert.equal(kid.format, "duration"); assert.equal(kid.text, "Dauer"); assert.deepEqual(kid.cond.values, ["Ja"]);
+  // gestern 1:30 gebouldert
+  await page.evaluate(([y, kid]) => { state.answers[y] = { b: "Ja", [kid]: 1.5 }; save(); render(); }, [ds(1), kid.id]);
+  // Tag: eigene Karte gibt es nicht, nach „Ja“ erscheint die Dauer in derselben Karte mit 1 h 30 min
+  assert.equal(await page.locator(`.q[data-qid="${kid.id}"]`).count(), 0);
+  await page.click('.q[data-qid="b"] .chip[data-val="Ja"]');
+  assert.equal(await page.inputValue('.q[data-qid="b"] .inl input'), "1 h 30 min");
+  assert.match(await page.textContent(".progress"), /1 von 2/);
+  // Abfrage: nach „Ja“ nicht automatisch weiter, Dauer steht darunter
+  await page.click('.q[data-qid="b"] .chip[data-val="Ja"]'); // abwählen
+  await page.click("#startquiz");
+  await page.click('.quiz-q .chip[data-val="Ja"]');
+  await page.waitForTimeout(400);
+  assert.match(await page.textContent(".quiz-title"), /bouldern/);
+  await page.fill(".quiz-q .inl input", "2:00");
+  await page.click("#qnext");
+  assert.match(await page.textContent(".quiz-title"), /Kaffee/);
+  assert.equal(await page.evaluate((id) => state.answers[todayIso()][id], kid.id), 2);
+  // in den Einstellungen keine Schach-Felder als Fragen
+  assert.deepEqual(errors, []);
+  await ctx.close();
+});
+
 test("Schlaf aus Health: Wachphasen abgezogen, doppelte Messungen einmal, Einschlaf- und Aufwachzeit", async () => {
   const { listEntries } = await import("../worker/src/index.js");
   const t = (x) => `2026-10-${x}:00+02:00`;

@@ -821,3 +821,11 @@ svg.spie .ps { font-size: 10.5px; fill: var(--ink-2); }
   .sheet-head { margin: -22px -24px 14px; padding: 16px 24px 12px; top: -22px; }
   .btn:hover, .chip:hover { filter: brightness(0.97); }
 }
+
+/* Folgeangabe in derselben Frage (z. B. Dauer nach „Ja“) */
+.inl { display: flex; align-items: center; gap: 10px; margin-top: 10px; padding-top: 10px; border-top: 1px dashed var(--line); }
+.inl .inl-l { font-size: 14px; font-weight: 600; color: var(--ink-2); flex: none; }
+.inl .numrow { flex: 1; margin: 0; }
+.quiz-q .inl { margin-top: 16px; padding-top: 14px; }
+.inl .numrow input { flex: 1; width: auto; min-width: 0; max-width: 190px; font-size: 22px; }
+.quiz-q .inl .numrow input { font-size: 26px; }

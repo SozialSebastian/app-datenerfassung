@@ -76,7 +76,7 @@ const hoursChildOf = (p) => p && p.type === "choice" && p.options.includes("Ja")
 const asHours = (q, v) => (typeof v !== "number" ? null : q.format === "duration" ? v : /^min/i.test(q.unit || "") ? v / 60 : v);
 
 function questionsPanel() {
-  const all = ordered();
+  const all = ordered().filter((o) => o.q.source !== "chess"); // Schach-Werte kommen von chess.com, keine eigenen Fragen
   const act = all.filter((o) => !o.q.archived);
   const arch = all.filter((o) => o.q.archived);
   const siblings = (q) => state.questions.filter((x) => !x.archived && (x.cond?.qid || null) === (q.cond?.qid || null) && (q.cond || themeOf(x) === themeOf(q)));
@@ -236,6 +236,10 @@ function openEditor(id) {
   if (!draft.friends) draft.friends = null;
   if (draft.friends || draft.notion) draft.options = [...(draft.extra || [])]; // bei Vorlage „Freunde“/„Rezepte“ nur Zusatzantworten bearbeiten
   if (draft.cond === undefined) draft.cond = null;
+  // Folgeangabe: Zahl/Dauer/Uhrzeit, die in derselben Frage erscheint (z. B. „Bouldern? Ja → Dauer“)
+  const inl0 = existing ? childrenOf(existing.id).find((c) => c.inline && !c.archived) : null;
+  draft._inl = inl0 ? { id: inl0.id, on: true, values: [...inl0.cond.values], format: inl0.format || "", text: inl0.text, unit: inl0.unit || "" }
+    : { id: null, on: false, values: draft.options.includes("Ja") ? ["Ja"] : [], format: "duration", text: "Dauer", unit: "" };
 
   const dlg = $("#sheet");
   const hasChildren = existing && childrenOf(existing.id).length > 0;
@@ -289,6 +293,20 @@ function openEditor(id) {
         ${betterSeg(draft.format === "clock" ? [["low", "Früher ist gut"], ["high", "Später ist gut"], ["none", "Neutral"]] : [["high", "Mehr ist gut"], ["low", "Weniger ist gut"], ["none", "Neutral"]])}`;
     }
 
+    const I = draft._inl;
+    const inlBlock = draft.type === "choice" && !draft.inline ? `<details class="adv" ${I.on ? "open" : ""}>
+        <summary>Folgeangabe (in derselben Frage)</summary>
+        <label class="check" style="margin-top:8px"><input type="checkbox" id="inlon" ${I.on ? "checked" : ""}> Bei einer Antwort zusätzlich etwas eintragen, z. B. die Dauer</label>
+        ${I.on ? `<div class="field" style="font-weight:600;font-size:15px;margin:6px 0">Bei Antwort</div>
+          <div class="chips" style="margin-bottom:12px">${draft.options.filter((o) => o.trim()).map((v) => `<button type="button" class="chip" data-ival="${esc(v)}" aria-pressed="${I.values.includes(v)}">${esc(v)}</button>`).join("")}</div>
+          <div class="seg" role="group" aria-label="Art der Angabe">${[["duration", "Dauer"], ["clock", "Uhrzeit"], ["", "Zahl"]].map(([v, l]) => `<button type="button" data-ifmt="${v}" aria-pressed="${I.format === v}">${l}</button>`).join("")}</div>
+          <div class="row2">
+            <label class="field">Bezeichnung<input id="inltext" value="${esc(I.text)}" placeholder="z. B. Dauer" autocomplete="off"></label>
+            ${I.format ? "" : `<label class="field">Einheit<input id="inlunit" value="${esc(I.unit)}" placeholder="z. B. km" autocomplete="off"></label>`}
+          </div>
+          <p class="muted small" style="margin-top:-8px">Erscheint direkt unter den Antworten, auch in der Abfrage, und ist mit dem Wert vom letzten Mal vorausgefüllt.</p>` : ""}
+      </details>` : "";
+
     const condBlock = `<details class="adv" ${draft.cond ? "open" : ""}>
         <summary>Nur fragen, wenn … (Folgefrage)</summary>
         ${parents.length ? `<label class="field" style="margin-top:8px">Ausgangsfrage
@@ -317,7 +335,8 @@ function openEditor(id) {
       </div>
       ${typeLocked ? `<p class="muted small" style="margin-top:-8px">Der Antworttyp ist fest, weil es schon ${used} Antworten gibt.</p>` : ""}
       ${typeFields}
-      ${condBlock}
+      ${inlBlock}
+      ${draft.inline ? "" : condBlock}
       ${existing && existing.healthKey ? `<details class="adv">
         <summary>Apple Health</summary>
         <label class="field" style="margin-top:8px">Health-Kürzel
@@ -350,6 +369,8 @@ function openEditor(id) {
       }
       dlg.querySelectorAll("[data-opt]").forEach((inp) => (draft.options[+inp.dataset.opt] = inp.value));
       if ($("#multi", dlg)) draft.multi = $("#multi", dlg).checked;
+      if ($("#inltext", dlg)) draft._inl.text = $("#inltext", dlg).value;
+      if ($("#inlunit", dlg)) draft._inl.unit = $("#inlunit", dlg).value.trim();
       if ($("#smin", dlg)) { draft.min = parseInt($("#smin", dlg).value, 10); draft.max = parseInt($("#smax", dlg).value, 10); 
         const labs = {};
         dlg.querySelectorAll("[data-slab]").forEach((inp) => { if (inp.value.trim()) labs[inp.dataset.slab] = inp.value.trim(); });
@@ -364,6 +385,9 @@ function openEditor(id) {
       if (draft.source !== "chess" && (draft.type !== "number" || !draft.healthKey)) draft.source = null;
     };
 
+    $("#inlon", dlg)?.addEventListener("change", (e) => { sync(); draft._inl.on = e.target.checked; draw(); });
+    dlg.querySelectorAll("[data-ival]").forEach((b) => b.addEventListener("click", () => { sync(); const v = b.dataset.ival, xs = draft._inl.values; draft._inl.values = xs.includes(v) ? xs.filter((x) => x !== v) : [...xs, v]; draw(); }));
+    dlg.querySelectorAll("[data-ifmt]").forEach((b) => b.addEventListener("click", () => { sync(); const f = b.dataset.ifmt; const I = draft._inl; if (I.text === ({ duration: "Dauer", clock: "Uhrzeit" }[I.format] || "")) I.text = { duration: "Dauer", clock: "Uhrzeit" }[f] || ""; I.format = f; draw(); }));
     dlg.querySelectorAll("[data-type]").forEach((b) => b.addEventListener("click", () => { sync(); draft.type = b.dataset.type; draw(); }));
     dlg.querySelectorAll("[data-cper]").forEach((b) => b.addEventListener("click", () => { draft._cper = b.dataset.cper; sync(); draw(); }));
     dlg.querySelectorAll("[data-theme]").forEach((b) => b.addEventListener("click", () => { sync(); draft.theme = b.dataset.theme; draw(); }));
@@ -461,8 +485,25 @@ function openEditor(id) {
       if (!draft.cond && !draft.theme) draft.theme = guessTheme(draft);
       delete draft._cper;
       if (draft.contract && !(draft.contract.h > 0 && draft.contract.wage > 0)) return toast("Vertrag: bitte Stunden und Stundenlohn eintragen (oder beide leeren)");
+      const I = draft._inl; delete draft._inl;
+      if (I.on && draft.type === "choice") {
+        I.values = I.values.filter((v) => draft.options.includes(v));
+        if (!I.values.length) { draft._inl = I; return toast("Folgeangabe: bitte die Antwort wählen, bei der sie erscheint"); }
+        if (!I.text.trim()) I.text = { duration: "Dauer", clock: "Uhrzeit" }[I.format] || "Wert";
+      }
       if (existing) Object.assign(existing, draft);
       else state.questions.push(draft);
+      // Folgeangabe als Folgefrage mit „inline“ anlegen, ändern oder entfernen
+      let kid = I.id ? qById(I.id) : null;
+      if (I.on && draft.type === "choice") {
+        if (!kid) {
+          kid = { id: uid(), type: "number", options: [], multi: false, min: 1, max: 5, minLabel: "", maxLabel: "", healthKey: "", archived: false, inline: true, better: "none" };
+          state.questions.splice(state.questions.indexOf(qById(draft.id)) + 1, 0, kid);
+        }
+        Object.assign(kid, { text: I.text.trim(), format: I.format || null, unit: I.format ? "" : I.unit, cond: { qid: draft.id, values: I.values }, archived: false, inline: true });
+      } else if (kid) {
+        if (answerCount(kid.id)) kid.archived = true; else state.questions = state.questions.filter((x) => x !== kid);
+      }
       save(); dlg.close(); render();
       toast(existing ? "Gesichert" : "Frage angelegt");
     });

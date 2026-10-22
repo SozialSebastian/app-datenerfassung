@@ -140,7 +140,16 @@ const isHealthQ = (q) => q.source === "health" || q.source === "chess";
 // Schlaf gehört zum Tag des Aufwachens und ist morgens schon vollständig.
 const NIGHT_KEYS = ["schlaf", "schlafenszeit", "aufwachzeit"];
 const todayOpen = (q) => isHealthQ(q) && !NIGHT_KEYS.includes(q.healthKey);
-const askQuestions = (date) => visibleQuestions(date).filter((q) => !isHealthQ(q));
+// Folgeangaben (inline) stehen in der Karte ihrer Hauptfrage, nicht als eigene Frage
+const askQuestions = (date) => visibleQuestions(date).filter((q) => !isHealthQ(q) && !q.inline);
+const inlineKids = (q, a) => state.questions.filter((c) => c.inline && !c.archived && c.cond && c.cond.qid === q.id && condMet(c, a || {}));
+// letzter Wert einer Frage vor (oder nach) einem Tag – zum Vorausfüllen
+function lastValue(qid, date) {
+  const ds = Object.keys(state.answers).filter((d) => d !== date && isAnswered(state.answers[d][qid])).sort();
+  const before = ds.filter((d) => d < date);
+  const d = before.length ? before[before.length - 1] : ds[0];
+  return d ? state.answers[d][qid] : null;
+}
 const healthQuestions = () => ordered().map((o) => o.q).filter((q) => q.source === "health" && !q.archived);
 
 function setAnswer(date, qid, value) {
@@ -148,6 +157,9 @@ function setAnswer(date, qid, value) {
   const a = state.answers[date];
   if (isAnswered(value)) a[qid] = value;
   else delete a[qid];
+  // Folgeangabe erscheint → mit dem Wert vom letzten Mal vorausfüllen
+  const pq = qById(qid);
+  if (pq) for (const c of inlineKids(pq, a)) if (!isAnswered(a[c.id])) { const v = lastValue(c.id, date); if (isAnswered(v)) a[c.id] = v; }
   // Antworten von Folgefragen entfernen, deren Bedingung nicht mehr erfüllt ist
   let changed = true;
   while (changed) {
@@ -270,6 +282,17 @@ function render() {
 }
 
 /* ================= Antwort-Eingaben (Tag und Abfrage) ================= */
+// Antwortfeld plus Folgeangaben, die gerade gelten (für Karten und Abfrage)
+function answerBlock(q, date) {
+  const a = state.answers[date] || {};
+  const kids = inlineKids(q, a);
+  return `<div class="qin">${answerInput(q, a[q.id])}</div>${kids.map((c) => `<div class="inl" data-iq="${c.id}"><span class="inl-l">${esc(c.text)}</span>${answerInput(c, a[c.id])}</div>`).join("")}`;
+}
+// verdrahtet Antwort und Folgeangaben in einem Block
+function wireBlock(root, q, date, after) {
+  wireInput(root.querySelector(".qin") || root, q, date, after);
+  root.querySelectorAll(".inl[data-iq]").forEach((el) => { const c = qById(el.dataset.iq); if (c) wireInput(el, c, date, (k) => after(k === "pick" || k === "enter" ? "input" : k, c)); });
+}
 function answerInput(q, val) {
   if (q.type === "choice") {
     const sel = (o) => (q.multi ? Array.isArray(val) && val.includes(o) : val === o);

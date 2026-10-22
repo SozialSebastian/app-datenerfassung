@@ -64,7 +64,7 @@ function renderDay() {
       if (th) lastTheme = th;
       return `${head}<section class="q ${isAnswered(val) ? "done" : ""} ${q.cond ? "child" : ""}" data-qid="${q.id}">
         <p class="q-title">${esc(q.text)}</p>
-        ${answerInput(q, val)}
+        ${answerBlock(q, current)}
       </section>`;
     }).join("");
   }
@@ -105,7 +105,7 @@ function renderDay() {
   $("#startquiz")?.addEventListener("click", () => startQuiz(current));
   view.querySelectorAll("[data-dth]").forEach((b) => b.addEventListener("click", () => { prefs.dayTheme = b.dataset.dth; savePrefs(); renderDay(); }));
 
-  view.querySelectorAll(".q[data-qid]").forEach((card) => wireInput(card, qById(card.dataset.qid), current, (kind) => {
+  view.querySelectorAll(".q[data-qid]").forEach((card) => wireBlock(card, qById(card.dataset.qid), current, (kind) => {
     if (kind !== "input") return renderDay();
     // Zahlen können keine Folgefragen auslösen → nur Markierung und Zähler aktualisieren
     const aa = state.answers[current] || {};
@@ -164,7 +164,7 @@ function renderQuiz() {
 
   const q = qs[quiz.idx];
   const val = a[q.id];
-  const needsNext = q.type === "number" || (q.type === "choice" && q.multi);
+  const needsNext = q.type === "number" || (q.type === "choice" && q.multi) || inlineKids(q, a).length > 0;
   view.innerHTML = `<div class="quiz">
     <div class="quiz-top">
       <span class="muted">${longDate(date)} · ${quiz.only ? (() => { const n = qs.filter((x) => !isAnswered(a[x.id])).length; return n ? `noch ${n} offen` : "alle beantwortet"; })() : `Frage ${quiz.idx + 1} von ${qs.length}`}</span>
@@ -174,7 +174,7 @@ function renderQuiz() {
     <section class="quiz-q" data-qid="${q.id}">
       ${q.cond ? `<p class="q-hint">Weil du „${esc(fmtVal(a[q.cond.qid]))}“ geantwortet hast</p>` : ""}
       <h1 class="quiz-title">${esc(q.text)}</h1>
-      ${answerInput(q, val)}
+      ${answerBlock(q, date)}
     </section>
     <div class="quiz-nav">
       <button class="btn ghost" id="qback" ${quiz.idx === 0 || (quiz.only && !quiz.hist.length) ? "disabled" : ""}>Zurück</button>
@@ -192,17 +192,20 @@ function renderQuiz() {
     quiz.idx = i;
     renderQuiz(); window.scrollTo(0, 0);
   };
-  wireInput(sec, q, date, (kind) => {
+  wireBlock(sec, q, date, (kind) => {
+    // mit Folgeangabe (z. B. Dauer) nicht automatisch weiter – die Angabe steht gleich darunter
+    if ((kind === "pick" || kind === "enter") && inlineKids(q, state.answers[date]).length) { renderQuiz(); return; }
     if (kind === "pick" || kind === "enter") { renderQuiz(); setTimeout(next, 220); } // kurz Auswahl zeigen, dann weiter
     else if (kind !== "input") renderQuiz();
   });
   $("#qclose").addEventListener("click", endQuiz);
   $("#qback").addEventListener("click", () => { quiz.idx = quiz.hist.length ? quiz.hist.pop() : Math.max(0, quiz.idx - 1); renderQuiz(); });
   $("#qnext").addEventListener("click", () => {
-    if (sec._commit && sec._commit() === false) return;
+    // Eingaben übernehmen (Hauptfrage und Folgeangaben)
+    for (const el of [sec.querySelector(".qin"), ...sec.querySelectorAll(".inl")]) if (el && el._commit && el._commit() === false) return;
     next();
   });
-  if (q.type === "number" && !isAnswered(val)) setTimeout(() => sec.querySelector("input")?.focus(), 50);
+  if (q.type === "number" && !isAnswered(val)) setTimeout(() => sec.querySelector(".qin input")?.focus(), 50);
 }
 
 function endQuiz() {
