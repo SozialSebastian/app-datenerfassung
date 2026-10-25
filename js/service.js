@@ -134,7 +134,8 @@ function reportStatus() {
   statusTimer = setTimeout(() => {
     // Kurztext für die Wochenbericht-Mitteilung
     if (settings.goalpush.on && settings.goalpush.endpoint) api("/goals/teaser", { endpoint: settings.goalpush.endpoint, week: "", text: JSON.stringify(goalAlertPlan()) }).catch(() => {});
-    if (settings.weekly.on && settings.weekly.endpoint) api("/weekly/teaser", { endpoint: settings.weekly.endpoint, week: mondayOf(todayIso()), text: reportTeaser() }).catch(() => {});
+    // Wochenbericht: Mitteilung erst, wenn Mo–So vollständig beantwortet sind (week leer = noch nicht)
+    if (settings.weekly.on && settings.weekly.endpoint) { const wk = reportDefaultWeek(), ok = weekComplete(wk); api("/weekly/teaser", { endpoint: settings.weekly.endpoint, week: ok ? wk : "", text: ok ? reportTeaser(wk) : "" }).catch(() => {}); }
     if (!settings.push.on || !settings.push.endpoint) return;
     const t = todayIso();
     const a = state.answers[t] || {};

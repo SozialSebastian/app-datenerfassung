@@ -496,9 +496,16 @@ test("Ziel über das Zahnrad anlegen und in der Analyse sehen", async () => {
 test("Wochenbericht öffnet über den Link aus der Mitteilung", async () => {
   const { page, ctx, errors } = await open({ data: yearData(), url: "?report=week" });
   await page.waitForTimeout(300);
-  const txt = await page.locator(".report").innerText();
+  // Woche noch nicht vollständig → statt Bericht die fehlenden Tage
+  await page.evaluate(() => { const d = document.querySelector("#sheet"); d.close(); state.answers[todayIso()] = {}; openReport(mondayOf(todayIso())); });
+  let txt = await page.locator(".report").innerText();
   assert.match(txt, /KW \d+/);
+  assert.match(txt, /Noch nicht vollständig/);
+  // vollständige Woche → Bericht
+  await page.evaluate(() => { const m = addDays(mondayOf(todayIso()), -7); for (let i = 0; i < 7; i++) { const d = addDays(m, i); for (const q of askQuestions(d)) setAnswer(d, q.id, q.type === "choice" ? q.options[0] : q.type === "scale" ? q.min : 1); } openReport(m); });
+  txt = await page.locator(".report").innerText();
   assert.match(txt, /Deine Woche/);
+  assert.equal(await page.evaluate(() => weekComplete(addDays(mondayOf(todayIso()), -7))), true);
   await page.click("#rprev");
   assert.deepEqual(errors, []);
   await ctx.close();

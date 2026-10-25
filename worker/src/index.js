@@ -128,8 +128,9 @@ function reminder(sub, date) {
 }
 
 // Wochenbericht: Kurztext kommt von der App (nur Zusammenfassung, keine Antworten)
-function weeklyMessage(sub, date) {
-  const teaser = sub.teaser && sub.teaser_week === mondayOf(date) ? sub.teaser : "";
+// Gesendet wird erst, wenn die App die Woche als vollständig meldet (teaser_week = Montag der Woche)
+function weeklyMessage(sub) {
+  const teaser = sub.teaser || "";
   return {
     title: "Dein Wochenbericht",
     body: `${teaser ? teaser + " " : ""}Tippen öffnet deinen Wochenbericht.`,
@@ -390,12 +391,12 @@ async function handle(request, env) {
     const tz = b.tz || TZ_DEFAULT;
     // Ist der Termin heute schon vorbei, erst nächste Woche schicken
     const now = localNow(tz);
-    const last = table === "goals" ? "[]" : now.wd === day && b.time <= now.time ? now.date : "";
+    const last = table === "goals" ? "[]" : "";
     await env.DB.prepare(
       `INSERT INTO ${table} (endpoint, p256dh, auth, day, time, tz, last_sent, created)
        VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, datetime('now'))
        ON CONFLICT(endpoint) DO UPDATE SET p256dh = ?2, auth = ?3, day = ?4, time = ?5, tz = ?6,
-         last_sent = CASE WHEN ${table}.day = ?4 AND ${table}.time = ?5 THEN ${table}.last_sent ELSE ?7 END`
+         last_sent = CASE WHEN ?7 = '' OR (${table}.day = ?4 AND ${table}.time = ?5) THEN ${table}.last_sent ELSE ?7 END`
 
     ).bind(s.endpoint, s.keys.p256dh, s.keys.auth, day, b.time, tz, last).run();
     return json({ ok: true });
@@ -413,7 +414,7 @@ async function handle(request, env) {
     const sub = await env.DB.prepare(`SELECT * FROM ${table} WHERE endpoint = ?`).bind(b.endpoint || "").first();
     if (!sub) return json({ error: `${table === "goals" ? "Ziel-Erinnerung" : "Wochenbericht"} ist für dieses Gerät nicht aktiviert` }, 404);
     const date = localNow(sub.tz).date;
-    const msg = table === "goals" ? { title: "Ziele", body: "Test: So sieht die Ziel-Erinnerung aus.", open: "goals", url: `${APP_URL}?open=goals` } : weeklyMessage(sub, date);
+    const msg = table === "goals" ? { title: "Ziele", body: "Test: So sieht die Ziel-Erinnerung aus.", open: "goals", url: `${APP_URL}?open=goals` } : weeklyMessage(sub);
     const status = await sendPush(env, sub, msg);
     return json({ ok: status < 300, status });
   }
@@ -498,9 +499,10 @@ async function scheduled(env) {
   const weekly = (await env.DB.prepare("SELECT * FROM weekly").all()).results;
   for (const sub of weekly) {
     const now = localNow(sub.tz);
-    if (now.wd !== sub.day || now.time < sub.time || sub.last_sent === now.date) continue;
-    await env.DB.prepare("UPDATE weekly SET last_sent = ? WHERE endpoint = ?").bind(now.date, sub.endpoint).run();
-    try { await sendPush(env, sub, weeklyMessage(sub, now.date)); } catch (e) { console.error("Wochenbericht fehlgeschlagen", e); }
+    // einmal je Woche, sobald sie vollständig ist (frühestens zur eingestellten Uhrzeit)
+    if (!sub.teaser_week || sub.last_sent === sub.teaser_week || now.time < sub.time) continue;
+    await env.DB.prepare("UPDATE weekly SET last_sent = ? WHERE endpoint = ?").bind(sub.teaser_week, sub.endpoint).run();
+    try { await sendPush(env, sub, weeklyMessage(sub)); } catch (e) { console.error("Wochenbericht fehlgeschlagen", e); }
   }
   const goals = (await env.DB.prepare("SELECT * FROM goals").all()).results;
   for (const sub of goals) {

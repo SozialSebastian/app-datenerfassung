@@ -32,9 +32,9 @@ function renderData() {
   const WDN = ["Sonntag", "Montag", "Dienstag", "Mittwoch", "Donnerstag", "Freitag", "Samstag"];
   let weeklyBody = "";
   if (connected && pushSupport && standalone) weeklyBody = `
-      <label class="switch row"><input type="checkbox" id="weekon" ${w.on ? "checked" : ""}><span>Jede Woche als Mitteilung</span></label>
-      <div class="timerow"><span>Tag</span><select id="weekday" class="timein">${[0, 1, 2, 3, 4, 5, 6].map((i) => `<option value="${i}" ${w.day === i ? "selected" : ""}>${WDN[i]}</option>`).join("")}</select></div>
-      <div class="timerow"><span>Uhrzeit</span><input type="time" id="weektime" value="${esc(w.time)}" class="timein"></div>
+      <label class="switch row"><input type="checkbox" id="weekon" ${w.on ? "checked" : ""}><span>Mitteilung, sobald die Woche vollständig ist</span></label>
+      <div class="timerow"><span>Frühestens um</span><input type="time" id="weektime" value="${esc(w.time)}" class="timein"></div>
+      <p class="muted small" style="margin:6px 0 0">Kommt, wenn Montag bis Sonntag beantwortet sind – meist Sonntagabend, sonst sobald du fehlende Tage nachträgst. Vorher nicht vor dieser Uhrzeit.</p>
       <p class="small" id="weekmsg" style="margin:8px 0 0"></p>`;
   else if (!connected) weeklyBody = `<p class="muted small" style="margin-top:10px">Für die wöchentliche Mitteilung zuerst unten unter „Verbindung“ den Schlüssel eintragen.</p>`;
 
@@ -230,20 +230,19 @@ function renderData() {
   settingsNav();
   $("#exportopen").addEventListener("click", openExport);
   const weekSave = async () => {
-    const day = Number($("#weekday").value), time = $("#weektime").value || "19:00";
+    const day = 0, time = $("#weektime").value || "19:00";
     settings.weekly.day = day; settings.weekly.time = time; saveSettings();
     if (!settings.weekly.on) return;
-    try { await enableWeekly(day, time); toast(`Wochenbericht jeden ${WDN[day]} um ${time} Uhr`); } catch (err) { msg("weekmsg", err.message, true); }
+    try { await enableWeekly(day, time); toast(`Wochenbericht frühestens um ${time} Uhr`); } catch (err) { msg("weekmsg", err.message, true); }
   };
   $("#weekon")?.addEventListener("change", async (e) => {
     const on = e.target.checked;
     try {
-      if (on) { await enableWeekly(Number($("#weekday").value), $("#weektime").value || "19:00"); toast(`Wochenbericht jeden ${WDN[settings.weekly.day]} um ${settings.weekly.time} Uhr`); }
+      if (on) { await enableWeekly(0, $("#weektime").value || "19:00"); toast("Wochenbericht kommt, sobald die Woche vollständig ist"); }
       else { await disableWeekly(); toast("Wochenbericht-Mitteilung aus"); }
       renderData();
     } catch (err) { e.target.checked = !on; msg("weekmsg", err.message, true); }
   });
-  $("#weekday")?.addEventListener("change", weekSave);
   $("#weektime")?.addEventListener("change", (e) => { if (/^\d{2}:\d{2}$/.test(e.target.value)) weekSave(); });
 }
 

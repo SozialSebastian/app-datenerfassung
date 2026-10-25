@@ -4,6 +4,19 @@
 /* ================= Wochenbericht ================= */
 // Standard: sonntags die laufende Woche, sonst die letzte abgeschlossene Woche
 const reportDefaultWeek = () => { const t = todayIso(); const m = mondayOf(t); return parseIso(t).getDay() === 0 ? m : addDays(m, -7); };
+// Fehlende Antworten Mo–So: [{ d, open }] – leer heißt: Woche vollständig (alle Tage komplett beantwortet)
+function weekMissing(mon) {
+  const t = todayIso(), out = [];
+  for (let i = 0; i < 7; i++) {
+    const d = addDays(mon, i);
+    const qs = askQuestions(d);
+    const a = state.answers[d] || {};
+    const open = d > t ? (qs.length || 1) : qs.filter((q) => !isAnswered(a[q.id])).length;
+    if (open) out.push({ d, open, future: d > t });
+  }
+  return out;
+}
+const weekComplete = (mon) => !weekMissing(mon).length;
 const kw = (s) => { // ISO-Kalenderwoche
   const d = parseIso(s); d.setDate(d.getDate() + 3 - ((d.getDay() + 6) % 7));
   const y1 = new Date(d.getFullYear(), 0, 4);
@@ -35,6 +48,17 @@ function weekStat(q, mon) {
   const big = pm !== null && Math.abs(m - pm) > (sd(prevAll) || 1) * 0.25;
   const dir = big ? Math.sign(m - pm) : 0, b = betterDir(q);
   return { val: `Ø ${f(m)}`, cmp: pm === null ? "" : `sonst Ø ${f(pm)}`, dir, good: dir && b ? (dir > 0) === (b === "high") : null };
+}
+
+// Noch nicht vollständig: welche Tage fehlen (mit Sprung in die Abfrage)
+function reportMissingHtml(mon) {
+  const miss = weekMissing(mon);
+  return `<section class="sq rmiss">
+      <p class="rkw">KW ${kw(mon)} · ${dm(mon)}–${dm(addDays(mon, 6))}${addDays(mon, 6).slice(0, 4)}</p>
+      <h3 class="rh">Noch nicht vollständig</h3>
+      <p class="small muted" style="margin:0 0 8px">Der Bericht entsteht, sobald Montag bis Sonntag beantwortet sind. Dann kommt auch die Mitteilung.</p>
+      <ul class="rmlist">${miss.map((x) => `<li><span>${WD[parseIso(x.d).getDay()]} ${dm(x.d)}</span>${x.future ? `<span class="muted small">noch nicht dran</span>` : `<button type="button" class="linkbtn" data-rquiz="${x.d}">${x.open} offen · beantworten</button>`}</li>`).join("")}</ul>
+    </section>`;
 }
 
 function reportHtml(mon) {
@@ -128,8 +152,9 @@ function openReport(mon) {
         <span>${week === cur ? "Diese Woche" : week === addDays(cur, -7) ? "Letzte Woche" : `KW ${kw(week)}`}</span>
         <button type="button" class="iconbtn" id="rnext" aria-label="Woche danach" ${week >= cur ? "disabled" : ""}>›</button>
       </div>
-      ${reportHtml(week)}
+      ${week >= reportDefaultWeek() && !weekComplete(week) ? reportMissingHtml(week) : `${weekComplete(week) ? "" : `<p class="small muted rinc">Diese Woche ist nicht vollständig beantwortet.</p>`}${reportHtml(week)}`}
     </div>`;
+    dlg.querySelectorAll("[data-rquiz]").forEach((b) => b.addEventListener("click", () => { dlg.close(); startQuiz(b.dataset.rquiz); }));
     $("#rdone", dlg).addEventListener("click", () => dlg.close());
     $("#rprev", dlg).addEventListener("click", () => { week = addDays(week, -7); draw(); dlg.querySelector(".sheet-inner").scrollTop = 0; });
     $("#rnext", dlg).addEventListener("click", () => { week = addDays(week, 7); draw(); dlg.querySelector(".sheet-inner").scrollTop = 0; });
@@ -139,15 +164,14 @@ function openReport(mon) {
   document.activeElement?.blur();
 }
 
-// Kurztext für die Push-Mitteilung (nur Zusammenfassung, keine Antworten)
-function reportTeaser() {
-  const t = todayIso(), mon = mondayOf(t);
-  const days = Array.from({ length: 7 }, (_, i) => addDays(mon, i)).filter((d) => d <= t);
-  const tracked = days.filter((d) => askQuestions(d).some((q) => isAnswered((state.answers[d] || {})[q.id]))).length;
-  let s = `${tracked} von 7 Tagen erfasst.`;
+// Kurztext für die Push-Mitteilung (nur Zusammenfassung, keine Antworten) zur Woche mon
+function reportTeaser(mon) {
+  mon = mon || reportDefaultWeek();
+  const sun = addDays(mon, 6);
+  let s = `KW ${kw(mon)} ist komplett.`;
   const items = goalItems();
   if (items.length) {
-    const ev = items.map((g) => evalGoal(g, goalCur(g)));
+    const ev = items.map((g) => evalGoal(g, goalPer(g, sun)));
     const done = ev.filter((e) => e.status === "done").length, ok = ev.filter((e) => e.status === "ok").length;
     s += ` Ziele: ${done} erreicht${ok ? `, ${ok} auf Kurs` : ""}.`;
   }
