@@ -844,3 +844,31 @@ svg.spie .ps { font-size: 10.5px; fill: var(--ink-2); }
 .ghead .gname { flex: 1; font-weight: 700; }
 .ghall input, .ghall select { padding: 7px 8px; border-radius: 8px; border: 1.5px solid var(--line); background: var(--surface); color: var(--ink); font-size: 15px; min-width: 0; }
 .glv { display: grid; grid-template-columns: 1fr 5.2em auto 5.2em auto; gap: 5px; align-items: center; margin-bottom: 5px; }
+
+/* Wochenbericht */
+.wrh { margin: -6px 0 4px; font-size: 24px; }
+.wrts { display: grid; grid-template-columns: repeat(auto-fit, minmax(90px, 1fr)); gap: 8px; margin-top: 10px; }
+.wrt { background: var(--bg); border-radius: 12px; padding: 10px; display: grid; gap: 2px; align-content: start; }
+.wrt b { font-size: 24px; line-height: 1.1; font-variant-numeric: tabular-nums; }
+.wrt span { font-size: 12px; color: var(--ink-2); }
+.wrt small, .wrr small { font-size: 12px; font-weight: 700; }
+.report .g { color: var(--s6); } .report .r { color: var(--danger); }
+.wrhl { display: grid; gap: 8px; font-size: 14.5px; }
+.wrr { display: grid; grid-template-columns: 1fr auto; gap: 6px 10px; align-items: center; padding: 10px 0; border-top: 1px solid var(--line); }
+.wrr:first-of-type { border-top: 0; padding-top: 0; }
+.wrr .wq { font-size: 15px; }
+.wrr .wv { font-weight: 800; font-size: 15px; text-align: right; font-variant-numeric: tabular-nums; }
+.wrr .wv.wsm { font-weight: 600; font-size: 13px; }
+.wrd { grid-column: 1 / 3; display: grid; grid-template-columns: repeat(7, 1fr); gap: 5px; }
+.wrd i { height: 24px; border-radius: 7px; background: var(--line); opacity: .7; display: grid; place-items: center; font-style: normal; font-size: 11px; font-weight: 700; color: var(--ink-2); }
+.wrd i.on { background: var(--hold); color: var(--hold-ink); opacity: 1; }
+.wrd i.on.lo { background: color-mix(in srgb, var(--hold) 40%, var(--surface)); color: var(--ink); }
+.wrd i.na { opacity: .35; }
+.wrd i.num { opacity: 1; background: var(--bg); color: var(--ink); }
+svg.wrs { grid-column: 1 / 3; width: 100%; height: auto; display: block; }
+svg.wrs .wa { fill: var(--hold); opacity: .12; }
+svg.wrs .wl { fill: none; stroke: var(--ink); stroke-width: 2; stroke-linejoin: round; }
+svg.wrs .wp { fill: var(--ink); }
+svg.wrs text { font-size: 10px; fill: var(--ink-2); }
+.wrg { display: flex; justify-content: space-between; gap: 10px; align-items: baseline; padding: 6px 0; font-size: 14.5px; }
+.wrg b { white-space: nowrap; }

@@ -62,80 +62,115 @@ function reportMissingHtml(mon) {
 }
 
 function reportHtml(mon) {
-  const t = todayIso();
-  const sun = addDays(mon, 6);
-  const days = Array.from({ length: 7 }, (_, i) => addDays(mon, i)).filter((d) => d <= t);
-  const asked = (d) => askQuestions(d);
-  const tracked = days.filter((d) => asked(d).some((q) => isAnswered((state.answers[d] || {})[q.id]))).length;
-  const full = days.filter((d) => asked(d).length && dayProgress(d) === 1).length;
-  const running = sun >= t;
+  const sun = addDays(mon, 6), prevMon = addDays(mon, -7);
+  const week = (m) => Array.from({ length: 7 }, (_, i) => addDays(m, i));
   const range = `${dm(mon)}–${dm(sun)}${sun.slice(0, 4)}`;
+  const valsIn = (q, m) => week(m).map((d) => (state.answers[d] || {})[q.id]);
+  const nums = (xs) => xs.filter((v) => typeof v === "number");
+  const delta = (d, good, txt) => (d === null ? "" : `<small class="${!d || !good ? "" : (d > 0) === (good === "high") ? "g" : "r"}">${d > 0 ? "▲" : d < 0 ? "▼" : "±"}${txt}</small>`);
+  const pctTxt = (a, b) => (b ? `${Math.round(Math.abs((a - b) / b) * 100)} %` : "");
+  const numDelta = (q, a, b) => {
+    if (b === null) return "";
+    const d = a - b;
+    if (Math.abs(d) < 1e-9) return delta(0, null, "0");
+    return delta(d, betterDir(q), q.format ? ` ${devMin(d)}` : q.type === "scale" ? ` ${fmt1(Math.abs(d))}` : ` ${pctTxt(a, b)}`);
+  };
+  const fmtV = (q, v) => (q.type === "scale" ? fmt1(v) : q.format ? fmtQ(q, v) : fmtBig(v) + (q.unit ? " " + q.unit : ""));
+  const label = (q) => { const t = shortQ(q); return esc(t.charAt(0).toUpperCase() + t.slice(1)); };
+  const isYN = (q) => q.type === "choice" && !q.multi && q.options.includes("Ja") && q.options.includes("Nein") && q.options.length === 2;
 
-  // Ziele: bei Wochenzielen genau diese Woche, sonst Stand des Monats/Jahres am Wochenende
-  const gs = G();
-  const items = goalItems();
-  let goalsHtml = "";
-  if (items.length) {
-    const ref = sun <= t ? sun : t;
-    const ev = items.map((g) => evalGoal(g, goalPer(g, ref))).sort((a, b) => STATUS_ORDER[a.status] - STATUS_ORDER[b.status]);
-    const running = ev.some((e) => !e.ended);
-    const done = ev.filter((e) => e.status === "done").length;
-    const okn = ev.filter((e) => e.status === "ok").length;
-    goalsHtml = `<section class="sq">
-      <div class="ghead"><h3 class="rh">Ziele</h3><span class="small muted">${running ? "Stand heute" : ""}</span></div>
-      <p class="gsum small">${done} erreicht · ${okn} auf Kurs · ${ev.length - done - okn} offen oder verfehlt</p>
-      <ul class="glist">${ev.map(goalRow).join("")}</ul>
-    </section>`;
+  // Kacheln oben: Sporttage, Ziele, wichtigste Zahl (z. B. Schritte) – je mit Vergleich zur Vorwoche
+  const tiles = [];
+  if (sportQs().length) {
+    const c = (m) => week(m).filter((d) => sportDay(d)).length;
+    const a = c(mon), b = c(prevMon);
+    tiles.push(`<div class="wrt"><b>${a}</b><span>${a === 1 ? "Sporttag" : "Sporttage"}</span>${delta(a - b, "high", ` ${Math.abs(a - b)} ggü. Vorwoche`)}</div>`);
+  }
+  const gitems = goalItems().filter((g) => goalIn(g, goalPer(g, sun)) || gp(g) !== "week");
+  const gev = gitems.map((g) => evalGoal(g, goalPer(g, sun)));
+  if (gev.length) {
+    const done = gev.filter((e) => e.status === "done").length;
+    tiles.push(`<div class="wrt"><b>${done}/${gev.length}</b><span>Ziele erreicht</span>${done === gev.length ? `<small class="g">alle ✓</small>` : ""}</div>`);
+  }
+  const numQs = ordered().map((o) => o.q).filter((q) => !q.archived && !q.cond && q.type === "number" && q.source !== "chess");
+  const keyQ = numQs.find((q) => q.healthKey === "schritte") || numQs.find((q) => nums(valsIn(q, mon)).length);
+  if (keyQ && nums(valsIn(keyQ, mon)).length) {
+    const a = mean(nums(valsIn(keyQ, mon))), pb = nums(valsIn(keyQ, prevMon)), b = pb.length ? mean(pb) : null;
+    tiles.push(`<div class="wrt"><b>${esc(fmtV(keyQ, a))}</b><span>Ø ${label(keyQ)}</span>${numDelta(keyQ, a, b)}</div>`);
   }
 
-  // Fragen der Woche
-  const qs = ordered().map((o) => o.q).filter((q) => !q.archived);
-  const rows = qs.map((q) => ({ q, s: weekStat(q, mon) })).filter((x) => x.s);
-  // Themen gesamt (z. B. Sport = alle Sport-Fragen zusammen)
-  const lastOk = todayIso();
-  const thRows = themesWithYes().map((th) => {
-    const tq = themeYesQs(th.k);
-    const sum = (m) => { let n = 0, a = 0; for (let i = 0; i < 7; i++) { const d = addDays(m, i); if (d > lastOk) break; const h = themeHits(tq, d); if (h !== null) { a++; if (h > 0) n++; } } return a ? n : null; };
-    const c = sum(mon);
-    if (c === null) return null;
-    const prev = Array.from({ length: 8 }, (_, i) => sum(addDays(mon, -7 * (i + 1)))).filter((x) => x !== null);
-    const pm = prev.length ? mean(prev) : null;
-    return { th, c, pm };
-  }).filter(Boolean);
-  const qHtml = rows.length || thRows.length ? `<section class="sq">
-      <h3 class="rh">Deine Woche</h3>
-      <ul class="wlist">${thRows.map(({ th, c, pm }) => `<li class="wtheme">
-        <span class="wq">${th.i} <strong>${esc(th.l)} gesamt</strong></span>
-        <span class="wv">${c}×</span>
-        ${pm !== null ? `<span class="wc small muted">sonst Ø ${fmt1(pm)}×</span>` : ""}
-      </li>`).join("")}${rows.map(({ q, s }) => `<li>
-        <span class="wq">${esc(q.text)}</span>
-        <span class="wv">${s.val}${s.dir ? `<span class="wdir ${s.dir > 0 ? "up" : "down"} ${s.good === true ? "good" : s.good === false ? "bad" : ""}" aria-label="${s.dir > 0 ? "mehr" : "weniger"} als sonst">${s.dir > 0 ? "▲" : "▼"}</span>` : ""}</span>
-        ${s.cmp ? `<span class="wc small muted">${s.cmp}</span>` : ""}
-      </li>`).join("")}</ul>
-      <p class="small muted" style="margin:10px 0 0">„sonst“ = Schnitt der 8 Wochen davor.</p>
+  // Tag für Tag: alle Hauptfragen und Health-Werte der Woche
+  const qs = ordered().map((o) => o.q).filter((q) => !q.archived && !q.cond && q.source !== "chess" && !isIntolQ(q) && valsIn(q, mon).some(isAnswered));
+  const WDS = ["Mo", "Di", "Mi", "Do", "Fr", "Sa", "So"];
+  const highlights = [];
+  const rows = qs.map((q) => {
+    const vs = valsIn(q, mon), pv = valsIn(q, prevMon);
+    if (isYN(q) || q.type === "choice") {
+      const key = isYN(q) ? "Ja" : null;
+      if (key) {
+        const c = vs.filter((v) => v === "Ja").length, cp = pv.filter((v) => v === "Ja").length, anyPrev = pv.some(isAnswered);
+        const lo = betterDir(q) === "low";
+        return `<div class="wrr"><span class="wq">${label(q)}</span><span class="wv">${c}× ${anyPrev ? delta(c - cp, betterDir(q) || (q.sport ? "high" : null), ` ${Math.abs(c - cp)}`) : ""}</span>
+          <div class="wrd">${vs.map((v, i) => `<i class="${v === "Ja" ? (lo ? "on lo" : "on") : isAnswered(v) ? "" : "na"}">${WDS[i]}</i>`).join("")}</div></div>`;
+      }
+      // andere Auswahl: häufigste Antworten, je Tag die Antwort (gekürzt)
+      const cnt = {};
+      vs.forEach((v) => (Array.isArray(v) ? v : isAnswered(v) ? [v] : []).forEach((k) => (cnt[k] = (cnt[k] || 0) + 1)));
+      const top = Object.entries(cnt).sort((a, b) => b[1] - a[1]).slice(0, 3).map(([k, n]) => `${esc(k)} ${n}×`).join(" · ");
+      return `<div class="wrr"><span class="wq">${label(q)}</span><span class="wv wsm">${top}</span></div>`;
+    }
+    const n = nums(vs);
+    if (!n.length) return "";
+    const a = mean(n), pn = nums(pv), b = pn.length ? mean(pn) : null;
+    const dir = betterDir(q);
+    // Highlight: bester Tag (nach „Was ist besser?“)
+    if (dir && n.length >= 3) {
+      const best = vs.reduce((bi, v, i) => (typeof v === "number" && (bi < 0 || (dir === "high" ? v > vs[bi] : v < vs[bi])) ? i : bi), -1);
+      highlights.push(q.type === "scale" ? `<span>${label(q)} Ø <strong>${fmt1(a)}</strong>, am besten am <strong>${WDS[best]}</strong> (${fmt1(vs[best])})</span>`
+        : `<span>${dir === "high" ? "Meiste" : "Wenigste"} ${label(q)}: <strong>${WD[parseIso(addDays(mon, best)).getDay()]} ${dm(addDays(mon, best))} · ${esc(fmtV(q, vs[best]))}</strong></span>`);
+    }
+    if (q.type === "scale") {
+      return `<div class="wrr"><span class="wq">${label(q)}</span><span class="wv">Ø ${fmt1(a)} ${numDelta(q, a, b)}</span>
+        <div class="wrd">${vs.map((v) => `<i class="${typeof v === "number" ? "num" : "na"}">${typeof v === "number" ? v : "–"}</i>`).join("")}</div></div>`;
+    }
+    return `<div class="wrr"><span class="wq">${label(q)}</span><span class="wv">Ø ${esc(fmtV(q, a))} ${numDelta(q, a, b)}</span>${weekSpark(vs, dir)}</div>`;
+  }).join("");
+
+  // Highlights: erreichte Ziele zuerst
+  const hl = [
+    ...gev.filter((e) => e.status === "done").slice(0, 2).map((e) => `<span><strong>${label(e.q)}</strong> – Ziel erreicht (${e.cur.replace(/<[^>]+>/g, "")})</span>`),
+    ...highlights
+  ].slice(0, 3);
+
+  const goalsHtml = gev.length ? `<section class="sq">
+      <h3 class="rh">Ziele</h3>
+      ${gev.sort((a, b) => STATUS_ORDER[a.status] - STATUS_ORDER[b.status]).map((e) => `<div class="wrg"><span>${label(e.q)} <span class="muted small">${goalText(e.g, e.q)} ${PER_WORD[gp(e.g)]}</span></span><b class="${e.status === "done" ? "g" : e.status === "fail" ? "r" : ""}">${e.status === "done" ? "✓ " : e.status === "fail" ? "✗ " : ""}${e.cur}</b></div>`).join("")}
     </section>` : "";
 
-  // Trends (immer der aktuelle Stand)
-  const last30 = Array.from({ length: 30 }, (_, i) => addDays(t, i - 29));
-  const tr = [...themeInsights().slice(0, 2).map((x) => ({ ...x, k: "theme" })), ...streakInsights().slice(0, 3).map((x) => ({ ...x, k: "streak" })), ...numberInsights().slice(0, 3).map((x) => ({ ...x, k: "num" })), ...seasonInsights().slice(0, 1).map((x) => ({ ...x, k: "season" })), ...relationInsights(last30).slice(0, 2).map((x) => ({ ...x, k: "rel" }))];
-  const trHtml = tr.length ? `<section class="sq">
-      <div class="ghead"><h3 class="rh">Trends</h3><span class="small muted">aktueller Stand</span></div>
-      <ul class="tlist">${tr.slice(0, 8).map((x) => `<li class="trow">${trendIcon(x, x.k)}<span>${x.html}</span></li>`).join("")}</ul>
-    </section>` : "";
-
+  const places = weekPlaces(mon);
   return `
     <section class="sq rtop">
-      <p class="rkw">KW ${kw(mon)} · ${range}${running ? " · läuft noch" : ""}</p>
-      ${weekPlaces(mon).length ? `<p class="rplaces small">📍 ${weekPlaces(mon).map(([c, n]) => `${esc(c)} <span class="muted">${n} Tag${n === 1 ? "" : "e"}</span>`).join(" · ")}</p>` : ""}
-      <div class="rstats">
-        <div><strong>${tracked}</strong><span>von ${days.length} Tagen erfasst</span></div>
-        <div><strong>${full}</strong><span>Tage vollständig</span></div>
-        ${items.length ? `<div><strong>${items.map((g) => evalGoal(g, goalPer(g, sun <= t ? sun : t))).filter((e) => e.status === "done" || e.status === "ok").length}/${items.length}</strong><span>Ziele erreicht oder auf Kurs</span></div>` : ""}
-      </div>
+      <p class="rkw">KW ${kw(mon)} · ${range}</p>
+      <h2 class="wrh">Deine Woche</h2>
+      ${places.length ? `<p class="rplaces small">📍 ${places.map(([c, n]) => `${esc(c)} <span class="muted">${n} Tag${n === 1 ? "" : "e"}</span>`).join(" · ")}</p>` : ""}
+      ${tiles.length ? `<div class="wrts">${tiles.join("")}</div>` : ""}
     </section>
-    ${goalsHtml}${qHtml}${trHtml}
-    ${!rows.length && !items.length ? `<p class="muted">In dieser Woche gibt es noch keine Antworten.</p>` : ""}`;
+    ${hl.length ? `<section class="sq"><h3 class="rh">Highlights</h3><div class="wrhl">${hl.map((x) => `<div>${x}</div>`).join("")}</div></section>` : ""}
+    ${rows ? `<section class="sq"><h3 class="rh">Tag für Tag</h3>${rows}<p class="small muted" style="margin:10px 0 0">▲/▼ im Vergleich zur Vorwoche.</p></section>` : `<p class="muted">In dieser Woche gibt es noch keine Antworten.</p>`}
+    ${goalsHtml}`;
+}
+// Mini-Kurve Mo–So (Lücken bei fehlenden Tagen), Fläche in der App-Farbe
+function weekSpark(vs, dir) {
+  const W = 340, H = 50, P = 12;
+  const pts = vs.map((v, i) => (typeof v === "number" ? { i, v } : null)).filter(Boolean);
+  if (pts.length < 2) return "";
+  let lo = Math.min(...pts.map((p) => p.v)), hi = Math.max(...pts.map((p) => p.v));
+  if (hi === lo) { hi += 1; lo -= 1; }
+  const x = (i) => P + (i / 6) * (W - 2 * P), y = (v) => 6 + (1 - (v - lo) / (hi - lo)) * (H - 22);
+  const d = pts.map((p, k) => `${k ? "L" : "M"}${x(p.i).toFixed(1)},${y(p.v).toFixed(1)}`).join(" ");
+  const area = `${d} L${x(pts[pts.length - 1].i).toFixed(1)},${H - 14} L${x(pts[0].i).toFixed(1)},${H - 14} Z`;
+  return `<svg class="wrs" viewBox="0 0 ${W} ${H}" aria-hidden="true"><path d="${area}" class="wa"/><path d="${d}" class="wl"/>${pts.map((p) => `<circle cx="${x(p.i).toFixed(1)}" cy="${y(p.v).toFixed(1)}" r="2.6" class="wp"/>`).join("")}
+    ${["Mo", "Di", "Mi", "Do", "Fr", "Sa", "So"].map((t, i) => `<text x="${x(i).toFixed(1)}" y="${H - 2}" text-anchor="middle">${t}</text>`).join("")}</svg>`;
 }
 
 function openReport(mon) {

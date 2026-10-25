@@ -505,6 +505,9 @@ test("Wochenbericht öffnet über den Link aus der Mitteilung", async () => {
   await page.evaluate(() => { const m = addDays(mondayOf(todayIso()), -7); for (let i = 0; i < 7; i++) { const d = addDays(m, i); for (const q of askQuestions(d)) setAnswer(d, q.id, q.type === "choice" ? q.options[0] : q.type === "scale" ? q.min : 1); } openReport(m); });
   txt = await page.locator(".report").innerText();
   assert.match(txt, /Deine Woche/);
+  assert.match(txt, /Tag für Tag/);
+  assert.equal(await page.locator(".report .wrd").count() > 0, true); // Mo–So je Frage
+  assert.doesNotMatch(txt, /Tage vollständig|aktueller Stand/);
   assert.equal(await page.evaluate(() => weekComplete(addDays(mondayOf(todayIso()), -7))), true);
   await page.click("#rprev");
   assert.deepEqual(errors, []);
