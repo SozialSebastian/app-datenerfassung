@@ -398,6 +398,39 @@ test("Vorlage „Bouldergrad“: Fb-Grade mit Hallen-Stufen daneben, Zuordnung i
   await ctx.close();
 });
 
+test("Gesundheit: Mosaik-Alter, Erholung, Stress (rückwirkend), Belastung, Erklärungen", async () => {
+  const H = (id, k, f) => ({ id, text: k, type: "number", healthKey: k, source: "health", format: f || null, options: [] });
+  const answers = {}, hr = {};
+  const d0 = new Date(); const ds = (i) => { const d = new Date(d0); d.setDate(d.getDate() - i); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`; };
+  for (let i = 0; i < 40; i++) {
+    answers[ds(i)] = { s: 9000 + (i % 3) * 500, sl: 7.5, sb: 23.25 + (i % 2) * 0.25, sw: 7, r: 60 + (i % 3), h: 50 + (i % 5) };
+    if (i < 10) { const pts = []; for (let m = 0; m < 1440; m += 5) pts.push(`${m}:${m < 420 ? 52 : 65 + (m % 15 === 0 ? 2 : 0)}`); hr[ds(i)] = pts.join(","); }
+  }
+  // gestern 15–16 Uhr deutlich erhöhter Puls (Stress), 18–19 Uhr Training (zählt nicht)
+  hr[ds(1)] = hr[ds(1)].split(",").map((p) => { const [m] = p.split(":").map(Number); return m >= 900 && m < 960 ? `${m}:85` : m >= 1080 && m < 1140 ? `${m}:150` : p; }).join(",");
+  const data = { version: 1, lastBackup: null, answers, hdata: { hr, st: {}, wo: { [ds(1)]: "1080-1140" } }, profile: { born: 1996, sex: "m" },
+    questions: [H("s", "schritte"), H("sl", "schlaf", "duration"), H("sb", "schlafenszeit", "clock"), H("sw", "aufwachzeit", "clock"), H("r", "ruhepuls"), H("h", "hrv")] };
+  const { page, ctx, errors } = await open({ data });
+  assert.equal(await page.locator(".tabbar button").count(), 5);
+  await page.click('[data-tab="health"]');
+  const r = await page.evaluate(() => { const S = stressDay(addDays(todayIso(), -1)); const B = bioAge(); const st = strainDay(addDays(todayIso(), -1)); return { avg: S.avg, high: S.high, act: S.act, bio: B.bio, parts: B.parts.map((p) => p.k), strain: st.strain, rec: recoveryDay(todayIso()).score }; });
+  assert.ok(r.high >= 45 && r.high <= 60, "Stress 15–16 Uhr erkannt: " + r.high); // 4 Fenster à 15 min
+  assert.ok(r.act >= 60, "Training als Bewegung"); // Training nicht als Stress
+  assert.ok(r.bio < 30 && r.bio > 20, "Mosaik-Alter " + r.bio); // viele Schritte, regelmäßiger Schlaf
+  assert.deepEqual(r.parts.sort(), ["reg", "rhr", "sleep", "steps"]);
+  assert.ok(r.strain > 5 && r.strain < 21);
+  assert.ok(r.rec >= 1 && r.rec <= 99);
+  // Erklärung über „i“
+  await page.click('[data-hinfo="stress"]');
+  assert.match(await page.locator("#sheet").innerText(), /14 Tage[\s\S]*Quellen/);
+  await page.click("#hidone");
+  // Kurzbefehl: Pulsreihe aus dem Eingang wird gespeichert
+  await page.evaluate(() => storeHealthSeries("puls_serie", todayIso(), "600:70,605:72"));
+  assert.equal(await page.evaluate(() => hrSeries(todayIso()).length >= 2), true);
+  assert.deepEqual(errors, []);
+  await ctx.close();
+});
+
 test("Schlaf aus Health: Wachphasen abgezogen, doppelte Messungen einmal, Einschlaf- und Aufwachzeit", async () => {
   const { listEntries } = await import("../worker/src/index.js");
   const t = (x) => `2026-10-${x}:00+02:00`;

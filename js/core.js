@@ -221,7 +221,7 @@ const typeLabel = { choice: "Auswahl", scale: "Skala", number: "Zahl" };
 function betterDir(q) {
   if (q.better === "high" || q.better === "low") return q.better;
   if (q.better === "none") return null;
-  return { schritte: "high", schlaf: "high", schlafenszeit: "low" }[q.healthKey] || null;
+  return { schritte: "high", schlaf: "high", schlafenszeit: "low", ruhepuls: "low", hrv: "high", vo2max: "high", training: "high" }[q.healthKey] || null;
 }
 function describe(q) {
   if (q.type === "choice") return q.options.join(" / ") + (q.multi ? " (mehrere)" : "");
@@ -278,6 +278,7 @@ function render() {
   else if (tab === "day") renderDay();
   else if (tab === "friends") renderFriends();
   else if (tab === "analysis") renderAnalysis();
+  else if (tab === "health") renderHealth();
   else renderData();
 }
 

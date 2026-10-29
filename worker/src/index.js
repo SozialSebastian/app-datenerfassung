@@ -275,6 +275,29 @@ function sleepEntries(start, end, kinds) {
   return out;
 }
 
+// Zeitreihe je Tag: [[Minute, Wert], …] → "m:v,m:v" (höchstens 1440 Punkte je Tag)
+function seriesEntries(base, vals, dates) {
+  const byDay = {};
+  for (let i = 0; i < Math.min(vals.length, dates.length, 20000); i++) {
+    const n = num(vals[i]), w = parseWhen(dates[i]);
+    if (Number.isNaN(n) || !w) continue;
+    const m = Math.min(1439, Math.max(0, Math.round(w.clock * 60)));
+    (byDay[w.local] ||= {})[m] = Math.round(n);
+  }
+  return Object.entries(byDay).map(([d, ms]) => [base + "_serie", Object.entries(ms).sort((a, b) => a[0] - b[0]).slice(0, 1440).map(([m, v]) => `${m}:${v}`).join(","), d]);
+}
+function workoutEntries(start, end) {
+  const byDay = {};
+  for (let i = 0; i < Math.min(start.length, end.length, 2000); i++) {
+    const a = parseWhen(start[i]), b = parseWhen(end[i]);
+    if (!a || !b || b.ms <= a.ms || b.ms - a.ms > 12 * 3600000) continue;
+    const s = Math.round(a.clock * 60), e = Math.round(b.clock * 60);
+    if (a.local === b.local) (byDay[a.local] ||= []).push(`${s}-${e}`);
+    else { (byDay[a.local] ||= []).push(`${s}-1440`); (byDay[b.local] ||= []).push(`0-${e}`); }
+  }
+  return Object.entries(byDay).map(([d, xs]) => ["workouts", xs.join(";"), d]);
+}
+
 // Wandelt Listen in Tageswerte um:
 //  schlaf_start + schlaf_ende (+ schlaf_wert) → je Nacht Schlafdauer, Einschlaf- und Aufwachzeit (Tag des Aufwachens)
 //  schritte + schritte_datum   → Wert je Datum
@@ -291,7 +314,15 @@ export function listEntries(lists, today) {
     const base = key.replace(/_(start|ende|datum)$/, "");
     if (done.has(base)) continue;
     const start = lists[base + "_start"], end = lists[base + "_ende"], dates = lists[base + "_datum"], vals = lists[base];
-    if (base === "schlaf" && Array.isArray(start) && Array.isArray(end)) {
+    if ((base === "puls" || base === "schrittez") && Array.isArray(vals) && Array.isArray(dates)) {
+      // Tagesverlauf (Herzfrequenz bzw. Schritte je Stunde): je Tag eine Reihe „Minute:Wert,…“ für den Bereich Gesundheit
+      done.add(base);
+      out.push(...seriesEntries(base, vals, dates));
+    } else if (base === "workout" && Array.isArray(start) && Array.isArray(end)) {
+      // Trainingszeiten: je Tag „Startminute-Endminute;…“ (über Mitternacht aufgeteilt)
+      done.add(base);
+      out.push(...workoutEntries(start, end));
+    } else if (base === "schlaf" && Array.isArray(start) && Array.isArray(end)) {
       done.add(base);
       out.push(...sleepEntries(start, end, lists.schlaf_wert));
     } else if (Array.isArray(start) && Array.isArray(end)) {
@@ -437,7 +468,7 @@ async function handle(request, env) {
     await env.DB.batch(entries.map(([k, v, d]) => env.DB.prepare("INSERT INTO inbox (created, date, key, value) VALUES (datetime('now'), ?, ?, ?)").bind(d, k, v)));
     const byKey = {};
     const hm = (h, wrap) => { let m = Math.round(Number(h) * 60); if (wrap) m = ((m % 1440) + 1440) % 1440; return `${Math.floor(m / 60)}:${String(m % 60).padStart(2, "0")}`; };
-    const show = (k, v) => (k === "schlaf" ? hm(v) : k === "schlafenszeit" || k === "aufwachzeit" || k.endsWith("_beginn") ? hm(v, true) : v);
+    const show = (k, v) => (k.endsWith("_serie") ? `${v.split(",").length} Messwerte` : k === "workouts" ? `${v.split(";").length} Training(s)` : k === "schlaf" ? hm(v) : k === "schlafenszeit" || k === "aufwachzeit" || k.endsWith("_beginn") ? hm(v, true) : v);
     for (const [k, v, d] of entries) (byKey[k] = byKey[k] || []).push(`${d.slice(8, 10)}.${d.slice(5, 7)}.: ${show(k, v)}`);
     return text(`Gespeichert – ${Object.entries(byKey).map(([k, xs]) => `${k}: ${xs.join(", ")}`).join(" | ")}. Mosaik übernimmt das beim nächsten Öffnen.`);
   }

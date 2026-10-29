@@ -149,8 +149,11 @@ const HEALTH_NAMES = {
   schlaf: ["Schlafdauer", "", "duration"], schlafenszeit: ["Einschlafzeit", "", "clock"], aufwachzeit: ["Aufwachzeit", "", "clock"], schritte: ["Schritte", ""], ruhepuls: ["Ruhepuls", "bpm"], puls: ["Puls", "bpm"],
   hrv: ["Herzfrequenzvariabilität", "ms"], kalorien: ["Aktivkalorien", "kcal"], aktivkalorien: ["Aktivkalorien", "kcal"],
   training: ["Trainingsminuten", "min"], stehen: ["Stehstunden", "h"], distanz: ["Distanz", "km"], gewicht: ["Gewicht", "kg"],
-  achtsamkeit: ["Achtsamkeitsminuten", "min"], stockwerke: ["Stockwerke", ""]
+  achtsamkeit: ["Achtsamkeitsminuten", "min"], stockwerke: ["Stockwerke", ""],
+  vo2max: ["VO₂max", "ml/kg/min"], atemfrequenz: ["Atemfrequenz", "/min"]
 };
+// Tagesverläufe für den Bereich Gesundheit (keine eigenen Felder): Puls, Schritte je Stunde, Trainingszeiten
+const HEALTH_SERIES = ["puls_serie", "schrittez_serie", "workouts"];
 // Für ein Kürzel aus dem Kurzbefehl das passende Health-Feld finden oder anlegen
 function ensureHealthQuestion(key, created) {
   let q = state.questions.find((x) => x.healthKey === key);
@@ -177,13 +180,14 @@ async function fetchInbox(manual) {
     let setCount = 0;
     const created = [];
     for (const it of items) {
+      if (HEALTH_SERIES.includes(it.key)) { if (storeHealthSeries(it.key, it.date, it.value)) setCount++; done.push(it.id); continue; }
       const q = ensureHealthQuestion(it.key, created);
       const r = applyPairs({ [it.key]: it.value }, it.date);
       if (r.set.length) setCount += r.set.length; else r.unknown.forEach((k) => unknown.add(k));
       done.push(it.id); // alles quittieren, auch ungültige Werte (sonst bleiben sie ewig liegen)
       if (q && !r.set.length && created.includes(q)) { /* leeres neues Feld behalten */ }
     }
-    if (created.length) save();
+    if (created.length || setCount) save();
     for (let i = 0; i < done.length; i += 500) await api("/inbox/ack", { ids: done.slice(i, i + 500) });
     if (items.length) { settings.shortcutDone = true; }
     settings.lastInbox = new Date().toISOString(); saveSettings();

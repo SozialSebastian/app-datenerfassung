@@ -132,6 +132,7 @@ function renderData() {
           <li>Bei den Datumsfeldern das Datumsformat auf <em>ISO 8601</em> stellen (Variable antippen → Datumsformat), dann ist die Zuordnung eindeutig.</li>
           <li>Kurzbefehle → <strong>Automation</strong> → <em>Tageszeit</em> (z. B. 10:00, täglich) → <em>Sofort ausführen</em>. Morgens ist das iPhone meist entsperrt, dann darf der Kurzbefehl Health lesen.</li>
         </ol>
+        <p class="small" style="margin:10px 0 4px"><strong>4. Für den Bereich Gesundheit</strong> (Ruhepuls, HRV, Pulsverlauf, Trainings …): Liste unter Gesundheit → Zahnrad oben rechts.</p>
         <p class="small muted">Einzelwerte gehen weiterhin, z. B. Zahl-Feld <code>ruhepuls</code> (heute) oder <code>kalorien_gestern</code> (Vortag). Werte liegen beim Dienst nur, bis Mosaik sie abholt.</p>
       </details>`
       : `<p class="muted small">Trag zuerst unten unter „Verbindung“ deinen Schlüssel ein.</p>`}
