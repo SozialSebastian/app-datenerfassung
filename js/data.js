@@ -18,7 +18,17 @@ async function shareOrDownload(blob, filename) {
 function buildWorkbook() {
   const qs = ordered().map((o) => o.q); // alle, auch ausgeblendete; Folgefragen hinter ihrer Ausgangsfrage
   const days = Array.from(new Set([...Object.keys(state.answers), ...Object.keys(state.places || {})])).sort();
-  const header = ["Datum", "Wochentag", ...qs.map((q) => q.text + (q.type === "number" && q.unit ? ` (${q.unit})` : "")), "Orte"];
+  // berechnete Gesundheitswerte (Bereich Gesundheit) – Spalte nur, wenn es mindestens einen Wert gibt
+  const HCOLS = [["rec", "Erholung (%)"], ["stress", "Stress (0–3)"], ["stressHigh", "Hoher Stress (min)"], ["strain", "Belastung (0–21)"], ["bio", "Mosaik-Alter (Jahre)"]];
+  const hvalsByDay = {};
+  if (typeof healthDay === "function" && days.length) {
+    for (let d = days[0]; d <= days[days.length - 1]; d = addDays(d, 1)) {
+      const h = healthDay(d), b = bioAt(d);
+      hvalsByDay[d] = { ...h, bio: b === null ? null : Math.round(b * 10) / 10 };
+    }
+  }
+  const hcols = HCOLS.filter(([k]) => Object.values(hvalsByDay).some((h) => typeof h[k] === "number"));
+  const header = ["Datum", "Wochentag", ...qs.map((q) => q.text + (q.type === "number" && q.unit ? ` (${q.unit})` : "")), ...hcols.map(([, l]) => l), "Orte"];
   const rows = [header];
   // Jeder Kalendertag vom ersten bis zum letzten Eintrag – unbeantwortete Tage bleiben leer
   if (days.length) {
@@ -29,6 +39,7 @@ function buildWorkbook() {
         (Date.UTC(dt.getFullYear(), dt.getMonth(), dt.getDate()) - Date.UTC(1899, 11, 30)) / 864e5, // Excel-Datumszahl
         WD[dt.getDay()],
         ...qs.map((q) => (isAnswered(a[q.id]) ? (Array.isArray(a[q.id]) ? a[q.id].join(", ") : a[q.id]) : null)),
+        ...hcols.map(([k]) => (hvalsByDay[d] && typeof hvalsByDay[d][k] === "number" ? hvalsByDay[d][k] : null)),
         placesOn(d).length ? placesOn(d).join(" → ") : null
       ]);
     }
@@ -45,7 +56,7 @@ function buildWorkbook() {
       else { cell.v = (((cell.v % 24) + 24) % 24) / 24; cell.z = "hh:mm"; }
     });
   }
-  ws["!cols"] = [{ wch: 12 }, { wch: 11 }, ...qs.map((q) => ({ wch: Math.min(Math.max(q.text.length + 2, 10), 40) })), { wch: 28 }];
+  ws["!cols"] = [{ wch: 12 }, { wch: 11 }, ...qs.map((q) => ({ wch: Math.min(Math.max(q.text.length + 2, 10), 40) })), ...hcols.map(([, l]) => ({ wch: l.length + 2 })), { wch: 28 }];
   ws["!freeze"] = { xSplit: 1, ySplit: 1 };
   ws["!autofilter"] = { ref: XLSX.utils.encode_range({ s: { r: 0, c: 0 }, e: { r: rows.length - 1, c: header.length - 1 } }) };
 
@@ -57,6 +68,8 @@ function buildWorkbook() {
       q.multi ? "ja" : "", condText(q), q.unit || "", q.healthKey || "", q.archived ? "ausgeblendet" : "aktiv", answerCount(q.id)
     ]);
   }
+  const HDESC = { rec: "HRV, Ruhepuls und Schlaf ggü. dem eigenen 30-Tage-Normal", stress: "Puls in 15-Min.-Fenstern ggü. 14-Tage-Normal (ohne Schlaf/Bewegung)", stressHigh: "Minuten mit Stress ≥ 2", strain: "Edwards-TRIMP aus dem Pulsverlauf, 0–21", bio: "aus Schritten, Training, Schlaf, Ruhepuls, VO₂max (180 Tage)" };
+  for (const [k, l] of hcols) qrows.push([l, "Gesundheit", "berechnet", HDESC[k], "", "", "", "", "", Object.values(hvalsByDay).filter((h) => typeof h[k] === "number").length]);
   const ws2 = XLSX.utils.aoa_to_sheet(qrows);
   ws2["!cols"] = [{ wch: 36 }, { wch: 14 }, { wch: 9 }, { wch: 30 }, { wch: 15 }, { wch: 36 }, { wch: 10 }, { wch: 13 }, { wch: 12 }, { wch: 16 }];
 

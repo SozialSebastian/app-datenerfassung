@@ -147,6 +147,34 @@ function reportHtml(mon) {
       ${gev.sort((a, b) => STATUS_ORDER[a.status] - STATUS_ORDER[b.status]).map((e) => `<div class="wrg"><span>${label(e.q)} <span class="muted small">${goalText(e.g, e.q)} ${PER_WORD[gp(e.g)]}</span></span><b class="${e.status === "done" ? "g" : e.status === "fail" ? "r" : ""}">${e.status === "done" ? "✓ " : e.status === "fail" ? "✗ " : ""}${e.cur}</b></div>`).join("")}
     </section>` : "";
 
+  // Gesundheit: berechnete Werte (Erholung, Stress, Belastung) je Tag, Mosaik-Alter zum Sonntag
+  const healthHtml = (() => {
+    if (typeof healthDay !== "function") return "";
+    const t = todayIso();
+    const hw = (m) => week(m).map((d) => (d <= t ? healthDay(d) : {}));
+    const cur = hw(mon), prev = hw(prevMon);
+    const col = (xs, k) => xs.map((x) => (typeof x[k] === "number" ? x[k] : null));
+    const avg = (xs) => { const n = xs.filter((v) => v !== null); return n.length ? mean(n) : null; };
+    const out = [];
+    const row = (k, name, dir, f, df) => {
+      const vs = col(cur, k), a = avg(vs), b = avg(col(prev, k));
+      if (a === null) return;
+      const d = b === null ? null : a - b;
+      out.push(`<div class="wrr"><span class="wq">${name}</span><span class="wv">Ø ${f(a)} ${d === null ? "" : delta(Math.abs(d) < 1e-9 ? 0 : d, dir, ` ${df(Math.abs(d))}`)}</span>${weekSpark(vs, dir)}</div>`);
+    };
+    row("rec", "Erholung", "high", (v) => `${Math.round(v)} %`, (v) => `${Math.round(v)} %-Pkt.`);
+    row("stress", "Stress <span class=\"muted small\">0–3</span>", "low", (v) => `${fmtNum(Math.round(v * 10) / 10)} · ${stressLabel(v)}`, (v) => fmtNum(Math.round(v * 10) / 10));
+    const hi = col(cur, "stressHigh").filter((v) => v !== null);
+    if (hi.length) { const m = hi.reduce((x, y) => x + y, 0); out.push(`<div class="wrr"><span class="wq">Hoher Stress</span><span class="wv">${m >= 60 ? fmtDur(m / 60) : m + " min"} <span class="muted small">in der Woche</span></span></div>`); }
+    row("strain", "Belastung <span class=\"muted small\">0–21</span>", null, (v) => `${fmtNum(Math.round(v * 10) / 10)} · ${strainLabel(v)}`, (v) => fmtNum(Math.round(v * 10) / 10));
+    const ba = bioAt(sun), bb = bioAt(addDays(sun, -7));
+    if (ba !== null) {
+      const d = bb === null ? null : ba - bb;
+      out.push(`<div class="wrr"><span class="wq">Mosaik-Alter <span class="muted small">am So</span></span><span class="wv">${fmtNum(Math.round(ba * 10) / 10)} J. ${d === null ? "" : delta(Math.abs(d) < 0.05 ? 0 : d, "low", ` ${fmtNum(Math.round(Math.abs(d) * 10) / 10)} J.`)}</span></div>`);
+    }
+    return out.length ? `<section class="sq"><h3 class="rh">Gesundheit</h3>${out.join("")}<p class="small muted" style="margin:10px 0 0">Berechnet wie im Bereich Gesundheit; ▲/▼ im Vergleich zur Vorwoche.</p></section>` : "";
+  })();
+
   const places = weekPlaces(mon);
   return `
     <section class="sq rtop">
@@ -157,6 +185,7 @@ function reportHtml(mon) {
     </section>
     ${hl.length ? `<section class="sq"><h3 class="rh">Highlights</h3><div class="wrhl">${hl.map((x) => `<div>${x}</div>`).join("")}</div></section>` : ""}
     ${rows ? `<section class="sq"><h3 class="rh">Tag für Tag</h3>${rows}<p class="small muted" style="margin:10px 0 0">▲/▼ im Vergleich zur Vorwoche.</p></section>` : `<p class="muted">In dieser Woche gibt es noch keine Antworten.</p>`}
+    ${healthHtml}
     ${goalsHtml}`;
 }
 // Mini-Kurve Mo–So (Lücken bei fehlenden Tagen), Fläche in der App-Farbe

@@ -427,6 +427,17 @@ test("Gesundheit: Mosaik-Alter, Erholung, Stress (rückwirkend), Belastung, Erkl
   // Kurzbefehl: Pulsreihe aus dem Eingang wird gespeichert
   await page.evaluate(() => storeHealthSeries("puls_serie", todayIso(), "600:70,605:72"));
   assert.equal(await page.evaluate(() => hrSeries(todayIso()).length >= 2), true);
+  // Wochenbericht und Excel enthalten die berechneten Gesundheitswerte
+  const rep = await page.evaluate(() => reportHtml(mondayOf(addDays(todayIso(), -7))));
+  assert.match(rep, /Gesundheit[\s\S]*Erholung[\s\S]*Mosaik-Alter/);
+  await page.evaluate(() => openReport(mondayOf(addDays(todayIso(), -7))));
+  await page.evaluate(() => { const s = [...document.querySelectorAll("#sheet .rh")].find((h) => h.textContent === "Gesundheit"); s.scrollIntoView(); });
+  await page.waitForTimeout(300);
+  await page.screenshot({ path: new URL("./screens/report-health.png", import.meta.url).pathname });
+  await page.evaluate(() => $("#sheet").close());
+  const xl = await page.evaluate(() => { const ws = buildWorkbook().Sheets.Antworten; const r = XLSX.utils.decode_range(ws["!ref"]); const h = []; for (let c = 0; c <= r.e.c; c++) h.push(ws[XLSX.utils.encode_cell({ r: 0, c })].v); const ci = h.indexOf("Belastung (0–21)"); const vals = []; for (let rr = 1; rr <= r.e.r; rr++) { const c = ws[XLSX.utils.encode_cell({ r: rr, c: ci })]; if (c) vals.push(c.v); } return { h, n: vals.length }; });
+  assert.ok(["Erholung (%)", "Stress (0–3)", "Belastung (0–21)", "Mosaik-Alter (Jahre)"].every((x) => xl.h.includes(x)), xl.h.join("|"));
+  assert.ok(xl.n >= 9, "Belastung für die Tage mit Pulsverlauf");
   assert.deepEqual(errors, []);
   await ctx.close();
 });

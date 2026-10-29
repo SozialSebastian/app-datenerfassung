@@ -199,6 +199,26 @@ function strainDay(d) {
 }
 const strainLabel = (s) => (s < 7 ? "leicht" : s < 11 ? "moderat" : s < 15 ? "hoch" : s < 18 ? "sehr hoch" : "maximal");
 
+/* ================= Tageswerte für Wochenbericht und Excel =================
+   Aus den gespeicherten Daten nachgerechnet; Stress und Belastung nur, solange der Pulsverlauf da ist (60 Tage). */
+// Mosaik-Alter zum Stichtag (Gewohnheiten der 180 Tage davor)
+function bioAt(bis) {
+  const p = PROFILE();
+  if (!p.born) return null;
+  const parts = bioParts(180, bis);
+  if (parts.length < 2) return null;
+  return Number(bis.slice(0, 4)) - p.born + clamp(parts.reduce((t, x) => t + x.years, 0), -12, 15);
+}
+function healthDay(d) {
+  const r = recoveryDay(d), S = stressDay(d), B = strainDay(d);
+  return {
+    rec: r.score ?? null,
+    stress: S.avg !== undefined ? Math.round(S.avg * 100) / 100 : null,
+    stressHigh: S.avg !== undefined ? S.high : null,
+    strain: B ? Math.round(B.strain * 10) / 10 : null
+  };
+}
+
 /* ================= Erholung (wie Whoop Recovery / Oura Readiness, 0–100 %) =================
    HRV (ln, 55 %), Ruhepuls (25 %) und Schlaf im Verhältnis zum Bedarf (20 %), jeweils als Abweichung vom
    eigenen 30-Tage-Normal; Summe s → Erholung = 100 / (1 + e^(−1,2·(s + 0,25))). */
