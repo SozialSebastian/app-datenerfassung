@@ -114,7 +114,7 @@ function renderData() {
         <p class="small" style="margin:4px 0">Beim Schlaf zählt nur die tatsächlich geschlafene Zeit: Wachphasen in der Nacht werden abgezogen, doppelte Messungen (Watch und iPhone) nur einmal gezählt, kurze Nickerchen ignoriert. Dazu kommen Einschlaf- und Aufwachzeit.</p>
         <p class="small" style="margin:10px 0 4px"><strong>1. Schritte</strong></p>
         <ol class="steps small">
-          <li><strong>Health-Messungen suchen</strong>: Typ <em>Schritte</em>, Startdatum <em>in den letzten 7 Tagen</em>, Gruppieren nach <em>Tag</em>.</li>
+          <li><strong>Health-Messungen suchen</strong>: Typ <em>Schritte</em>, Startdatum <em>in den letzten 7 Tagen</em>, Gruppieren nach <em>Stunde</em>. Mosaik bildet daraus die Tagessumme und nutzt den Stundenverlauf für den Bereich Gesundheit (nach <em>Tag</em> gruppiert geht auch).</li>
         </ol>
         <p class="small" style="margin:10px 0 4px"><strong>2. Schlaf</strong></p>
         <ol class="steps small">

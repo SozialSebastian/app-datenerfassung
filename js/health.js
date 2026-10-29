@@ -469,7 +469,7 @@ function openHealthSetup() {
   dlg.innerHTML = `<div class="sheet-inner"><div class="sheet-head"><span></span><h2>Daten einrichten</h2><button type="button" class="linkbtn" id="hsdone">Fertig</button></div>
     <p class="small">Ergänze deinen Kurzbefehl (Einstellungen → Schnittstelle Apple Health) um diese Felder. Jeweils <strong>Health-Messungen suchen</strong> mit dem Typ, dann im Schritt „Inhalte von URL abrufen“ zwei Array-Felder: Wert und Startdatum (ISO 8601).</p>
     <ul class="hsetup">
-      ${row(have("schritte"), "Schritte", "schritte, schritte_datum", "schon eingerichtet – Gruppieren nach Tag")}
+      ${row(have("schritte"), "Schritte", "schritte, schritte_datum", "schon eingerichtet – Gruppieren nach Stunde (oder Tag)")}
       ${row(have("schlaf"), "Schlaf", "schlaf_start, schlaf_ende, schlaf_wert", "schon eingerichtet")}
       ${row(have("ruhepuls"), "Ruhepuls", "ruhepuls, ruhepuls_datum", "Typ Ruheherzfrequenz · letzte 7 Tage · Gruppieren nach Tag")}
       ${row(have("hrv"), "HRV", "hrv, hrv_datum", "Typ Herzfrequenzvariabilität · letzte 7 Tage · Gruppieren nach Tag")}
@@ -477,7 +477,7 @@ function openHealthSetup() {
       ${row(have("vo2max"), "VO₂max", "vo2max, vo2max_datum", "Typ Cardiofitness · letzte 30 Tage")}
       ${row(have("atemfrequenz"), "Atemfrequenz (optional)", "atemfrequenz, atemfrequenz_datum", "Typ Atemfrequenz · letzte 7 Tage · Gruppieren nach Tag")}
       ${row(series("hr") > 0, "Pulsverlauf", "puls, puls_datum", "Typ Herzfrequenz · letzte 2 Tage · <em>nicht</em> gruppieren, Limit aus – für Stress und Belastung")}
-      ${row(series("st") > 0, "Schritte je Stunde", "schrittez, schrittez_datum", "Typ Schritte · letzte 2 Tage · Gruppieren nach Stunde – erkennt Bewegung")}
+      ${row(series("st") > 0, "Schritte je Stunde", "schritte, schritte_datum", "bei den Schritten Gruppieren nach <em>Stunde</em> statt Tag – Tagessumme rechnet Mosaik selbst, der Verlauf erkennt Bewegung")}
       ${row(series("wo") > 0, "Trainings", "workout_start, workout_ende", "Typ Trainings · letzte 2 Tage · Startdatum und Enddatum")}
     </ul>
     <p class="muted small">Der Kurzbefehl läuft wie bisher täglich (z. B. 10 Uhr). Mosaik holt die Werte beim Öffnen ab. Pulsverläufe werden 60 Tage behalten, alles bleibt auf dem iPhone und in deiner Sicherung.</p>

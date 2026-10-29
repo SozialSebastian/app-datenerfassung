@@ -286,6 +286,30 @@ function seriesEntries(base, vals, dates) {
   }
   return Object.entries(byDay).map(([d, ms]) => [base + "_serie", Object.entries(ms).sort((a, b) => a[0] - b[0]).slice(0, 1440).map(([m, v]) => `${m}:${v}`).join(","), d]);
 }
+// Mehr als ein Wert an einem Tag → Kurzbefehl gruppiert nach Stunde (nicht nach Tag)
+function stepsHourly(vals, dates) {
+  const seen = new Set();
+  for (let i = 0; i < Math.min(vals.length, dates.length); i++) {
+    const w = parseWhen(dates[i]);
+    if (!w) continue;
+    if (seen.has(w.local)) return true;
+    seen.add(w.local);
+  }
+  return false;
+}
+// Tagessumme = Σ Stundenwerte. Der älteste Tag ist meist nur angeschnitten (Suche „letzte 7 Tage“ beginnt mitten am Tag)
+// und wird ausgelassen – er kam beim Lauf am Vortag vollständig an.
+function hourlyStepEntries(vals, dates) {
+  const sum = {};
+  for (let i = 0; i < Math.min(vals.length, dates.length, 20000); i++) {
+    const n = num(vals[i]), w = parseWhen(dates[i]);
+    if (Number.isNaN(n) || !w) continue;
+    sum[w.local] = (sum[w.local] || 0) + n;
+  }
+  const days = Object.keys(sum).sort();
+  if (days.length > 1) days.shift();
+  return days.map((d) => ["schritte", String(Math.round(sum[d])), d]).concat(seriesEntries("schrittez", vals, dates));
+}
 function workoutEntries(start, end) {
   const byDay = {};
   for (let i = 0; i < Math.min(start.length, end.length, 2000); i++) {
@@ -318,6 +342,10 @@ export function listEntries(lists, today) {
       // Tagesverlauf (Herzfrequenz bzw. Schritte je Stunde): je Tag eine Reihe „Minute:Wert,…“ für den Bereich Gesundheit
       done.add(base);
       out.push(...seriesEntries(base, vals, dates));
+    } else if (base === "schritte" && Array.isArray(vals) && Array.isArray(dates) && stepsHourly(vals, dates)) {
+      // Schritte nach Stunde gruppiert: Tagessumme selbst bilden und zugleich den Stundenverlauf liefern
+      done.add(base);
+      out.push(...hourlyStepEntries(vals, dates));
     } else if (base === "workout" && Array.isArray(start) && Array.isArray(end)) {
       // Trainingszeiten: je Tag „Startminute-Endminute;…“ (über Mitternacht aufgeteilt)
       done.add(base);

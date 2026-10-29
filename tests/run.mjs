@@ -451,6 +451,23 @@ test("Schlaf aus Health: Wachphasen abgezogen, doppelte Messungen einmal, Einsch
   assert.equal(Math.round(Number(r2.find((x) => x[0] === "schlaf")[1]) * 60), 425);
 });
 
+test("Schritte nach Stunde: Tagessumme und Stundenverlauf, angeschnittener erster Tag fällt weg", async () => {
+  const { listEntries } = await import("../worker/src/index.js");
+  const t = (x) => `2026-10-${x}:00+02:00`;
+  const r = listEntries({
+    schritte: ["300", "500", "1000", "2000", "40", "700"],
+    schritte_datum: [t("22T21:00"), t("22T22:00"), t("23T08:00"), t("23T17:00"), t("24T01:00"), t("24T09:00")]
+  }, "2026-10-24");
+  const steps = r.filter((x) => x[0] === "schritte").map((x) => [x[2], Number(x[1])]);
+  assert.deepEqual(steps, [["2026-10-23", 3000], ["2026-10-24", 740]]);
+  const ser = Object.fromEntries(r.filter((x) => x[0] === "schrittez_serie").map((x) => [x[2], x[1]]));
+  assert.equal(ser["2026-10-23"], "480:1000,1020:2000");
+  assert.ok(ser["2026-10-22"]);
+  // nach Tag gruppiert (ein Wert je Tag) bleibt wie bisher
+  const r2 = listEntries({ schritte: ["8000", "9000"], schritte_datum: ["2026-10-22", "2026-10-23"] }, "2026-10-24");
+  assert.deepEqual(r2.map((x) => [x[0], x[1], x[2]]), [["schritte", "8000", "2026-10-22"], ["schritte", "9000", "2026-10-23"]]);
+});
+
 test("Excel enthält alle Fragen, Datumsformat, Dauer und Orte", async () => {
   const data = yearData();
   data.places = { [daysAgo(1)]: [{ c: "Wedel", t: "08:00" }, { c: "Hamburg", t: "12:00" }] };
