@@ -280,7 +280,7 @@ function seriesEntries(base, vals, dates) {
   const byDay = {};
   for (let i = 0; i < Math.min(vals.length, dates.length, 20000); i++) {
     const n = num(vals[i]), w = parseWhen(dates[i]);
-    if (Number.isNaN(n) || !w) continue;
+    if (Number.isNaN(n) || n <= 0 || !w) continue;
     const m = Math.min(1439, Math.max(0, Math.round(w.clock * 60)));
     (byDay[w.local] ||= {})[m] = Math.round(n);
   }

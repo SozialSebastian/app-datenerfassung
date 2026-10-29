@@ -451,6 +451,21 @@ test("Schlaf aus Health: Wachphasen abgezogen, doppelte Messungen einmal, Einsch
   assert.equal(Math.round(Number(r2.find((x) => x[0] === "schlaf")[1]) * 60), 425);
 });
 
+test("Gesundheit: Nullen (nicht gemessen) bei Ruhepuls/HRV werden entfernt, keine NaN-Anzeige", async () => {
+  const H = (id, k) => ({ id, text: k, type: "number", healthKey: k, source: "health", format: null, options: [] });
+  const d0 = new Date(); const ds = (i) => { const d = new Date(d0); d.setDate(d.getDate() - i); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`; };
+  const answers = { [ds(0)]: { r: 42, h: 73, sl: 8.5 } };
+  for (let i = 1; i < 8; i++) answers[ds(i)] = { r: 0, h: 0 };
+  const data = { version: 1, lastBackup: null, answers, profile: { born: 1996, sex: "m" }, questions: [H("r", "ruhepuls"), H("h", "hrv"), { ...H("sl", "schlaf"), format: "duration" }] };
+  const { page, ctx, errors } = await open({ data });
+  await page.click('[data-tab="health"]');
+  const txt = await page.locator("#view").innerText();
+  assert.doesNotMatch(txt, /NaN|Normal 0/);
+  assert.equal(await page.evaluate(() => Object.values(state.answers).filter((a) => a.r === 0 || a.h === 0).length), 0);
+  assert.deepEqual(errors, []);
+  await ctx.close();
+});
+
 test("Schritte nach Stunde: Tagessumme und Stundenverlauf, angeschnittener erster Tag fällt weg", async () => {
   const { listEntries } = await import("../worker/src/index.js");
   const t = (x) => `2026-10-${x}:00+02:00`;

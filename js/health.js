@@ -43,7 +43,7 @@ const workouts = (d) => String(HD().wo[d] || "").split(";").map((x) => x.split("
 
 // Tageswert eines Health-Kürzels (z. B. „ruhepuls“)
 const hq = (key) => state.questions.find((q) => q.healthKey === key);
-function hv(key, d) { const q = hq(key); const v = q ? (state.answers[d] || {})[q.id] : undefined; return typeof v === "number" ? v : null; }
+function hv(key, d) { const q = hq(key); const v = q ? (state.answers[d] || {})[q.id] : undefined; return typeof v === "number" && !(v <= 0 && HEALTH_POSITIVE.has(key)) ? v : null; }
 // Werte der letzten n Tage bis einschließlich „bis“
 function hvals(key, n, bis = todayIso()) { const out = []; for (let i = 0; i < n; i++) { const v = hv(key, addDays(bis, -i)); if (v !== null) out.push(v); } return out; }
 const median = (a) => { const s = [...a].sort((x, y) => x - y); const m = s.length >> 1; return s.length ? (s.length % 2 ? s[m] : (s[m - 1] + s[m]) / 2) : null; };
@@ -256,6 +256,7 @@ const hcard = (k, title, body, cls = "") => `<section class="panel hcard ${cls}"
 const hmiss = (txt) => `<p class="muted small hmiss">${txt} <button type="button" class="linkbtn" data-hsetup>Kurzbefehl einrichten</button></p>`;
 
 function renderHealth() {
+  cleanHealthZeros();
   const view = $("#view");
   const p = PROFILE();
   const t = todayIso(), y = addDays(t, -1);

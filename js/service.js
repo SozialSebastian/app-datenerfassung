@@ -154,6 +154,16 @@ const HEALTH_NAMES = {
 };
 // Tagesverläufe für den Bereich Gesundheit (keine eigenen Felder): Puls, Schritte je Stunde, Trainingszeiten
 const HEALTH_SERIES = ["puls_serie", "schrittez_serie", "workouts"];
+// Werte, die nie 0 sein können: 0 heißt „an dem Tag nicht gemessen“ (Kurzbefehl liefert beim Gruppieren leere Tage als 0)
+const HEALTH_POSITIVE = new Set(["ruhepuls", "hrv", "vo2max", "atemfrequenz", "gewicht"]);
+// bereits gespeicherte Nullen dieser Felder entfernen
+function cleanHealthZeros() {
+  const ids = state.questions.filter((q) => HEALTH_POSITIVE.has(q.healthKey)).map((q) => q.id);
+  let n = 0;
+  for (const a of Object.values(state.answers)) for (const id of ids) if (typeof a[id] === "number" && a[id] <= 0) { delete a[id]; n++; }
+  if (n) save();
+  return n;
+}
 // Für ein Kürzel aus dem Kurzbefehl das passende Health-Feld finden oder anlegen
 function ensureHealthQuestion(key, created) {
   let q = state.questions.find((x) => x.healthKey === key);
@@ -180,6 +190,7 @@ async function fetchInbox(manual) {
     let setCount = 0;
     const created = [];
     for (const it of items) {
+      if (HEALTH_POSITIVE.has(it.key) && !(parseFloat(String(it.value).replace(",", ".")) > 0)) { done.push(it.id); continue; }
       if (HEALTH_SERIES.includes(it.key)) { if (storeHealthSeries(it.key, it.date, it.value)) setCount++; done.push(it.id); continue; }
       const q = ensureHealthQuestion(it.key, created);
       const r = applyPairs({ [it.key]: it.value }, it.date);
@@ -188,6 +199,7 @@ async function fetchInbox(manual) {
       if (q && !r.set.length && created.includes(q)) { /* leeres neues Feld behalten */ }
     }
     if (created.length || setCount) save();
+    cleanHealthZeros();
     for (let i = 0; i < done.length; i += 500) await api("/inbox/ack", { ids: done.slice(i, i + 500) });
     if (items.length) { settings.shortcutDone = true; }
     settings.lastInbox = new Date().toISOString(); saveSettings();
