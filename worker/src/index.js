@@ -310,6 +310,30 @@ function hourlyStepEntries(vals, dates) {
   if (days.length > 1) days.shift();
   return days.map((d) => ["schritte", String(Math.round(sum[d])), d]).concat(seriesEntries("schrittez", vals, dates));
 }
+// Trainingsminuten als Einzelmessungen (Startzeit + Dauer in Minuten):
+//  Tagessumme = Σ Minuten (ältester, angeschnittener Tag fällt weg) und
+//  Abschnitte: Messungen mit höchstens 10 Min. Lücke werden zu einem Abschnitt „Start-Ende“ verbunden → wie Trainings
+function trainingEntries(vals, dates) {
+  const sum = {}, segs = {};
+  const items = [];
+  for (let i = 0; i < Math.min(vals.length, dates.length, 20000); i++) {
+    const n = num(vals[i]), w = parseWhen(dates[i]);
+    if (Number.isNaN(n) || n <= 0 || !w) continue;
+    sum[w.local] = (sum[w.local] || 0) + n;
+    const s = Math.round(w.clock * 60);
+    items.push([w.local, s, Math.min(1440, s + Math.max(1, Math.round(n)))]);
+  }
+  items.sort((a, b) => (a[0] < b[0] ? -1 : a[0] > b[0] ? 1 : a[1] - b[1]));
+  for (const [d, s, e] of items) {
+    const xs = (segs[d] ||= []), last = xs[xs.length - 1];
+    if (last && s <= last[1] + 10) last[1] = Math.max(last[1], e);
+    else xs.push([s, e]);
+  }
+  const days = Object.keys(sum).sort();
+  if (days.length > 1) days.shift();
+  return days.map((d) => ["training", String(Math.round(sum[d])), d])
+    .concat(Object.entries(segs).map(([d, xs]) => ["workouts", xs.map(([s, e]) => `${s}-${e}`).join(";"), d]));
+}
 function workoutEntries(start, end) {
   const byDay = {};
   for (let i = 0; i < Math.min(start.length, end.length, 2000); i++) {
@@ -346,6 +370,10 @@ export function listEntries(lists, today) {
       // Schritte nach Stunde gruppiert: Tagessumme selbst bilden und zugleich den Stundenverlauf liefern
       done.add(base);
       out.push(...hourlyStepEntries(vals, dates));
+    } else if (base === "training" && Array.isArray(vals) && Array.isArray(dates) && stepsHourly(vals, dates)) {
+      // Trainingsminuten ungruppiert: Tagessumme selbst bilden und daraus die aktiven Abschnitte (Uhrzeiten) ableiten
+      done.add(base);
+      out.push(...trainingEntries(vals, dates));
     } else if (base === "workout" && Array.isArray(start) && Array.isArray(end)) {
       // Trainingszeiten: je Tag „Startminute-Endminute;…“ (über Mitternacht aufgeteilt)
       done.add(base);

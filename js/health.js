@@ -473,12 +473,12 @@ function openHealthSetup() {
       ${row(have("schlaf"), "Schlaf", "schlaf_start, schlaf_ende, schlaf_wert", "schon eingerichtet")}
       ${row(have("ruhepuls"), "Ruhepuls", "ruhepuls, ruhepuls_datum", "Typ Ruheherzfrequenz · letzte 7 Tage · Gruppieren nach Tag")}
       ${row(have("hrv"), "HRV", "hrv, hrv_datum", "Typ Herzfrequenzvariabilität · letzte 7 Tage · Gruppieren nach Tag")}
-      ${row(have("training"), "Trainingsminuten", "training, training_datum", "Typ Trainingsminuten · letzte 7 Tage · Gruppieren nach Tag")}
+      ${row(have("training"), "Trainingsminuten", "training, training_datum", "Typ Trainingsminuten · letzte 7 Tage · <em>nicht</em> gruppieren, Limit aus – Tagessumme und Uhrzeiten rechnet Mosaik selbst (nach Tag gruppiert geht auch)")}
       ${row(have("vo2max"), "VO₂max", "vo2max, vo2max_datum", "Typ Cardiofitness · letzte 30 Tage")}
       ${row(have("atemfrequenz"), "Atemfrequenz (optional)", "atemfrequenz, atemfrequenz_datum", "Typ Atemfrequenz · letzte 7 Tage · Gruppieren nach Tag")}
       ${row(series("hr") > 0, "Pulsverlauf", "puls, puls_datum", "Typ Herzfrequenz · letzte 2 Tage · <em>nicht</em> gruppieren, Limit aus – für Stress und Belastung")}
       ${row(series("st") > 0, "Schritte je Stunde", "schritte, schritte_datum", "bei den Schritten Gruppieren nach <em>Stunde</em> statt Tag – Tagessumme rechnet Mosaik selbst, der Verlauf erkennt Bewegung")}
-      ${row(series("wo") > 0, "Trainings", "workout_start, workout_ende", "Typ Trainings · letzte 2 Tage · Startdatum und Enddatum")}
+      ${row(series("wo") > 0, "Trainingszeiten", "aus training oder workout_start, workout_ende", "kommt automatisch, wenn die Trainingsminuten ungruppiert sind – sonst Typ Trainings · letzte 2 Tage · Start- und Enddatum")}
     </ul>
     <p class="muted small">Der Kurzbefehl läuft wie bisher täglich (z. B. 10 Uhr). Mosaik holt die Werte beim Öffnen ab. Pulsverläufe werden 60 Tage behalten, alles bleibt auf dem iPhone und in deiner Sicherung.</p>
   </div>`;

@@ -468,6 +468,20 @@ test("Schritte nach Stunde: Tagessumme und Stundenverlauf, angeschnittener erste
   assert.deepEqual(r2.map((x) => [x[0], x[1], x[2]]), [["schritte", "8000", "2026-10-22"], ["schritte", "9000", "2026-10-23"]]);
 });
 
+test("Trainingsminuten ungruppiert: Tagessumme und Abschnitte mit Uhrzeit", async () => {
+  const { listEntries } = await import("../worker/src/index.js");
+  const t = (x) => `2026-10-${x}:00+02:00`;
+  const r = listEntries({
+    training: ["5", "1", "1", "1", "1", "2", "1"],
+    training_datum: [t("22T20:00"), t("23T18:10"), t("23T18:11"), t("23T18:20"), t("23T19:30"), t("23T19:31"), t("24T07:00")]
+  }, "2026-10-24");
+  const tr = r.filter((x) => x[0] === "training").map((x) => [x[2], Number(x[1])]);
+  assert.deepEqual(tr, [["2026-10-23", 6], ["2026-10-24", 1]]);
+  const wo = Object.fromEntries(r.filter((x) => x[0] === "workouts").map((x) => [x[2], x[1]]));
+  // 18:10–18:21 (Lücke 18:12→18:20 ≤ 10 Min.), dann 19:30–19:33
+  assert.equal(wo["2026-10-23"], "1090-1101;1170-1173");
+});
+
 test("Excel enthält alle Fragen, Datumsformat, Dauer und Orte", async () => {
   const data = yearData();
   data.places = { [daysAgo(1)]: [{ c: "Wedel", t: "08:00" }, { c: "Hamburg", t: "12:00" }] };
