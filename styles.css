@@ -107,6 +107,8 @@ p { margin: 0 0 12px; }
   padding: 9px 16px; min-height: 44px; font-weight: 600;
 }
 .chip[aria-pressed="true"] { background: var(--hold); border-color: var(--hold); color: var(--hold-ink); }
+.chip.none { border-style: dashed; color: var(--ink-2); }
+.chip.none[aria-pressed="true"] { border-style: solid; color: var(--hold-ink); }
 
 .scale { display: flex; gap: 6px; }
 .scale .chip { flex: 1; padding: 9px 0; min-width: 0; border-radius: var(--r-sm); }

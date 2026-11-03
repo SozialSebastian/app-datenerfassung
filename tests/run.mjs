@@ -477,6 +477,36 @@ test("Gesundheit: Nullen (nicht gemessen) bei Ruhepuls/HRV werden entfernt, kein
   await ctx.close();
 });
 
+test("„Nichts davon“: zählt als beantwortet (Abfrage, Wochenbericht, Excel)", async () => {
+  const q = { id: "akt", text: "Welche Aktivitäten noch?", type: "choice", options: ["Yoga", "Laufen"], multi: true, noneOk: true, archived: false, cond: null };
+  const { page, ctx, errors } = await open({ data: { version: 1, lastBackup: null, answers: {}, questions: [q] } });
+  const r = await page.evaluate(() => {
+    const d = todayIso();
+    const sec = document.createElement("div"); sec.innerHTML = answerBlock(qById("akt"), d); document.body.append(sec);
+    wireBlock(sec, qById("akt"), d, () => {});
+    sec.querySelector("[data-none]").click();
+    const a1 = state.answers[d].akt, open1 = askQuestions(d).filter((x) => !isAnswered((state.answers[d] || {})[x.id])).length;
+    // Option wählen ersetzt „Nichts davon“, alles abwählen = wieder offen
+    sec.innerHTML = answerBlock(qById("akt"), d); wireBlock(sec, qById("akt"), d, () => {});
+    sec.querySelector('[data-val="Yoga"]').click(); const a2 = state.answers[d].akt;
+    sec.innerHTML = answerBlock(qById("akt"), d); wireBlock(sec, qById("akt"), d, () => {});
+    sec.querySelector('[data-val="Yoga"]').click(); const a3 = (state.answers[d] || {}).akt;
+    setAnswer(d, "akt", []);
+    const ws = buildWorkbook().Sheets.Antworten;
+    return { a1, open1, a2, a3, cell: ws.C2.v, fmt: fmtQ(qById("akt"), []) };
+  });
+  assert.deepEqual(r.a1, []);
+  assert.equal(r.open1, 0);
+  assert.deepEqual(r.a2, ["Yoga"]);
+  assert.equal(r.a3, undefined);
+  assert.equal(r.cell, "Nichts davon");
+  assert.equal(r.fmt, "Nichts davon");
+  // ohne die Option wird eine leere Auswahl nicht gespeichert
+  assert.equal(await page.evaluate(() => { qById("akt").noneOk = false; setAnswer(todayIso(), "akt", []); return (state.answers[todayIso()] || {}).akt; }), undefined);
+  assert.deepEqual(errors, []);
+  await ctx.close();
+});
+
 test("Schritte nach Stunde: Tagessumme und Stundenverlauf, angeschnittener erster Tag fällt weg", async () => {
   const { listEntries } = await import("../worker/src/index.js");
   const t = (x) => `2026-10-${x}:00+02:00`;

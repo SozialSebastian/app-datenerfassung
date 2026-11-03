@@ -61,7 +61,9 @@ const parseNum = (v) => {
 };
 const fmtNum = (n) => (n === null || n === undefined ? "" : String(n).replace(".", ","));
 
-const isAnswered = (v) => v !== undefined && v !== null && v !== "" && !(Array.isArray(v) && v.length === 0);
+// leere Liste [] = bewusst „Nichts davon“ (nur bei Fragen mit dieser Option gespeichert) – zählt als beantwortet
+const isAnswered = (v) => v !== undefined && v !== null && v !== "";
+const isNone = (v) => Array.isArray(v) && v.length === 0;
 const qById = (id) => state.questions.find((q) => q.id === id);
 const childrenOf = (id) => state.questions.filter((q) => q.cond && q.cond.qid === id);
 
@@ -155,7 +157,7 @@ const healthQuestions = () => ordered().map((o) => o.q).filter((q) => q.source =
 function setAnswer(date, qid, value) {
   if (!state.answers[date]) state.answers[date] = {};
   const a = state.answers[date];
-  if (isAnswered(value)) a[qid] = value;
+  if (isAnswered(value) && !(isNone(value) && !qById(qid)?.noneOk)) a[qid] = value;
   else delete a[qid];
   // Folgeangabe erscheint → mit dem Wert vom letzten Mal vorausfüllen
   const pq = qById(qid);
@@ -233,7 +235,7 @@ function condText(q) {
   const p = qById(q.cond.qid);
   return p ? `wenn „${p.text}“ = ${q.cond.values.join(" oder ")}` : "";
 }
-const fmtVal = (v) => (Array.isArray(v) ? v.join(", ") : typeof v === "number" ? fmtNum(v) : v);
+const fmtVal = (v) => (Array.isArray(v) ? (v.length ? v.join(", ") : "Nichts davon") : typeof v === "number" ? fmtNum(v) : v);
 // Zeitwerte werden als Stunden gespeichert: Dauer 7,3833 = 7 h 23 min; Uhrzeit 23,5 = 23:30, 24,75 = 00:45
 const fmtDur = (h) => { const m = Math.round(h * 60); return `${Math.floor(m / 60)} h ${String(m % 60).padStart(2, "0")} min`; };
 const fmtClock = (h) => { let m = Math.round(h * 60) % 1440; if (m < 0) m += 1440; return `${pad(Math.floor(m / 60))}:${pad(m % 60)}`; };
@@ -299,7 +301,7 @@ function answerInput(q, val) {
   if (q.type === "choice") {
     const sel = (o) => (q.multi ? Array.isArray(val) && val.includes(o) : val === o);
     return `<div class="chips">${q.options.map((o) =>
-      `<button class="chip" data-val="${esc(o)}" aria-pressed="${sel(o)}">${esc(o)}</button>`).join("")}</div>
+      `<button class="chip" data-val="${esc(o)}" aria-pressed="${sel(o)}">${esc(o)}</button>`).join("")}${q.noneOk ? `<button class="chip none" data-none aria-pressed="${isNone(val)}">Nichts davon</button>` : ""}</div>
       ${q.multi ? `<p class="q-hint">Mehrere möglich</p>` : ""}`;
   }
   if (q.type === "scale") {
@@ -324,14 +326,17 @@ function answerInput(q, val) {
 function wireInput(root, q, date, after) {
   const cur = () => (state.answers[date] || {})[q.id];
 
-  root.querySelectorAll(".chip").forEach((b) => b.addEventListener("click", () => {
+  root.querySelector("[data-none]")?.addEventListener("click", () => {
+    if (isNone(cur())) { setAnswer(date, q.id, null); after("edit"); } else { setAnswer(date, q.id, []); after("pick"); }
+  });
+  root.querySelectorAll(".chip:not([data-none])").forEach((b) => b.addEventListener("click", () => {
     const c = cur();
     if (q.type === "choice" && q.multi) {
       const arr = Array.isArray(c) ? [...c] : [];
       const i = arr.indexOf(b.dataset.val);
       if (i >= 0) arr.splice(i, 1); else arr.push(b.dataset.val);
       const order = q.options.filter((o) => arr.includes(o)); // Reihenfolge wie Antwortliste
-      setAnswer(date, q.id, order);
+      setAnswer(date, q.id, order.length ? order : null); // alles abgewählt = offen (nicht „Nichts davon“)
       after("edit");
       return;
     }

@@ -38,7 +38,7 @@ function buildWorkbook() {
       rows.push([
         (Date.UTC(dt.getFullYear(), dt.getMonth(), dt.getDate()) - Date.UTC(1899, 11, 30)) / 864e5, // Excel-Datumszahl
         WD[dt.getDay()],
-        ...qs.map((q) => (isAnswered(a[q.id]) ? (Array.isArray(a[q.id]) ? a[q.id].join(", ") : a[q.id]) : null)),
+        ...qs.map((q) => (isAnswered(a[q.id]) ? (Array.isArray(a[q.id]) ? (a[q.id].length ? a[q.id].join(", ") : "Nichts davon") : a[q.id]) : null)),
         ...hcols.map(([k]) => (hvalsByDay[d] && typeof hvalsByDay[d][k] === "number" ? hvalsByDay[d][k] : null)),
         placesOn(d).length ? placesOn(d).join(" → ") : null
       ]);

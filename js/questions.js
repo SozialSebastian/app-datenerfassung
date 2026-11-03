@@ -278,6 +278,7 @@ function openEditor(id) {
         </div>`).join("")}
         <button type="button" class="linkbtn" id="addopt">Antwort hinzufügen</button>
         <label class="check"><input type="checkbox" id="multi" ${draft.multi ? "checked" : ""} ${typeLocked ? "disabled" : ""}> Mehrere Antworten gleichzeitig erlauben</label>
+        <label class="check"><input type="checkbox" id="noneok" ${draft.noneOk ? "checked" : ""}> „Nichts davon“ ist auch eine Antwort (eigener Knopf, Frage gilt damit als beantwortet)</label>
         ${used ? `<p class="muted small">Umbenennen ändert nur künftige Antworten. Bereits gespeicherte behalten den alten Text.</p>` : ""}`;
     } else if (draft.type === "scale") {
       typeFields = `<div class="row2">
@@ -375,6 +376,7 @@ function openEditor(id) {
       }
       dlg.querySelectorAll("[data-opt]").forEach((inp) => (draft.options[+inp.dataset.opt] = inp.value));
       if ($("#multi", dlg)) draft.multi = $("#multi", dlg).checked;
+      if ($("#noneok", dlg)) draft.noneOk = $("#noneok", dlg).checked;
       gradeEditorSync(draft, dlg);
       if ($("#inltext", dlg)) draft._inl.text = $("#inltext", dlg).value;
       if ($("#inlunit", dlg)) draft._inl.unit = $("#inlunit", dlg).value.trim();
