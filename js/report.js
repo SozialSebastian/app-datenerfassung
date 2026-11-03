@@ -116,8 +116,9 @@ function reportHtml(mon) {
       // andere Auswahl: häufigste Antworten, je Tag die Antwort (gekürzt)
       const cnt = {};
       vs.forEach((v) => (Array.isArray(v) ? v : hasData(v) ? [v] : []).forEach((k) => (cnt[k] = (cnt[k] || 0) + 1)));
-      const top = Object.entries(cnt).sort((a, b) => b[1] - a[1]).slice(0, 3).map(([k, n]) => `${esc(k)} ${n}×`).join(" · ");
-      return `<div class="wrr"><span class="wq">${label(q)}</span><span class="wv wsm">${top}</span></div>`;
+      const top = Object.entries(cnt).sort((a, b) => b[1] - a[1]).slice(0, 4);
+      if (!top.length) return "";
+      return `<div class="wrr"><span class="wq">${label(q)}</span><div class="wtop">${top.map(([k, n]) => `<span>${esc(k)} <b>${n}×</b></span>`).join("")}</div></div>`;
     }
     const n = nums(vs);
     if (!n.length) return "";

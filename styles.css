@@ -866,6 +866,9 @@ svg.spie .ps { font-size: 10.5px; fill: var(--ink-2); }
 .wrr .wv { font-weight: 800; font-size: 15px; text-align: right; font-variant-numeric: tabular-nums; }
 .wrr .wv.wsm { font-weight: 600; font-size: 13px; }
 .wrd { grid-column: 1 / 3; display: grid; grid-template-columns: repeat(7, 1fr); gap: 5px; }
+.wtop { grid-column: 1 / -1; display: flex; flex-wrap: wrap; gap: 6px; }
+.wtop span { background: var(--bg); border-radius: 999px; padding: 4px 10px; font-size: 13px; font-weight: 600; color: var(--ink); }
+.wtop b { font-weight: 800; font-variant-numeric: tabular-nums; }
 .wrd i { height: 24px; border-radius: 7px; background: var(--line); opacity: .7; display: grid; place-items: center; font-style: normal; font-size: 11px; font-weight: 700; color: var(--ink-2); }
 .wrd i.on { background: var(--hold); color: var(--hold-ink); opacity: 1; }
 .wrd i.on.lo { background: color-mix(in srgb, var(--hold) 40%, var(--surface)); color: var(--ink); }
