@@ -78,7 +78,8 @@ const hoursChildOf = (p) => p && p.type === "choice" && p.options.includes("Ja")
 const asHours = (q, v) => (typeof v !== "number" ? null : q.format === "duration" ? v : /^min/i.test(q.unit || "") ? v / 60 : v);
 
 function questionsPanel() {
-  const all = ordered().filter((o) => o.q.source !== "chess"); // Schach-Werte kommen von chess.com, keine eigenen Fragen
+  // Schach- und Health-Werte kommen automatisch (chess.com, Kurzbefehl) – keine eigenen Fragen, daher hier nicht aufgeführt
+  const all = ordered().filter((o) => o.q.source !== "chess" && o.q.source !== "health");
   const act = all.filter((o) => !o.q.archived);
   const arch = all.filter((o) => o.q.archived);
   const siblings = (q) => state.questions.filter((x) => !x.archived && (x.cond?.qid || null) === (q.cond?.qid || null) && (q.cond || themeOf(x) === themeOf(q)));
