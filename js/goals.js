@@ -118,7 +118,7 @@ function evalGoal(g, per) {
   const vals = [];
   for (let d = per.start; d <= last; d = addDays(d, 1)) {
     const v = (state.answers[d] || {})[q.id];
-    if (isAnswered(v)) vals.push({ d, v });
+    if (hasData(v)) vals.push({ d, v });
   }
   // Tage, an denen noch etwas dazukommen kann (heute zählt, solange unbeantwortet)
   let rest = ended ? 0 : dayCount(t, per.end) - (todayOpen(q) ? 0 : 1);

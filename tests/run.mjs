@@ -501,6 +501,15 @@ test("„Nichts davon“: zählt als beantwortet (Abfrage, Wochenbericht, Excel)
   assert.equal(r.a3, undefined);
   assert.equal(r.cell, "Nichts davon");
   assert.equal(r.fmt, "Nichts davon");
+  // Analyse: „Nichts davon“ wird nicht mitgezählt (keine Antwort, kein Tag)
+  const an = await page.evaluate(() => {
+    const d1 = addDays(todayIso(), -1), d2 = addDays(todayIso(), -2);
+    setAnswer(d1, "akt", ["Yoga"]); setAnswer(d2, "akt", []);
+    const days = [todayIso(), d1, d2];
+    return { n: days.map((d) => (state.answers[d] || {}).akt).filter(hasData).length, zero: zeroCard(qById("akt"), [todayIso(), d2]) };
+  });
+  assert.equal(an.n, 1);
+  assert.equal(an.zero, true);
   // ohne die Option wird eine leere Auswahl nicht gespeichert
   assert.equal(await page.evaluate(() => { qById("akt").noneOk = false; setAnswer(todayIso(), "akt", []); return (state.answers[todayIso()] || {}).akt; }), undefined);
   assert.deepEqual(errors, []);

@@ -22,7 +22,7 @@ function streakInsights() {
   for (const q of state.questions) {
     if (q.archived || q.type !== "choice" || q.multi || !q.options.includes("Ja")) continue;
     // aktuelle Serie: heute noch offen → ab gestern zählen
-    let d = isAnswered(ansOn(t, q)) ? t : addDays(t, -1);
+    let d = hasData(ansOn(t, q)) ? t : addDays(t, -1);
     let cur = 0;
     while (d >= first && ansOn(d, q) === "Ja") { cur++; d = addDays(d, -1); }
     // Rekord
@@ -36,7 +36,7 @@ function streakInsights() {
     let last = null, yes = 0, answered = 0;
     for (let x = first; x <= t; x = addDays(x, 1)) {
       const v = ansOn(x, q);
-      if (isAnswered(v)) answered++;
+      if (hasData(v)) answered++;
       if (v === "Ja") { yes++; last = x; }
     }
     if (last && answered >= 14 && yes / answered >= 1 / 7) {
@@ -62,7 +62,7 @@ const shortQ = (q) => q.text.replace(/\?$/, "").replace(/^(heute|warst du heute|
 function themeHits(qs, d) {
   const a = state.answers[d] || {};
   let any = false, n = 0;
-  for (const q of qs) { if (isAnswered(a[q.id])) any = true; if (a[q.id] === "Ja") n++; }
+  for (const q of qs) { if (hasData(a[q.id])) any = true; if (a[q.id] === "Ja") n++; }
   return any ? n : null;
 }
 const THEME_WORDS = { sport: { run: "Tage in Folge Sport gemacht", none: "kein Sport" } };
@@ -121,7 +121,7 @@ function groupings(qs) {
 }
 
 function relationInsights(days) {
-  const qs = state.questions.filter((q) => !q.archived || days.some((d) => isAnswered(ansOn(d, q))));
+  const qs = state.questions.filter((q) => !q.archived || days.some((d) => hasData(ansOn(d, q))));
   const nums = qs.filter((q) => q.type === "number" || q.type === "scale");
   const wx = weatherOn() ? WEATHER_QS : []; // Wetter nur als Faktor
   const found = [];
@@ -138,7 +138,7 @@ function relationInsights(days) {
           const dB = lag ? addDays(d, 1) : d;
           if (lag && dB > days[days.length - 1]) continue;
           const v = ansOn(dB, b);
-          if (!isAnswered(a) || typeof v !== "number") continue;
+          if (!hasData(a) || typeof v !== "number") continue;
           (has(a, g.opt) ? inG : outG).push(v);
         }
         if (inG.length < MIN_GROUP || outG.length < MIN_GROUP) continue;
@@ -239,7 +239,7 @@ function seasonInsights() {
     for (const d of Object.keys(state.answers)) {
       if (d > last) continue;
       const v = (state.answers[d] || {})[q.id];
-      if (q.type === "number" ? typeof v === "number" : isAnswered(v)) by[seasonOf(d)].push(q.type === "number" ? v : v === "Ja" ? 1 : 0);
+      if (q.type === "number" ? typeof v === "number" : hasData(v)) by[seasonOf(d)].push(q.type === "number" ? v : v === "Ja" ? 1 : 0);
     }
     // mindestens 2 Jahreszeiten mit je mind. 20 Tagen
     const ok = by.map((a, i) => ({ i, a })).filter((x) => x.a.length >= 20);

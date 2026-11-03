@@ -28,7 +28,7 @@ function weekStat(q, mon) {
   const t = todayIso();
   const lastOk = todayOpen(q) ? addDays(t, -1) : t;
   const daysOf = (m) => Array.from({ length: 7 }, (_, i) => addDays(m, i)).filter((d) => d <= lastOk);
-  const valsOf = (m) => daysOf(m).map((d) => (state.answers[d] || {})[q.id]).filter(isAnswered);
+  const valsOf = (m) => daysOf(m).map((d) => (state.answers[d] || {})[q.id]).filter(hasData);
   const now = valsOf(mon);
   const prevWeeks = Array.from({ length: 8 }, (_, i) => valsOf(addDays(mon, -7 * (i + 1)))).filter((v) => v.length);
   if (!now.length) return null;
@@ -100,7 +100,7 @@ function reportHtml(mon) {
   }
 
   // Tag für Tag: alle Hauptfragen und Health-Werte der Woche
-  const qs = ordered().map((o) => o.q).filter((q) => !q.archived && !q.cond && q.source !== "chess" && !isIntolQ(q) && valsIn(q, mon).some(isAnswered));
+  const qs = ordered().map((o) => o.q).filter((q) => !q.archived && !q.cond && q.source !== "chess" && !isIntolQ(q) && valsIn(q, mon).some(hasData));
   const WDS = ["Mo", "Di", "Mi", "Do", "Fr", "Sa", "So"];
   const highlights = [];
   const rows = qs.map((q) => {
@@ -108,14 +108,14 @@ function reportHtml(mon) {
     if (isYN(q) || q.type === "choice") {
       const key = isYN(q) ? "Ja" : null;
       if (key) {
-        const c = vs.filter((v) => v === "Ja").length, cp = pv.filter((v) => v === "Ja").length, anyPrev = pv.some(isAnswered);
+        const c = vs.filter((v) => v === "Ja").length, cp = pv.filter((v) => v === "Ja").length, anyPrev = pv.some(hasData);
         const lo = betterDir(q) === "low";
         return `<div class="wrr"><span class="wq">${label(q)}</span><span class="wv">${c}× ${anyPrev ? delta(c - cp, betterDir(q) || (q.sport ? "high" : null), ` ${Math.abs(c - cp)}`) : ""}</span>
-          <div class="wrd">${vs.map((v, i) => `<i class="${v === "Ja" ? (lo ? "on lo" : "on") : isAnswered(v) ? "" : "na"}">${WDS[i]}</i>`).join("")}</div></div>`;
+          <div class="wrd">${vs.map((v, i) => `<i class="${v === "Ja" ? (lo ? "on lo" : "on") : hasData(v) ? "" : "na"}">${WDS[i]}</i>`).join("")}</div></div>`;
       }
       // andere Auswahl: häufigste Antworten, je Tag die Antwort (gekürzt)
       const cnt = {};
-      vs.forEach((v) => (Array.isArray(v) ? v : isAnswered(v) ? [v] : []).forEach((k) => (cnt[k] = (cnt[k] || 0) + 1)));
+      vs.forEach((v) => (Array.isArray(v) ? v : hasData(v) ? [v] : []).forEach((k) => (cnt[k] = (cnt[k] || 0) + 1)));
       const top = Object.entries(cnt).sort((a, b) => b[1] - a[1]).slice(0, 3).map(([k, n]) => `${esc(k)} ${n}×`).join(" · ");
       return `<div class="wrr"><span class="wq">${label(q)}</span><span class="wv wsm">${top}</span></div>`;
     }

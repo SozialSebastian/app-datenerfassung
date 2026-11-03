@@ -64,6 +64,8 @@ const fmtNum = (n) => (n === null || n === undefined ? "" : String(n).replace(".
 // leere Liste [] = bewusst „Nichts davon“ (nur bei Fragen mit dieser Option gespeichert) – zählt als beantwortet
 const isAnswered = (v) => v !== undefined && v !== null && v !== "";
 const isNone = (v) => Array.isArray(v) && v.length === 0;
+// für Auswertungen: „Nichts davon“ zählt nicht als Wert (weder als Antwort noch als Tag)
+const hasData = (v) => isAnswered(v) && !isNone(v);
 const qById = (id) => state.questions.find((q) => q.id === id);
 const childrenOf = (id) => state.questions.filter((q) => q.cond && q.cond.qid === id);
 

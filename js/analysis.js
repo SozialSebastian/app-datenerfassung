@@ -12,7 +12,7 @@ const savePrefs = () => { try { localStorage.setItem(PREF_KEY, JSON.stringify(pr
 const qset = (q) => ({ chart: "bars", unit: q.notion ? "abs" : "pct", trend: q.type !== "choice" && !q.cond, hidden: false, hideZero: prefs.hideZero !== false, ...(prefs.q[q.id] || {}) });
 // Hat die Karte im Zeitraum nichts zu sagen? (keine Antworten; Ja/Nein bzw. „Kompakt“ 0×; Zahlen nur 0)
 function zeroCard(q, days) {
-  const vals = days.map((d) => (state.answers[d] || {})[q.id]).filter(isAnswered);
+  const vals = days.map((d) => (state.answers[d] || {})[q.id]).filter(hasData);
   if (!vals.length) return true;
   const set = qset(q);
   if (q.type === "choice") {
@@ -95,7 +95,7 @@ const GEAR = `<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12
 
 function analysisQuestions(days) {
   // Schach-Werte stehen gebündelt in der Schach-Kachel, nicht als eigene Karten
-  return ordered().map((o) => o.q).filter((q) => q.source !== "chess" && !isIntolQ(q) && (!q.archived || days.some((d) => isAnswered((state.answers[d] || {})[q.id]))));
+  return ordered().map((o) => o.q).filter((q) => q.source !== "chess" && !isIntolQ(q) && (!q.archived || days.some((d) => hasData((state.answers[d] || {})[q.id]))));
 }
 
 function renderAnalysis() {
@@ -223,13 +223,13 @@ function stackKid(p, kids) {
 // Je Tag: Anteile der Antworten der Folgefrage (Mehrfachauswahl wird aufgeteilt), sonst „ohne Angabe“
 const stackOf = (c) => (d) => {
   const v = (state.answers[d] || {})[c.id];
-  const xs = Array.isArray(v) ? v : isAnswered(v) ? [v] : [];
+  const xs = Array.isArray(v) ? v : hasData(v) ? [v] : [];
   return xs.length ? xs.map((k) => [k, 1 / xs.length]) : [["__none", 1]];
 };
 const stackColor = (c, k) => (k === "__none" ? "var(--line)" : `var(--s${(Math.max(0, c.options.indexOf(k)) % SERIES) + 1})`);
 // kurze Zusammenfassung einer Folgefrage in der Kachel der Hauptfrage
 function kidLine(c, days, skipStack) {
-  const vals = days.map((d) => (state.answers[d] || {})[c.id]).filter(isAnswered);
+  const vals = days.map((d) => (state.answers[d] || {})[c.id]).filter(hasData);
   const head = `<span class="kq">↳ ${esc(c.text)}</span>`;
   if (!vals.length) return `<div class="kid">${head}<div class="kstats"><span>im Zeitraum noch keine Angabe</span></div></div>`;
   if (c.type === "choice") {
@@ -257,7 +257,7 @@ function kidLine(c, days, skipStack) {
 function analysisCard(q, days) {
   const set = qset(q);
   const kids = mergedKids(q, days);
-  const vals = days.map((d) => ({ d, v: (state.answers[d] || {})[q.id] })).filter((x) => isAnswered(x.v));
+  const vals = days.map((d) => ({ d, v: (state.answers[d] || {})[q.id] })).filter((x) => hasData(x.v));
   const n = vals.length;
   let body = "";
   const title = `<h2 class="atitle">${q.cond ? "↳ " : ""}${esc(q.text)}</h2>`;
@@ -299,7 +299,7 @@ function analysisCard(q, days) {
       // Ja/Nein: Kennzahlen statt Balken
       const c = vals.filter((x) => x.v === "Ja").length;
       const perWeek = c / (days.length / 7);
-      const prev = prevCount(days, (d) => { const v = (state.answers[d] || {})[q.id]; return isAnswered(v) ? v === "Ja" : null; });
+      const prev = prevCount(days, (d) => { const v = (state.answers[d] || {})[q.id]; return hasData(v) ? v === "Ja" : null; });
       body = kpiRow(c, perWeek, pct(c, n), days, prev, betterDir(q));
     } else if (set.chart === "pie") {
       // Kuchen: Anteile an allen Nennungen (bei Mehrfachauswahl ≠ Anteil der Tage)
@@ -375,7 +375,7 @@ function contractBlock(q, days) {
   const p = q.cond ? qById(q.cond.qid) : null;
   if (!p || !p.contract || !(p.contract.h > 0 && p.contract.wage > 0) || hoursChildOf(p) !== q) return "";
   // Zeitraum erst ab der ersten Antwort zur Arbeitsfrage zählen
-  const firstAns = Object.keys(state.answers).sort().find((d) => isAnswered(state.answers[d][p.id]));
+  const firstAns = Object.keys(state.answers).sort().find((d) => hasData(state.answers[d][p.id]));
   if (!firstAns) return "";
   const t = todayIso();
   const ds = days.filter((d) => d >= firstAns && d <= t);
@@ -553,7 +553,7 @@ function columnChart(q, days, focusKey, unit, hitOf, stack) {
     if (!b || b.k !== k) { b = { k, first: d, n: 0, hit: 0 }; buckets.push(b); }
     if (hitOf) { const h = hitOf(d); if (h !== null) { b.n++; if (h) b.hit++; } continue; }
     const v = (state.answers[d] || {})[q.id];
-    if (isAnswered(v)) {
+    if (hasData(v)) {
       b.n++;
       if (Array.isArray(v) ? v.includes(focusKey) : v === focusKey) {
         b.hit++;
