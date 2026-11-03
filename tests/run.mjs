@@ -516,6 +516,23 @@ test("„Nichts davon“: zählt als beantwortet (Abfrage, Wochenbericht, Excel)
   await ctx.close();
 });
 
+test("Analyse: Folgefrage einer Folgefrage (Tango → Wo? → Dauer) steht in der Kachel", async () => {
+  const d0 = new Date(); const ds = (i) => { const d = new Date(d0); d.setDate(d.getDate() - i); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`; };
+  const answers = {};
+  for (let i = 1; i < 6; i++) answers[ds(i)] = { t: "Ja", w: "Kurs", du: 1.5 };
+  const data = { version: 1, lastBackup: null, answers, questions: [
+    { id: "t", text: "Warst du heute Tango tanzen?", type: "choice", options: ["Ja", "Nein"], multi: false, archived: false, cond: null },
+    { id: "w", text: "Wo warst du tanzen?", type: "choice", options: ["Kurs", "Milonga"], multi: false, archived: false, cond: { qid: "t", values: ["Ja"] } },
+    { id: "du", text: "Dauer", type: "number", format: "duration", options: [], archived: false, inline: true, cond: { qid: "w", values: ["Kurs", "Milonga"] } }] };
+  const { page, ctx, errors } = await open({ data });
+  await page.click('[data-tab="analysis"]');
+  const card = await page.locator('.acard[data-qid="t"]').innerText();
+  assert.match(card, /Wo warst du tanzen\?[\s\S]*Dauer[\s\S]*Ø 1 h 30 min/, JSON.stringify(card));
+  assert.equal(await page.locator('.acard[data-qid="du"]').count(), 0);
+  assert.deepEqual(errors, []);
+  await ctx.close();
+});
+
 test("Schritte nach Stunde: Tagessumme und Stundenverlauf, angeschnittener erster Tag fällt weg", async () => {
   const { listEntries } = await import("../worker/src/index.js");
   const t = (x) => `2026-10-${x}:00+02:00`;

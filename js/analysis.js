@@ -210,10 +210,20 @@ function distribution(q, vals) {
 }
 
 // Folgefragen stehen immer in der Kachel der Hauptfrage
+// auch Folgefragen von Folgefragen (z. B. Tango → Wo? → Dauer), in Fragen-Reihenfolge
 function mergedKids(p, days) {
   if (!p) return [];
-  const list = analysisQuestions(days);
-  return childrenOf(p.id).filter((c) => list.includes(c) && !qset(c).hidden);
+  const list = analysisQuestions(days), out = [];
+  const walk = (id, depth) => {
+    if (depth > 5) return;
+    for (const c of childrenOf(id)) {
+      if (!list.includes(c) || qset(c).hidden || out.includes(c)) continue;
+      out.push(c); walk(c.id, depth + 1);
+    }
+  };
+  walk(p.id, 0);
+  const order = list.map((q) => q.id);
+  return out.sort((a, b) => order.indexOf(a.id) - order.indexOf(b.id));
 }
 // Folgefrage, nach der die Säulen eingefärbt werden (Auswahl-Frage; einstellbar)
 function stackKid(p, kids) {
@@ -230,7 +240,9 @@ const stackColor = (c, k) => (k === "__none" ? "var(--line)" : `var(--s${(Math.m
 // kurze Zusammenfassung einer Folgefrage in der Kachel der Hauptfrage
 function kidLine(c, days, skipStack) {
   const vals = days.map((d) => (state.answers[d] || {})[c.id]).filter(hasData);
-  const head = `<span class="kq">↳ ${esc(c.text)}</span>`;
+  // Tiefe unter der Hauptfrage der Kachel: Folgefrage einer Folgefrage etwas eingerückt
+  let depth = 0; for (let x = c; x.cond && depth < 5; x = qById(x.cond.qid) || {}) depth++;
+  const head = `<span class="kq"${depth > 1 ? ` style="padding-left:${(depth - 1) * 14}px"` : ""}>↳ ${esc(c.text)}</span>`;
   if (!vals.length) return `<div class="kid">${head}<div class="kstats"><span>im Zeitraum noch keine Angabe</span></div></div>`;
   if (c.type === "choice") {
     const cnt = {};
