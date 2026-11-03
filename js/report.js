@@ -103,7 +103,31 @@ function reportHtml(mon) {
   const qs = ordered().map((o) => o.q).filter((q) => !q.archived && !q.cond && q.source !== "chess" && !isIntolQ(q) && valsIn(q, mon).some(hasData));
   const WDS = ["Mo", "Di", "Mi", "Do", "Fr", "Sa", "So"];
   const highlights = [];
-  const rows = qs.map((q) => {
+  // Folgefragen (auch mehrstufig, z. B. Tango → Wo? → Dauer) kompakt unter ihrer Hauptfrage
+  const descendants = (q, depth = 1, out = []) => {
+    if (depth > 5) return out;
+    for (const c of childrenOf(q.id)) if (!c.archived && c.source !== "chess") { out.push([c, depth]); descendants(c, depth + 1, out); }
+    return out;
+  };
+  const kidRows = (q) => descendants(q).map(([c, depth]) => {
+    const vs = valsIn(c, mon).filter(hasData);
+    if (!vs.length) return "";
+    const head = `<span class="wq"${depth > 1 ? ` style="padding-left:${(depth - 1) * 14}px"` : ""}>↳ ${label(c)}</span>`;
+    if (c.type === "choice") {
+      const cnt = {};
+      vs.forEach((v) => (Array.isArray(v) ? v : [v]).forEach((k) => (cnt[k] = (cnt[k] || 0) + 1)));
+      const top = Object.entries(cnt).sort((a, b) => b[1] - a[1]).slice(0, 4);
+      return `<div class="wrr wkid">${head}<div class="wtop">${top.map(([k, n]) => `<span>${esc(k)} <b>${n}×</b></span>`).join("")}</div></div>`;
+    }
+    const n = nums(vs);
+    if (!n.length) return "";
+    const a = mean(n), pn = nums(valsIn(c, prevMon)), b = pn.length ? mean(pn) : null;
+    const sum = n.reduce((t, x) => t + x, 0);
+    const extra = c.type === "number" && c.format !== "clock" && n.length > 1 ? ` <span class="muted small">· Σ ${esc(fmtV(c, sum))}</span>` : "";
+    return `<div class="wrr wkid">${head}<span class="wv">Ø ${esc(c.type === "scale" ? fmt1(a) : fmtV(c, a))}${extra} ${numDelta(c, a, b)}</span></div>`;
+  }).join("");
+  const rows = qs.map((q) => rowOf(q) + kidRows(q)).join("");
+  function rowOf(q) {
     const vs = valsIn(q, mon), pv = valsIn(q, prevMon);
     if (isYN(q) || q.type === "choice") {
       const key = isYN(q) ? "Ja" : null;
@@ -135,7 +159,7 @@ function reportHtml(mon) {
         <div class="wrd">${vs.map((v) => `<i class="${typeof v === "number" ? "num" : "na"}">${typeof v === "number" ? v : "–"}</i>`).join("")}</div></div>`;
     }
     return `<div class="wrr"><span class="wq">${label(q)}</span><span class="wv">Ø ${esc(fmtV(q, a))} ${numDelta(q, a, b)}</span>${weekSpark(vs, dir)}</div>`;
-  }).join("");
+  }
 
   // Highlights: erreichte Ziele zuerst
   const hl = [

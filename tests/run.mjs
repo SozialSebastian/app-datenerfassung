@@ -529,6 +529,9 @@ test("Analyse: Folgefrage einer Folgefrage (Tango → Wo? → Dauer) steht in de
   const card = await page.locator('.acard[data-qid="t"]').innerText();
   assert.match(card, /Wo warst du tanzen\?[\s\S]*Dauer[\s\S]*Ø 1 h 30 min/, JSON.stringify(card));
   assert.equal(await page.locator('.acard[data-qid="du"]').count(), 0);
+  // Wochenbericht: Folgefragen unter der Hauptfrage
+  const rep = await page.evaluate(() => { const el = document.createElement("div"); el.innerHTML = reportHtml(mondayOf(addDays(todayIso(), -1))); return el.innerText; });
+  assert.match(rep, /Tango[\s\S]*↳ Wo warst du tanzen[\s\S]*Kurs[\s\S]*↳ Dauer[\s\S]*Ø 1 h 30 min/, JSON.stringify(rep));
   assert.deepEqual(errors, []);
   await ctx.close();
 });
