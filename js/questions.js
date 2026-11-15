@@ -262,14 +262,12 @@ function openEditor(id) {
     let typeFields = "";
     if (draft.type === "choice" && isGradeQ(draft)) {
       typeFields = `<p class="small" style="margin:0 0 6px"><strong>Antworten:</strong> Fb-Grade ${esc(FB_GRADES[0])} bis ${esc(FB_GRADES[FB_GRADES.length - 1])}</p>
-        <label class="check"><input type="checkbox" id="multi" ${draft.multi ? "checked" : ""} ${typeLocked ? "disabled" : ""}> Mehrere Grade gleichzeitig erlauben (z. B. alle geschafften)</label>
         ${gradeEditorHtml(draft)}`;
     } else if (draft.type === "choice") {
       const fnames = draft.friends ? friendsOrdered(draft.friends.cats).map((x) => x.name) : [];
-      typeFields = `<div class="field" style="margin-bottom:8px;font-weight:600;font-size:15px">Antwortmöglichkeiten</div>
-        ${draft.notion ? `<p class="small" style="margin:0 0 4px"><strong>Rezepte aus Notion</strong>, bleiben automatisch aktuell.</p>
+      typeFields = `${draft.notion ? `<p class="small" style="margin:0 0 4px"><strong>Rezepte aus Notion</strong>, bleiben automatisch aktuell.</p>
           <p class="muted small" style="margin:0 0 12px">${recipeList().length} Rezepte: ${esc(recipeNames().slice(0, 8).join(", "))}${recipeList().length > 8 ? " …" : ""}</p>
-          <div class="field" style="margin-bottom:8px;font-weight:600;font-size:15px">Zusätzliche Antworten (optional)</div>` : `<label class="check" style="margin-top:0"><input type="checkbox" id="fsync" ${draft.friends ? "checked" : ""}> Vorlage „Freunde“: Namen aus deiner Freundesliste, bleibt automatisch aktuell</label>`}
+          <div class="field" style="margin-bottom:8px;font-weight:600;font-size:15px">Zusätzliche Antworten (optional)</div>` : ""}
         ${draft.friends ? `<div class="chips" style="margin:4px 0 8px">${FCATS.map(([c, l]) => `<button type="button" class="chip" data-fsc="${c}" aria-pressed="${draft.friends.cats.includes(c)}">${l}</button>`).join("")}</div>
           <p class="muted small" style="margin:0 0 12px">${fnames.length ? `${fnames.length} Namen: ${esc(fnames.slice(0, 8).join(", "))}${fnames.length > 8 ? " …" : ""}` : "Noch keine Freunde in diesen Kategorien. Leg sie im Bereich „Freunde“ an."}</p>
           <div class="field" style="margin-bottom:8px;font-weight:600;font-size:15px">Zusätzliche Antworten (optional)</div>` : ""}
@@ -278,8 +276,6 @@ function openEditor(id) {
           <button type="button" class="iconbtn" data-delopt="${i}" aria-label="Antwort entfernen" ${!draft.friends && !draft.notion && draft.options.length <= 2 ? "disabled" : ""}>✕</button>
         </div>`).join("")}
         <button type="button" class="linkbtn" id="addopt">Antwort hinzufügen</button>
-        <label class="check"><input type="checkbox" id="multi" ${draft.multi ? "checked" : ""} ${typeLocked ? "disabled" : ""}> Mehrere Antworten gleichzeitig erlauben</label>
-        <label class="check"><input type="checkbox" id="noneok" ${draft.noneOk ? "checked" : ""}> „Nichts davon“ ist auch eine Antwort (eigener Knopf, Frage gilt damit als beantwortet)</label>
         ${used ? `<p class="muted small">Umbenennen ändert nur künftige Antworten. Bereits gespeicherte behalten den alten Text.</p>` : ""}`;
     } else if (draft.type === "scale") {
       typeFields = `<div class="row2">
@@ -335,15 +331,26 @@ function openEditor(id) {
         <button type="submit" class="linkbtn" id="savebtn">Sichern</button>
       </div>
       <label class="field">Frage<input id="qtext" value="${esc(draft.text)}" placeholder="z. B. Heute bouldern?" autocomplete="off"></label>
-      ${draft.cond ? "" : `<div class="field" style="margin-bottom:8px;font-weight:600;font-size:15px">Thema</div>
-      <div class="chips themechips">${THEMES.map((t) => `<button type="button" class="chip" data-theme="${t.k}" aria-pressed="${(draft.theme || guessTheme(draft)) === t.k}">${t.i} ${esc(t.l)}</button>`).join("")}</div>
-      ${(draft.theme || guessTheme(draft)) === "sport" && draft.type === "choice" && !draft.multi && draft.options.includes("Ja") ? `<label class="check" style="margin:-4px 0 14px"><input type="checkbox" id="qsport" ${draft.sport ? "checked" : ""}> Ist eine Sportart – „Ja“ zählt als Sport (Sport-Kachel und Trends)</label>` : ""}
-      <label class="check" style="margin:-4px 0 14px"><input type="checkbox" id="qmorning" ${draft.morning ? "checked" : ""}> Morgens abfragen</label>`}
+      ${draft.cond ? "" : `<div class="esec">Thema</div>
+      <div class="chips themechips">${THEMES.map((t) => `<button type="button" class="chip" data-theme="${t.k}" aria-pressed="${(draft.theme || guessTheme(draft)) === t.k}">${t.i} ${esc(t.l)}</button>`).join("")}</div>`}
+      <div class="esec">Antworten</div>
       <div class="seg" role="group" aria-label="Antworttyp">
         ${["choice", "scale", "number"].map((t) => `<button type="button" data-type="${t}" aria-pressed="${draft.type === t}" ${(typeLocked && draft.type !== t) || (hasChildren && t === "number") ? "disabled" : ""}>${typeLabel[t]}</button>`).join("")}
       </div>
       ${typeLocked ? `<p class="muted small" style="margin-top:-8px">Der Antworttyp ist fest, weil es schon ${used} Antworten gibt.</p>` : ""}
       ${typeFields}
+      ${(() => {
+        // Optionen: alle Schalter an einer Stelle
+        const tg = (id, on, label, dis) => `<label class="orow"><span>${label}</span><input type="checkbox" class="tgl" id="${id}" ${on ? "checked" : ""} ${dis ? "disabled" : ""}></label>`;
+        const rows = [];
+        if (draft.type === "choice" && !draft.notion && !isGradeQ(draft)) rows.push(tg("fsync", draft.friends, "Namen aus der Freundesliste"));
+        if (draft.type === "choice") rows.push(tg("multi", draft.multi, isGradeQ(draft) ? "Mehrere Grade erlauben" : "Mehrere Antworten erlauben", typeLocked));
+        if (draft.type === "choice" && !isGradeQ(draft)) rows.push(tg("noneok", draft.noneOk, "„Nichts davon“ als Antwort"));
+        if (!draft.cond) rows.push(tg("qmorning", draft.morning, "Morgens abfragen"));
+        if (!draft.cond && (draft.theme || guessTheme(draft)) === "sport" && draft.type === "choice" && !draft.multi && draft.options.includes("Ja")) rows.push(tg("qsport", draft.sport, "Zählt als Sport"));
+        return rows.length ? `<div class="esec">Optionen</div><div class="ogrp">${rows.join("")}</div>` : "";
+      })()}
+      ${inlBlock || !draft.inline ? `<div class="esec">Erweitert</div>` : ""}
       ${inlBlock}
       ${draft.inline ? "" : condBlock}
       ${existing && existing.healthKey ? `<details class="adv">

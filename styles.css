@@ -935,3 +935,14 @@ svg.wrs text { font-size: 10px; fill: var(--ink-2); }
 .hsetup { list-style: none; padding: 0; display: grid; gap: 10px; }
 .hsetup li { display: grid; grid-template-columns: 20px 1fr; gap: 8px; font-size: 14px; }
 .hsetup li > span { color: var(--ink-2); font-weight: 800; } .hsetup li.ok > span { color: var(--s6); }
+
+/* Fragen-Editor: Abschnitte und Optionen als Schalterliste */
+.esec { font-size: 12.5px; font-weight: 700; letter-spacing: .05em; text-transform: uppercase; color: var(--ink-2); margin: 22px 0 8px; }
+.ogrp { background: var(--surface); border: 1px solid var(--line); border-radius: 14px; overflow: hidden; margin-bottom: 6px; }
+.orow { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 12px 14px; font-size: 15.5px; font-weight: 600; }
+.orow + .orow { border-top: 1px solid var(--line); }
+input.tgl { appearance: none; -webkit-appearance: none; flex: none; width: 48px; height: 29px; border-radius: 999px; background: var(--line); position: relative; cursor: pointer; transition: background .15s; margin: 0; }
+input.tgl::before { content: ""; position: absolute; top: 3px; left: 3px; width: 23px; height: 23px; border-radius: 50%; background: #fff; box-shadow: 0 1px 3px rgba(0,0,0,.25); transition: transform .15s; }
+input.tgl:checked { background: var(--hold); }
+input.tgl:checked::before { transform: translateX(19px); }
+input.tgl:disabled { opacity: .45; }
