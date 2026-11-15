@@ -42,3 +42,15 @@ CREATE TABLE IF NOT EXISTS goals (
   teaser_week TEXT DEFAULT '',
   created TEXT
 );
+CREATE TABLE IF NOT EXISTS morning (
+  endpoint TEXT PRIMARY KEY,
+  p256dh TEXT NOT NULL,
+  auth TEXT NOT NULL,
+  day INTEGER NOT NULL DEFAULT 0,
+  time TEXT NOT NULL DEFAULT '10:00',
+  tz TEXT NOT NULL DEFAULT 'Europe/Berlin',
+  last_sent TEXT DEFAULT '',
+  teaser TEXT DEFAULT '',
+  teaser_week TEXT DEFAULT '',
+  created TEXT
+);

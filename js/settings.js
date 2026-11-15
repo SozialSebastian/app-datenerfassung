@@ -24,6 +24,11 @@ function renderData() {
       <p class="muted small" style="margin:8px 0 0">Kommt nur, wenn an dem Tag noch Fragen offen sind. Tippen auf die Mitteilung startet direkt die Abfrage für diesen Tag.</p>
       <p class="small" id="pushmsg" style="margin:8px 0 0"></p>
       <div class="subsep"></div>
+      <label class="switch row" style="margin-top:0"><input type="checkbox" id="mornon" ${settings.morning.on ? "checked" : ""}><span>🌅 Morgen-Erinnerung</span></label>
+      <div class="timerow"><span>Uhrzeit</span><input type="time" id="morntime" value="${esc(settings.morning.time)}" class="timein"></div>
+      <p class="muted small" style="margin:8px 0 0">${state.questions.some((q) => !q.archived && q.morning) ? `Fragt die Fragen mit „Morgens abfragen“ ab (${state.questions.filter((q) => !q.archived && q.morning && !q.cond).length}). Kommt nur, wenn sie heute noch offen sind.` : `Markier dazu bei einer Frage „Morgens abfragen“ (Frage bearbeiten → unter Thema).`}</p>
+      <p class="small" id="mornmsg" style="margin:8px 0 0"></p>
+      <div class="subsep"></div>
       <label class="switch row" style="margin-top:0"><input type="checkbox" id="goalpushon" ${settings.goalpush.on ? "checked" : ""}><span>Ziel-Erinnerung</span></label>
       <p class="muted small" style="margin:8px 0 0">Meldet sich einmal, sobald ein Ziel zu kippen droht, z. B. „Bouldern: ab heute an jedem Tag nötig (noch 2× bis Sonntag)“ oder wenn eine Höchstgrenze erreicht ist. Nur tagsüber. Tippen öffnet die Ziele.</p>
       <p class="small" id="goalpushmsg" style="margin:8px 0 0"></p>`;
@@ -194,6 +199,21 @@ function renderData() {
     settings.push.time = t; saveSettings();
     if (!settings.push.on) return;
     try { await enablePush(t); toast(`Erinnerung täglich um ${t} Uhr`); } catch (err) { msg("pushmsg", err.message, true); }
+  });
+  $("#mornon")?.addEventListener("change", async (e) => {
+    const on = e.target.checked;
+    try {
+      if (on) { await enableMorning($("#morntime").value || "10:00"); toast(`Morgen-Erinnerung um ${settings.morning.time} Uhr`); }
+      else { await disableMorning(); toast("Morgen-Erinnerung aus"); }
+      renderData();
+    } catch (err) { e.target.checked = !on; msg("mornmsg", err.message, true); }
+  });
+  $("#morntime")?.addEventListener("change", async (e) => {
+    const t = e.target.value;
+    if (!/^\d{2}:\d{2}$/.test(t)) return;
+    settings.morning.time = t; saveSettings();
+    if (!settings.morning.on) return;
+    try { await enableMorning(t); toast(`Morgen-Erinnerung um ${t} Uhr`); } catch (err) { msg("mornmsg", err.message, true); }
   });
   $("#copyhdr")?.addEventListener("click", async () => {
     try { await navigator.clipboard.writeText(`Bearer ${settings.token}`); toast("Header-Wert kopiert"); }

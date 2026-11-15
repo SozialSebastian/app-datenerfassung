@@ -111,7 +111,8 @@ async function sendPush(env, sub, message) {
     await env.DB.batch([
       env.DB.prepare("DELETE FROM subs WHERE endpoint = ?").bind(sub.endpoint),
       env.DB.prepare("DELETE FROM weekly WHERE endpoint = ?").bind(sub.endpoint),
-      env.DB.prepare("DELETE FROM goals WHERE endpoint = ?").bind(sub.endpoint)
+      env.DB.prepare("DELETE FROM goals WHERE endpoint = ?").bind(sub.endpoint),
+      env.DB.prepare("DELETE FROM morning WHERE endpoint = ?").bind(sub.endpoint)
     ]);
   }
   return res.status;
@@ -136,6 +137,17 @@ function weeklyMessage(sub) {
     body: `${teaser ? teaser + " " : ""}Tippen öffnet deinen Wochenbericht.`,
     report: "week",
     url: `${APP_URL}?report=week`
+  };
+}
+
+// Morgen-Erinnerung: nur die Fragen mit „Morgens abfragen“
+function morningMessage(sub, date) {
+  const open = sub.teaser_week === date ? Number(sub.teaser) || 0 : null;
+  return {
+    title: "Guten Morgen",
+    body: open ? `${open} Morgenfrage${open === 1 ? "" : "n"} offen. Tippen startet die Abfrage.` : "Zeit für deine Morgenfragen. Tippen startet die Abfrage.",
+    date, part: "morning",
+    url: `${APP_URL}?quiz=${date}&part=morning`
   };
 }
 
@@ -461,7 +473,8 @@ async function handle(request, env) {
     return json({ ok: status < 300, status });
   }
 
-  const sched = path.match(/^\/(weekly|goals)(\/teaser|\/test)?$/);
+  // morning: Morgen-Erinnerung (täglich zur Uhrzeit); teaser = Zahl offener Morgenfragen, teaser_week = Datum dazu
+  const sched = path.match(/^\/(weekly|goals|morning)(\/teaser|\/test)?$/);
   const table = sched && sched[1];
   if (sched && !sched[2] && request.method === "POST") {
     const b = await request.json();
@@ -478,7 +491,8 @@ async function handle(request, env) {
     const tz = b.tz || TZ_DEFAULT;
     // Ist der Termin heute schon vorbei, erst nächste Woche schicken
     const now = localNow(tz);
-    const last = table === "goals" ? "[]" : "";
+    // Morgen: Uhrzeit heute schon vorbei → erst ab morgen
+    const last = table === "goals" ? "[]" : table === "morning" && b.time <= now.time ? now.date : "";
     await env.DB.prepare(
       `INSERT INTO ${table} (endpoint, p256dh, auth, day, time, tz, last_sent, created)
        VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, datetime('now'))
@@ -499,9 +513,9 @@ async function handle(request, env) {
   if (sched && sched[2] === "/test" && request.method === "POST") {
     const b = await request.json();
     const sub = await env.DB.prepare(`SELECT * FROM ${table} WHERE endpoint = ?`).bind(b.endpoint || "").first();
-    if (!sub) return json({ error: `${table === "goals" ? "Ziel-Erinnerung" : "Wochenbericht"} ist für dieses Gerät nicht aktiviert` }, 404);
+    if (!sub) return json({ error: `${table === "goals" ? "Ziel-Erinnerung" : table === "morning" ? "Morgen-Erinnerung" : "Wochenbericht"} ist für dieses Gerät nicht aktiviert` }, 404);
     const date = localNow(sub.tz).date;
-    const msg = table === "goals" ? { title: "Ziele", body: "Test: So sieht die Ziel-Erinnerung aus.", open: "goals", url: `${APP_URL}?open=goals` } : weeklyMessage(sub);
+    const msg = table === "morning" ? morningMessage(sub, date) : table === "goals" ? { title: "Ziele", body: "Test: So sieht die Ziel-Erinnerung aus.", open: "goals", url: `${APP_URL}?open=goals` } : weeklyMessage(sub);
     const status = await sendPush(env, sub, msg);
     return json({ ok: status < 300, status });
   }
@@ -590,6 +604,14 @@ async function scheduled(env) {
     if (!sub.teaser_week || sub.last_sent === sub.teaser_week || now.time < sub.time) continue;
     await env.DB.prepare("UPDATE weekly SET last_sent = ? WHERE endpoint = ?").bind(sub.teaser_week, sub.endpoint).run();
     try { await sendPush(env, sub, weeklyMessage(sub)); } catch (e) { console.error("Wochenbericht fehlgeschlagen", e); }
+  }
+  const morning = (await env.DB.prepare("SELECT * FROM morning").all()).results;
+  for (const sub of morning) {
+    const now = localNow(sub.tz);
+    if (now.time < sub.time || sub.last_sent === now.date) continue;
+    await env.DB.prepare("UPDATE morning SET last_sent = ? WHERE endpoint = ?").bind(now.date, sub.endpoint).run();
+    if (sub.teaser_week === now.date && sub.teaser === "0") continue; // heute schon alles beantwortet (oder keine Morgenfragen)
+    try { await sendPush(env, sub, morningMessage(sub, now.date)); } catch (e) { console.error("Morgen-Erinnerung fehlgeschlagen", e); }
   }
   const goals = (await env.DB.prepare("SELECT * FROM goals").all()).results;
   for (const sub of goals) {

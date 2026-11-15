@@ -45,7 +45,9 @@ function renderDay() {
     </div>`;
   } else {
     const startLabel = done === 0 ? "Abfrage starten" : done < qs.length ? "Abfrage fortsetzen" : "Abfrage nochmal durchgehen";
-    body = `<button class="btn block ${done < qs.length ? "hold-btn" : "ghost"}" id="startquiz">${startLabel}</button>
+    // vormittags: offene Morgenfragen zuerst anbieten
+    const mOpen = current === todayIso() && new Date().getHours() < 14 ? morningQuestions(current).filter((q) => !isAnswered(a[q.id])).length : 0;
+    body = `${mOpen ? `<button class="btn block hold-btn" id="startmorning">🌅 Morgenfragen beantworten (${mOpen})</button>` : ""}<button class="btn block ${done < qs.length && !mOpen ? "hold-btn" : "ghost"}" id="startquiz"${mOpen ? ' style="margin-top:8px"' : ""}>${startLabel}</button>
       <p class="progress">${done} von ${qs.length} beantwortet</p>`;
     // Filter nach Thema wie in der Analyse (nur die Anzeige; Abfrage und Zähler gelten für alle Fragen)
     const usedThemes = THEMES.filter((th) => qs.some((q) => themeOf(q) === th.k));
@@ -103,6 +105,7 @@ function renderDay() {
     inp.addEventListener("keydown", (e) => { if (e.key === "Enter") inp.blur(); });
   });
   $("#startquiz")?.addEventListener("click", () => startQuiz(current));
+  $("#startmorning")?.addEventListener("click", () => startQuiz(current, "morning"));
   // Schach-Karte gedrückt halten: Spielvariante wählen (wie in der Analyse)
   view.querySelectorAll(".chessday").forEach((card) => onHold(card, () => openChessView([current], renderDay)));
   view.querySelectorAll("[data-dth]").forEach((b) => b.addEventListener("click", () => { prefs.dayTheme = b.dataset.dth; savePrefs(); renderDay(); }));
@@ -125,14 +128,17 @@ function renderDay() {
 }
 
 /* ================= Abfrage: eine Frage nach der anderen ================= */
-function startQuiz(date) {
+// Teil „morning“: nur die Morgenfragen (Tippen auf die Morgen-Erinnerung)
+const quizQuestions = (date) => (quiz && quiz.part === "morning" ? morningQuestions(date) : askQuestions(date));
+function startQuiz(date, part) {
   if (date === todayIso()) capturePlace(false);
-  const qs = askQuestions(date);
+  quiz = { date, part };
+  const qs = quizQuestions(date);
   const a = state.answers[date] || {};
   const first = qs.findIndex((q) => !isAnswered(a[q.id]));
   // „Abfrage fortsetzen“: nur noch die offenen Fragen (plus Folgefragen, die dabei neu erscheinen)
   const done = qs.length - qs.filter((q) => !isAnswered(a[q.id])).length;
-  quiz = { date, idx: first < 0 ? 0 : first, only: done > 0 && first >= 0, hist: [] };
+  quiz = { date, part, idx: first < 0 ? 0 : first, only: done > 0 && first >= 0, hist: [] };
   render();
   window.scrollTo(0, 0);
 }
@@ -140,7 +146,7 @@ function startQuiz(date) {
 function renderQuiz() {
   const view = $("#view");
   const { date } = quiz;
-  const qs = askQuestions(date); // wird nach jeder Antwort neu berechnet → Folgefragen erscheinen
+  const qs = quizQuestions(date); // wird nach jeder Antwort neu berechnet → Folgefragen erscheinen
   const a = state.answers[date] || {};
 
   if (quiz.idx >= qs.length) {
@@ -187,7 +193,7 @@ function renderQuiz() {
   const sec = view.querySelector(".quiz-q");
   const next = () => {
     quiz.hist.push(quiz.idx);
-    const qs2 = askQuestions(date), a2 = state.answers[date] || {};
+    const qs2 = quizQuestions(date), a2 = state.answers[date] || {};
     let i = quiz.idx + 1;
     if (quiz.only) while (i < qs2.length && isAnswered(a2[qs2[i].id])) i++; // schon Beantwortetes überspringen
     while (i < qs2.length && autoSkip(qs2[i], a2)) i++; // ergibt sich aus anderen Antworten

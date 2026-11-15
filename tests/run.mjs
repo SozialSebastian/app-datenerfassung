@@ -560,6 +560,33 @@ test("Ziele: laufender Monat ohne Gegenbeweis zählt als eingehalten, kippt bei 
   await ctx.close();
 });
 
+test("Morgenfragen: eigene Abfrage (mit Folgefragen), Link aus der Morgen-Erinnerung", async () => {
+  const data = { version: 1, lastBackup: null, answers: {}, questions: [
+    { id: "sl", text: "Wie hast du geschlafen?", type: "choice", options: ["Gut", "Schlecht"], multi: false, archived: false, cond: null, morning: true },
+    { id: "tr", text: "Geträumt?", type: "choice", options: ["Ja", "Nein"], multi: false, archived: false, cond: { qid: "sl", values: ["Gut"] } },
+    { id: "bo", text: "Warst du bouldern?", type: "choice", options: ["Ja", "Nein"], multi: false, archived: false, cond: null }] };
+  const { page, ctx, errors } = await open({ data });
+  const r = await page.evaluate(() => {
+    const d = todayIso();
+    const ids0 = morningQuestions(d).map((q) => q.id);
+    setAnswer(d, "sl", "Gut");
+    const ids1 = morningQuestions(d).map((q) => q.id);
+    setAnswer(d, "sl", null);
+    openQuizFromLink(d, "morning");
+    const first = document.querySelector(".quiz h2, .quiz .q-title, .quiz")?.innerText || "";
+    const part = quiz && quiz.part;
+    endQuiz();
+    return { ids0, ids1, first, part, all: askQuestions(d).map((q) => q.id) };
+  });
+  assert.deepEqual(r.ids0, ["sl"]);
+  assert.deepEqual(r.ids1, ["sl", "tr"]);
+  assert.equal(r.part, "morning");
+  assert.match(r.first, /Frage 1 von 1[\s\S]*Wie hast du geschlafen/);
+  assert.deepEqual(r.all.sort(), ["bo", "sl"]);
+  assert.deepEqual(errors, []);
+  await ctx.close();
+});
+
 test("Schritte nach Stunde: Tagessumme und Stundenverlauf, angeschnittener erster Tag fällt weg", async () => {
   const { listEntries } = await import("../worker/src/index.js");
   const t = (x) => `2026-10-${x}:00+02:00`;

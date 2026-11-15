@@ -5,8 +5,8 @@
 /* ================= Mosaik-Dienst: Erinnerung und Eingang ================= */
 const SERVER = "https://mosaik-sync.sebastian-taglieber.workers.dev";
 const SETTINGS_KEY = "mosaik.settings";
-let settings = { token: "", push: { on: false, time: "23:00", endpoint: null }, weekly: { on: false, day: 0, time: "19:00" }, goalpush: { on: false }, places: { on: false, last: 0 }, weather: { on: false, last: 0 }, lastInbox: null };
-try { const s = JSON.parse(localStorage.getItem(SETTINGS_KEY) || "{}"); settings = { ...settings, ...s, push: { ...settings.push, ...(s.push || {}) }, weekly: { ...settings.weekly, ...(s.weekly || {}) }, goalpush: { ...settings.goalpush, ...(s.goalpush || {}) }, places: { ...settings.places, ...(s.places || {}) }, weather: { ...settings.weather, ...(s.weather || {}) } }; } catch (e) { /* egal */ }
+let settings = { token: "", push: { on: false, time: "23:00", endpoint: null }, weekly: { on: false, day: 0, time: "19:00" }, goalpush: { on: false }, morning: { on: false, time: "10:00" }, places: { on: false, last: 0 }, weather: { on: false, last: 0 }, lastInbox: null };
+try { const s = JSON.parse(localStorage.getItem(SETTINGS_KEY) || "{}"); settings = { ...settings, ...s, push: { ...settings.push, ...(s.push || {}) }, weekly: { ...settings.weekly, ...(s.weekly || {}) }, goalpush: { ...settings.goalpush, ...(s.goalpush || {}) }, morning: { ...settings.morning, ...(s.morning || {}) }, places: { ...settings.places, ...(s.places || {}) }, weather: { ...settings.weather, ...(s.weather || {}) } }; } catch (e) { /* egal */ }
 const saveSettings = () => { try { localStorage.setItem(SETTINGS_KEY, JSON.stringify(settings)); } catch (e) { /* egal */ } };
 
 async function api(path, body) {
@@ -54,9 +54,24 @@ async function disablePush() {
   const sub = await reg.pushManager.getSubscription();
   const endpoint = (sub && sub.endpoint) || settings.push.endpoint;
   if (endpoint) await api("/unsubscribe", { endpoint }).catch(() => {});
-  const keep = settings.weekly.on || settings.goalpush.on;
+  const keep = settings.weekly.on || settings.goalpush.on || settings.morning.on;
   if (sub && !keep) await sub.unsubscribe().catch(() => {}); // Abo bleibt für Wochenbericht/Ziele
   settings.push = { ...settings.push, on: false, endpoint: keep ? settings.push.endpoint : null };
+  saveSettings();
+}
+
+// Morgen-Erinnerung: eigene Uhrzeit, kommt nur, wenn heute noch Morgenfragen offen sind
+async function enableMorning(time) {
+  const sub = await pushSub();
+  await api("/morning", { on: true, subscription: sub.toJSON(), day: 0, time, tz: Intl.DateTimeFormat().resolvedOptions().timeZone || "Europe/Berlin" });
+  settings.morning = { on: true, time, endpoint: sub.endpoint };
+  saveSettings();
+  reportStatus();
+}
+async function disableMorning() {
+  const endpoint = settings.morning.endpoint || settings.push.endpoint;
+  if (endpoint) await api("/morning", { on: false, subscription: { endpoint } }).catch(() => {});
+  settings.morning = { ...settings.morning, on: false };
   saveSettings();
 }
 
@@ -74,7 +89,7 @@ async function disableWeekly() {
   const endpoint = (sub && sub.endpoint) || settings.weekly.endpoint;
   if (endpoint) await api("/weekly", { on: false, subscription: { endpoint } }).catch(() => {});
   settings.weekly = { ...settings.weekly, on: false };
-  if (sub && !settings.push.on && !settings.goalpush.on) await sub.unsubscribe().catch(() => {});
+  if (sub && !settings.push.on && !settings.goalpush.on && !settings.morning.on) await sub.unsubscribe().catch(() => {});
   saveSettings();
 }
 
@@ -92,7 +107,7 @@ async function disableGoalPush() {
   const endpoint = (sub && sub.endpoint) || settings.goalpush.endpoint;
   if (endpoint) await api("/goals", { on: false, subscription: { endpoint } }).catch(() => {});
   settings.goalpush = { ...settings.goalpush, on: false };
-  if (sub && !settings.push.on && !settings.weekly.on) await sub.unsubscribe().catch(() => {});
+  if (sub && !settings.push.on && !settings.weekly.on && !settings.morning.on) await sub.unsubscribe().catch(() => {});
   saveSettings();
 }
 
@@ -136,6 +151,8 @@ function reportStatus() {
     if (settings.goalpush.on && settings.goalpush.endpoint) api("/goals/teaser", { endpoint: settings.goalpush.endpoint, week: "", text: JSON.stringify(goalAlertPlan()) }).catch(() => {});
     // Wochenbericht: Mitteilung erst, wenn Mo–So vollständig beantwortet sind (week leer = noch nicht)
     if (settings.weekly.on && settings.weekly.endpoint) { const wk = reportDefaultWeek(), ok = weekComplete(wk); api("/weekly/teaser", { endpoint: settings.weekly.endpoint, week: ok ? wk : "", text: ok ? reportTeaser(wk) : "" }).catch(() => {}); }
+    // Morgen-Erinnerung: Zahl der offenen Morgenfragen von heute (0 = nicht erinnern)
+    if (settings.morning.on && settings.morning.endpoint) { const t0 = todayIso(), a0 = state.answers[t0] || {}; api("/morning/teaser", { endpoint: settings.morning.endpoint, week: t0, text: String(morningQuestions(t0).filter((q) => !isAnswered(a0[q.id])).length) }).catch(() => {}); }
     if (!settings.push.on || !settings.push.endpoint) return;
     const t = todayIso();
     const a = state.answers[t] || {};

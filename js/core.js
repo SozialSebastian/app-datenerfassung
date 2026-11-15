@@ -146,6 +146,12 @@ const NIGHT_KEYS = ["schlaf", "schlafenszeit", "aufwachzeit"];
 const todayOpen = (q) => isHealthQ(q) && !NIGHT_KEYS.includes(q.healthKey);
 // Folgeangaben (inline) stehen in der Karte ihrer Hauptfrage, nicht als eigene Frage
 const askQuestions = (date) => visibleQuestions(date).filter((q) => !isHealthQ(q) && !q.inline);
+// Morgenfrage: Hauptfrage mit „Morgens abfragen“ – ihre Folgefragen gehören dazu
+function isMorningQ(q) {
+  for (let i = 0; q && i < 8; i++) { if (!q.cond) return !!q.morning; q = qById(q.cond.qid); }
+  return false;
+}
+const morningQuestions = (date) => askQuestions(date).filter(isMorningQ);
 const inlineKids = (q, a) => state.questions.filter((c) => c.inline && !c.archived && c.cond && c.cond.qid === q.id && condMet(c, a || {}));
 // letzter Wert einer Frage vor (oder nach) einem Tag – zum Vorausfüllen
 function lastValue(qid, date) {

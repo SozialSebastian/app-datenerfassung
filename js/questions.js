@@ -337,7 +337,8 @@ function openEditor(id) {
       <label class="field">Frage<input id="qtext" value="${esc(draft.text)}" placeholder="z. B. Heute bouldern?" autocomplete="off"></label>
       ${draft.cond ? "" : `<div class="field" style="margin-bottom:8px;font-weight:600;font-size:15px">Thema</div>
       <div class="chips themechips">${THEMES.map((t) => `<button type="button" class="chip" data-theme="${t.k}" aria-pressed="${(draft.theme || guessTheme(draft)) === t.k}">${t.i} ${esc(t.l)}</button>`).join("")}</div>
-      ${(draft.theme || guessTheme(draft)) === "sport" && draft.type === "choice" && !draft.multi && draft.options.includes("Ja") ? `<label class="check" style="margin:-4px 0 14px"><input type="checkbox" id="qsport" ${draft.sport ? "checked" : ""}> Ist eine Sportart – „Ja“ zählt als Sport (Sport-Kachel und Trends)</label>` : ""}`}
+      ${(draft.theme || guessTheme(draft)) === "sport" && draft.type === "choice" && !draft.multi && draft.options.includes("Ja") ? `<label class="check" style="margin:-4px 0 14px"><input type="checkbox" id="qsport" ${draft.sport ? "checked" : ""}> Ist eine Sportart – „Ja“ zählt als Sport (Sport-Kachel und Trends)</label>` : ""}
+      <label class="check" style="margin:-4px 0 14px"><input type="checkbox" id="qmorning" ${draft.morning ? "checked" : ""}> 🌅 Morgens abfragen (z. B. „Wie hast du geschlafen?“) – kommt mit der Morgen-Erinnerung, Folgefragen gehören dazu</label>`}
       <div class="seg" role="group" aria-label="Antworttyp">
         ${["choice", "scale", "number"].map((t) => `<button type="button" data-type="${t}" aria-pressed="${draft.type === t}" ${(typeLocked && draft.type !== t) || (hasChildren && t === "number") ? "disabled" : ""}>${typeLabel[t]}</button>`).join("")}
       </div>
@@ -378,6 +379,7 @@ function openEditor(id) {
       dlg.querySelectorAll("[data-opt]").forEach((inp) => (draft.options[+inp.dataset.opt] = inp.value));
       if ($("#multi", dlg)) draft.multi = $("#multi", dlg).checked;
       if ($("#noneok", dlg)) draft.noneOk = $("#noneok", dlg).checked;
+      if ($("#qmorning", dlg)) draft.morning = $("#qmorning", dlg).checked;
       gradeEditorSync(draft, dlg);
       if ($("#inltext", dlg)) draft._inl.text = $("#inltext", dlg).value;
       if ($("#inlunit", dlg)) draft._inl.unit = $("#inlunit", dlg).value.trim();

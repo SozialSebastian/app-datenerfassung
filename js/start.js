@@ -21,21 +21,22 @@ function openGoalsView() {
 }
 
 // Tippen auf die Erinnerung: …/?quiz=2026-10-16 startet die Abfrage für diesen Tag
-function openQuizFromLink(date) {
+function openQuizFromLink(date, part) {
   if (!/^\d{4}-\d{2}-\d{2}$/.test(date || "") || date > todayIso()) return;
+  part = part === "morning" && morningQuestions(date).length ? "morning" : undefined;
   if (!askQuestions(date).length) { current = date; tab = "day"; quiz = null; render(); return; }
-  startQuiz(date);
+  startQuiz(date, part);
 }
 {
   const sp = new URLSearchParams(location.search);
   const qd = sp.get("quiz");
-  if (qd) { history.replaceState(null, "", location.pathname); openQuizFromLink(qd); }
+  if (qd) { history.replaceState(null, "", location.pathname); openQuizFromLink(qd, sp.get("part")); }
   if (sp.get("report")) { history.replaceState(null, "", location.pathname); openReport(); }
   if (sp.get("open") === "goals") { history.replaceState(null, "", location.pathname); openGoalsView(); }
 }
 if ("serviceWorker" in navigator) {
   navigator.serviceWorker.addEventListener("message", (e) => {
-    if (e.data && e.data.type === "quiz") openQuizFromLink(e.data.date);
+    if (e.data && e.data.type === "quiz") openQuizFromLink(e.data.date, e.data.part);
     if (e.data && e.data.type === "report") { const d = $("#sheet"); if (d.open) d.close(); openReport(); }
     if (e.data && e.data.type === "open" && e.data.what === "goals") { const d = $("#sheet"); if (d.open) d.close(); openGoalsView(); }
   });
