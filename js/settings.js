@@ -24,7 +24,7 @@ function renderData() {
       <p class="muted small" style="margin:8px 0 0">Kommt nur, wenn an dem Tag noch Fragen offen sind. Tippen auf die Mitteilung startet direkt die Abfrage für diesen Tag.</p>
       <p class="small" id="pushmsg" style="margin:8px 0 0"></p>
       <div class="subsep"></div>
-      <label class="switch row" style="margin-top:0"><input type="checkbox" id="mornon" ${settings.morning.on ? "checked" : ""}><span>🌅 Morgen-Erinnerung</span></label>
+      <label class="switch row" style="margin-top:0"><input type="checkbox" id="mornon" ${settings.morning.on ? "checked" : ""}><span>Morgen-Erinnerung</span></label>
       <div class="timerow"><span>Uhrzeit</span><input type="time" id="morntime" value="${esc(settings.morning.time)}" class="timein"></div>
       <p class="muted small" style="margin:8px 0 0">${state.questions.some((q) => !q.archived && q.morning) ? `Fragt die Fragen mit „Morgens abfragen“ ab (${state.questions.filter((q) => !q.archived && q.morning && !q.cond).length}). Kommt nur, wenn sie heute noch offen sind.` : `Markier dazu bei einer Frage „Morgens abfragen“ (Frage bearbeiten → unter Thema).`}</p>
       <p class="small" id="mornmsg" style="margin:8px 0 0"></p>

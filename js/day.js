@@ -47,7 +47,7 @@ function renderDay() {
     const startLabel = done === 0 ? "Abfrage starten" : done < qs.length ? "Abfrage fortsetzen" : "Abfrage nochmal durchgehen";
     // vormittags: offene Morgenfragen zuerst anbieten
     const mOpen = current === todayIso() && new Date().getHours() < 14 ? morningQuestions(current).filter((q) => !isAnswered(a[q.id])).length : 0;
-    body = `${mOpen ? `<button class="btn block hold-btn" id="startmorning">🌅 Morgenfragen beantworten (${mOpen})</button>` : ""}<button class="btn block ${done < qs.length && !mOpen ? "hold-btn" : "ghost"}" id="startquiz"${mOpen ? ' style="margin-top:8px"' : ""}>${startLabel}</button>
+    body = `${mOpen ? `<button class="btn block hold-btn" id="startmorning">Morgenfragen beantworten (${mOpen})</button>` : ""}<button class="btn block ${done < qs.length && !mOpen ? "hold-btn" : "ghost"}" id="startquiz"${mOpen ? ' style="margin-top:8px"' : ""}>${startLabel}</button>
       <p class="progress">${done} von ${qs.length} beantwortet</p>`;
     // Filter nach Thema wie in der Analyse (nur die Anzeige; Abfrage und Zähler gelten für alle Fragen)
     const usedThemes = THEMES.filter((th) => qs.some((q) => themeOf(q) === th.k));
