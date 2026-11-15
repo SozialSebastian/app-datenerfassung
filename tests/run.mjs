@@ -536,6 +536,30 @@ test("Analyse: Folgefrage einer Folgefrage (Tango → Wo? → Dauer) steht in de
   await ctx.close();
 });
 
+test("Ziele: laufender Monat ohne Gegenbeweis zählt als eingehalten, kippt bei Überschreitung", async () => {
+  const t0 = new Date(); const ds = (i) => { const d = new Date(t0); d.setDate(d.getDate() - i); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`; };
+  const answers = {};
+  for (let i = 0; i < 10; i++) answers[ds(i)] = { s: "Nein" };
+  const data = { version: 1, lastBackup: null, answers, questions: [{ id: "s", text: "Süßigkeiten gegessen?", type: "choice", options: ["Ja", "Nein"], multi: false, archived: false, cond: null }],
+    goals: { period: "month", items: [{ id: "g1", qid: "s", kind: "count", key: "Ja", op: "max", n: 0, period: "month", repeat: true }] } };
+  const { page, ctx, errors } = await open({ data });
+  const r = await page.evaluate(() => {
+    const mon = mondayOf(addDays(todayIso(), -7));
+    const el = document.createElement("div"); el.innerHTML = reportHtml(mon);
+    const a = { txt: el.innerText, teaser: reportTeaser(mon) };
+    setAnswer(addDays(todayIso(), -1), "s", "Ja");
+    el.innerHTML = reportHtml(mon);
+    return { ...a, txt2: el.innerText, teaser2: reportTeaser(mon) };
+  });
+  assert.match(r.txt, /1\/1\s*Ziele eingehalten/);
+  assert.match(r.txt, /✓ (Bisher e|E)ingehalten/);
+  assert.match(r.teaser, /1 von 1 eingehalten/);
+  assert.match(r.txt2, /0\/1\s*Ziele eingehalten/);
+  assert.match(r.teaser2, /0 von 1 eingehalten/);
+  assert.deepEqual(errors, []);
+  await ctx.close();
+});
+
 test("Schritte nach Stunde: Tagessumme und Stundenverlauf, angeschnittener erster Tag fällt weg", async () => {
   const { listEntries } = await import("../worker/src/index.js");
   const t = (x) => `2026-10-${x}:00+02:00`;

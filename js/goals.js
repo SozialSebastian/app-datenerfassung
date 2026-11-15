@@ -193,9 +193,12 @@ const STATUS = {
   behind: "Hinterher",
   none: "Noch offen"
 };
-const statusLabel = (e) => (e.never ? (e.status === "fail" ? "Nicht eingehalten" : e.status === "done" ? "Eingehalten" : "Bisher eingehalten")
+const statusLabel = (e) => (e.never || (e.upper && e.status === "ok") ? (e.status === "fail" ? "Nicht eingehalten" : e.status === "done" ? "Eingehalten" : "Bisher eingehalten")
   : e.status === "fail" ? (e.over ? "Überschritten" : e.impossible ? "Nicht mehr erreichbar" : "Verfehlt") : STATUS[e.status]);
 const STATUS_ORDER = { fail: 0, behind: 1, none: 2, ok: 3, done: 4 };
+// Laufender Zeitraum, bisher nichts dagegen („höchstens“/„nie“ nicht überschritten bzw. „mindestens“ auf Kurs):
+// zählt als eingehalten. Kippt automatisch, sobald die Daten dagegen sprechen (alles wird jedes Mal neu berechnet).
+const goalKept = (e) => e.status === "done" || e.status === "ok";
 
 function goalRow(e) {
   const bar = e.frac === null ? "" : `<span class="gbar"><span style="width:${Math.round(e.frac * 100)}%"></span></span>`;

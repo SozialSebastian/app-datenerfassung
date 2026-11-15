@@ -89,8 +89,8 @@ function reportHtml(mon) {
   const gitems = goalItems().filter((g) => goalIn(g, goalPer(g, sun)) || gp(g) !== "week");
   const gev = gitems.map((g) => evalGoal(g, goalPer(g, sun)));
   if (gev.length) {
-    const done = gev.filter((e) => e.status === "done").length;
-    tiles.push(`<div class="wrt"><b>${done}/${gev.length}</b><span>Ziele erreicht</span>${done === gev.length ? `<small class="g">alle ✓</small>` : ""}</div>`);
+    const kept = gev.filter(goalKept).length, running = gev.filter((e) => e.status === "ok").length;
+    tiles.push(`<div class="wrt"><b>${kept}/${gev.length}</b><span>Ziele eingehalten</span>${kept === gev.length ? `<small class="g">alle ✓</small>` : running ? `<small class="muted">${running} laufend</small>` : ""}</div>`);
   }
   const numQs = ordered().map((o) => o.q).filter((q) => !q.archived && !q.cond && q.type === "number" && q.source !== "chess");
   const keyQ = numQs.find((q) => q.healthKey === "schritte") || numQs.find((q) => nums(valsIn(q, mon)).length);
@@ -169,7 +169,7 @@ function reportHtml(mon) {
 
   const goalsHtml = gev.length ? `<section class="sq">
       <h3 class="rh">Ziele</h3>
-      ${gev.sort((a, b) => STATUS_ORDER[a.status] - STATUS_ORDER[b.status]).map((e) => `<div class="wrg"><span>${label(e.q)} <span class="muted small">${goalText(e.g, e.q)} ${PER_WORD[gp(e.g)]}</span></span><b class="${e.status === "done" ? "g" : e.status === "fail" ? "r" : ""}">${e.status === "done" ? "✓ " : e.status === "fail" ? "✗ " : ""}${e.cur}</b></div>`).join("")}
+      ${gev.sort((a, b) => STATUS_ORDER[a.status] - STATUS_ORDER[b.status]).map((e) => `<div class="wrg"><span>${label(e.q)} <span class="muted small">${goalText(e.g, e.q)} ${PER_WORD[gp(e.g)]}</span></span><b class="${goalKept(e) ? "g" : e.status === "fail" ? "r" : ""}">${goalKept(e) ? "✓ " : e.status === "fail" ? "✗ " : ""}${e.never ? (e.status === "fail" ? e.cur : statusLabel(e)) : e.cur}${e.status === "ok" ? `<small class="muted">läuft bis ${dm(e.per.end)}</small>` : ""}</b></div>`).join("")}
     </section>` : "";
 
   // Gesundheit: berechnete Werte (Erholung, Stress, Belastung) je Tag, Mosaik-Alter zum Sonntag
@@ -261,8 +261,8 @@ function reportTeaser(mon) {
   const items = goalItems();
   if (items.length) {
     const ev = items.map((g) => evalGoal(g, goalPer(g, sun)));
-    const done = ev.filter((e) => e.status === "done").length, ok = ev.filter((e) => e.status === "ok").length;
-    s += ` Ziele: ${done} erreicht${ok ? `, ${ok} auf Kurs` : ""}.`;
+    const kept = ev.filter(goalKept).length;
+    s += ` Ziele: ${kept} von ${ev.length} eingehalten.`;
   }
   return s;
 }

@@ -883,7 +883,8 @@ svg.wrs .wl { fill: none; stroke: var(--ink); stroke-width: 2; stroke-linejoin: 
 svg.wrs .wp { fill: var(--ink); }
 svg.wrs text { font-size: 10px; fill: var(--ink-2); }
 .wrg { display: flex; justify-content: space-between; gap: 10px; align-items: baseline; padding: 6px 0; font-size: 14.5px; }
-.wrg b { white-space: nowrap; }
+.wrg b { white-space: nowrap; text-align: right; }
+.wrg b small { display: block; font-weight: 600; }
 
 /* ================= Gesundheit ================= */
 .hcard .hhead { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
