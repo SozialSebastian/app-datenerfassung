@@ -303,10 +303,7 @@ function openEditor(id) {
           <div class="olab">Bei Antwort</div>
           <div class="chips">${draft.options.filter((o) => o.trim()).map((v) => `<button type="button" class="chip" data-ival="${esc(v)}" aria-pressed="${I.values.includes(v)}">${esc(v)}</button>`).join("")}</div>
           <div class="seg" role="group" aria-label="Art der Angabe">${[["duration", "Dauer"], ["clock", "Uhrzeit"], ["", "Zahl"]].map(([v, l]) => `<button type="button" data-ifmt="${v}" aria-pressed="${I.format === v}">${l}</button>`).join("")}</div>
-          <div class="row2">
-            <label class="field">Bezeichnung<input id="inltext" value="${esc(I.text)}" placeholder="z. B. Dauer" autocomplete="off"></label>
-            ${I.format ? "" : `<label class="field">Einheit<input id="inlunit" value="${esc(I.unit)}" placeholder="z. B. km" autocomplete="off"></label>`}
-          </div>
+          ${I.format ? "" : `<label class="field">Einheit<input id="inlunit" value="${esc(I.unit)}" placeholder="z. B. km" autocomplete="off"></label>`}
         </div>` : "";
     // Nur an bestimmten Tagen (1 = Mo … 7 = So)
     const WD = ["Mo", "Di", "Mi", "Do", "Fr", "Sa", "So"];
@@ -400,7 +397,6 @@ function openEditor(id) {
       if ($("#noneok", dlg)) draft.noneOk = $("#noneok", dlg).checked;
       if ($("#qmorning", dlg)) draft.morning = $("#qmorning", dlg).checked;
       gradeEditorSync(draft, dlg);
-      if ($("#inltext", dlg)) draft._inl.text = $("#inltext", dlg).value;
       if ($("#inlunit", dlg)) draft._inl.unit = $("#inlunit", dlg).value.trim();
       if ($("#smin", dlg)) { draft.min = parseInt($("#smin", dlg).value, 10); draft.max = parseInt($("#smax", dlg).value, 10); 
         const labs = {};
@@ -528,7 +524,8 @@ function openEditor(id) {
       if (I.on && draft.type === "choice") {
         I.values = I.values.filter((v) => draft.options.includes(v));
         if (!I.values.length) { draft._inl = I; return toast("Folgeangabe: bitte die Antwort wählen, bei der sie erscheint"); }
-        if (!I.text.trim()) I.text = { duration: "Dauer", clock: "Uhrzeit" }[I.format] || "Wert";
+        // Bezeichnung ergibt sich aus der Art (kein eigenes Feld mehr)
+        I.text = { duration: "Dauer", clock: "Uhrzeit" }[I.format] || (["Dauer", "Uhrzeit", ""].includes(I.text.trim()) ? "Wert" : I.text.trim());
       }
       if (existing) { Object.assign(existing, draft); if (!draft.days) delete existing.days; }
       else state.questions.push(draft);
