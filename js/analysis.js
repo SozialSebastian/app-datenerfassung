@@ -565,8 +565,7 @@ function labeledPie(items, unit, center = null, opt = {}) {
   // wenn die vollere Seite dadurch kürzer wird
   const linesOn = (g) => wrap(g.names, SIDE).length + 1 + extra;
   const load = (side) => groups.filter((g) => !g.zone && g.right === side).reduce((t, g) => t + linesOn(g), 0);
-  const MIDW = 2 * (R + w / 2 + 14); // Breite zwischen den Beschriftungen links und rechts
-  const wideChars = () => Math.floor(MIDW / 7.8);
+  const wideChars = () => Math.floor((W - 16) / 7.8); // über/unter dem Ring ist die ganze Breite frei
   for (const zone of ["top", "bot"]) {
     const from = load(true) >= load(false);
     const cand = groups.filter((g) => !g.zone && g.right === from && (zone === "top" ? Math.sin(g.am) < -0.7 : Math.sin(g.am) > 0.7))
@@ -581,9 +580,9 @@ function labeledPie(items, unit, center = null, opt = {}) {
   const hOf = (g) => (g.lines.length + extra) * LINE + 22, ringOut = R + w / 2 + 12;
   const topH = Math.max(0, ...groups.filter((g) => g.zone === "top").map(hOf));
   const botH = Math.max(0, ...groups.filter((g) => g.zone === "bot").map(hOf));
-  const side = Math.max(210, Math.max(load(true), load(false)) * LINE + 30 + groups.length * 4);
-  const H = Math.max(side, ringOut * 2 + topH + botH + 12);
-  const cy = topH ? Math.max(H / 2, topH + ringOut + 6) : H / 2;
+  // Aufbau von oben nach unten: Beschriftung über dem Ring (volle Breite) | Ring mit Beschriftungen links/rechts | Beschriftung darunter
+  const midH = Math.max(topH || botH ? ringOut * 2 + 8 : 210, Math.max(load(true), load(false)) * LINE + 30 + groups.length * 4);
+  const H = topH + midH + botH, cy = topH + midH / 2;
   const pt = (r, a) => [cx + r * Math.cos(a), cy + r * Math.sin(a)];
   // Ring
   const arcs = segs.map(({ s, a0, a1 }) => {
@@ -595,15 +594,15 @@ function labeledPie(items, unit, center = null, opt = {}) {
   // Beschriftungen: Knick außen am Ring, dann waagerecht zur Seite; je Seite von oben nach unten ohne Überlappung
   for (const g of groups) {
     [g.ex, g.ey] = pt(R + w / 2 + 3, g.am); [g.kx, g.ky] = pt(R + w / 2 + 14, g.am); g.h = hOf(g);
-    if (g.zone) g.ky = g.zone === "top" ? cy - ringOut - g.h + 10 : cy + ringOut + 24; // Text über bzw. unter dem Ring, Linie mittig dazu
+    if (g.zone) g.ky = g.zone === "top" ? 19 : topH + midH + 21; // Text ganz oben bzw. ganz unten, Linie senkrecht zum Ring
   }
   for (const side of [true, false]) {
     const xs = groups.filter((g) => !g.zone && g.right === side).sort((a, b) => a.ky - b.ky);
     // ky = Höhe der ersten Zeile; Platz nach unten = g.h
     xs.forEach((g, i) => { if (i && g.ky < xs[i - 1].ky + xs[i - 1].h) g.ky = xs[i - 1].ky + xs[i - 1].h; });
-    const over = xs.length ? xs[xs.length - 1].ky + xs[xs.length - 1].h - 18 - (H - 6) : 0;
+    const over = xs.length ? xs[xs.length - 1].ky + xs[xs.length - 1].h - 18 - (topH + midH - 6) : 0;
     if (over > 0) xs.forEach((g) => (g.ky -= over));
-    const under = xs.length ? 18 - xs[0].ky : 0;
+    const under = xs.length ? topH + 18 - xs[0].ky : 0;
     if (under > 0) xs.forEach((g) => (g.ky += under));
   }
   const fw = (x) => fmtNum(Math.round(x * 10) / 10);
@@ -619,10 +618,10 @@ function labeledPie(items, unit, center = null, opt = {}) {
     if (g.zone) {
       // über/unter dem Ring: Text mittig über der Linie, Linie senkrecht vom Stück
       const longest = Math.max(...g.lines.map((l) => l.length), 12) * 7.6;
-      const mx = clamp(g.ex, cx - MIDW / 2 + longest / 2, cx + MIDW / 2 - longest / 2);
+      const mx = clamp(g.ex, 8 + longest / 2, W - 8 - longest / 2);
       const nL = g.lines.length + 1 + extra;
       const top = g.ky - 3; // Grundlinie der ersten Zeile
-      const lineEnd = g.zone === "top" ? top + (nL - 1) * LINE + 8 : top - 16;
+      const lineEnd = g.zone === "top" ? top + (nL - 1) * LINE + 8 : top - 15;
       const rows = [...g.lines.map((l) => `<text x="${mx.toFixed(1)}" y="__Y__" text-anchor="middle" class="pk">${esc(l)}</text>`),
         `<text x="${mx.toFixed(1)}" y="__Y__" text-anchor="middle" class="pv">${val}</text>`,
         ...(wk ? [`<text x="${mx.toFixed(1)}" y="__Y__" text-anchor="middle" class="pv">${wkl}</text>`] : [])]
@@ -634,7 +633,14 @@ function labeledPie(items, unit, center = null, opt = {}) {
     const dx = tx + (g.right ? -7 : 7), anchor = g.right ? "start" : "end";
     const name = g.lines.map((l, i) => `<text x="${tx.toFixed(1)}" y="${(g.ky - 3 + i * LINE).toFixed(1)}" text-anchor="${anchor}" class="pk">${esc(l)}</text>`).join("");
     const y2 = g.ky + 13 + (g.lines.length - 1) * LINE;
-    return `<polyline points="${g.ex.toFixed(1)},${g.ey.toFixed(1)} ${g.kx.toFixed(1)},${g.ky.toFixed(1)} ${dx.toFixed(1)},${g.ky.toFixed(1)}" class="pl" style="stroke:${g.color}"/>
+    // Linie: liegt die Beschriftung auf Höhe des Stücks, schräg nach außen; ist sie verschoben, erst waagerecht nach außen,
+    // dann senkrecht neben dem Ring entlang (nie durch den Ring), dann zur Beschriftung
+    const [nx, ny] = pt(R + w / 2 + 14, g.am);
+    const xo = cx + (g.right ? 1 : -1) * Math.max(Math.abs(g.ex - cx) + 6, R + w / 2 + 10);
+    const route = Math.abs(g.ky - ny) < 6
+      ? `${g.ex.toFixed(1)},${g.ey.toFixed(1)} ${g.kx.toFixed(1)},${g.ky.toFixed(1)}`
+      : `${g.ex.toFixed(1)},${g.ey.toFixed(1)} ${xo.toFixed(1)},${g.ey.toFixed(1)} ${xo.toFixed(1)},${g.ky.toFixed(1)}`;
+    return `<polyline points="${route} ${dx.toFixed(1)},${g.ky.toFixed(1)}" class="pl" style="stroke:${g.color}"/>
       <circle cx="${dx.toFixed(1)}" cy="${g.ky.toFixed(1)}" r="2.6" style="fill:${g.color}"/>
       ${name}<title>${esc(g.names.join(", "))}</title>
       <text x="${tx.toFixed(1)}" y="${y2.toFixed(1)}" text-anchor="${anchor}" class="pv">${val}</text>
