@@ -718,13 +718,125 @@ function lineChart(q, days, vals, avg) {
     range: q.type === "scale" ? [q.min, q.max] : null,
     fmt: (v) => (q.format ? fmtQ(q, v) : fmtBig(v)),
     tipFmt: (v) => (q.format ? fmtQ(q, v) : fmtBig(v) + (q.unit ? " " + q.unit : "")),
-    dev: (d) => devText(q, d)
+    dev: (d) => devText(q, d),
+    delta: (d) => (q.format ? devMin(d) : fmtBig(Math.abs(d)) + (q.unit ? " " + q.unit : ""))
   });
 }
+/* ===== Auffälligkeiten im Verlauf (nur wenn wirklich etwas auffällt) =====
+   A Knick: ab einem Zeitpunkt stetig steigend/fallend (Mann-Kendall, p < 0,01; Steigung nach Theil-Sen)
+   B Sprung: Niveau verschiebt sich (Welch-t am besten Trennpunkt, Permutationstest p < 0,01, mind. 0,5 Streuung)
+   C Phase: mind. 5 Tage am Stück außerhalb des üblichen Bereichs (Median ± 1,4826·MAD)
+   Ab 30 Tagen Zeitraum und 20 Werten; gezeigt wird höchstens die stärkste Auffälligkeit. */
+function findPattern(pts0, days) {
+  if (days.length < 30 || pts0.length < 20) return null;
+  const di = new Map(days.map((d, i) => [d, i]));
+  let P = pts0.map((p) => ({ d: p.d, t: di.get(p.d), v: p.v })).filter((p) => p.t !== undefined);
+  // sehr lange Reihen: für die Suche auf Wochenmittel verdichten (Rechenzeit), Ergebnis gilt dann wochengenau
+  let coarse = false;
+  if (P.length > 240) {
+    const w = new Map();
+    for (const p of P) { const k = Math.floor(p.t / 7); const x = w.get(k) || { t: 0, v: 0, n: 0, d: p.d }; x.t += p.t; x.v += p.v; x.n++; w.set(k, x); }
+    P = [...w.values()].map((x) => ({ d: x.d, t: x.t / x.n, v: x.v / x.n }));
+    coarse = true;
+  }
+  const n = P.length, vs = P.map((p) => p.v);
+  const med = (xs) => { const a = [...xs].sort((x, y) => x - y), m = a.length >> 1; return a.length % 2 ? a[m] : (a[m - 1] + a[m]) / 2; };
+  const m0 = med(vs), mad = med(vs.map((v) => Math.abs(v - m0))) * 1.4826;
+  const sdv = Math.sqrt(vs.reduce((t, v) => t + (v - vs.reduce((a, b) => a + b, 0) / n) ** 2, 0) / (n - 1));
+  const scale = mad > 1e-9 ? mad : sdv;
+  if (!(scale > 1e-9)) return null;
+  const minSeg = coarse ? 4 : 10;
+  const found = [];
+  // B Sprung
+  {
+    const pre = [0], pre2 = [0];
+    vs.forEach((v, i) => { pre.push(pre[i] + v); pre2.push(pre2[i] + v * v); });
+    const bestT = (arr) => {
+      const c = [0], c2 = [0];
+      arr.forEach((v, i) => { c.push(c[i] + v); c2.push(c2[i] + v * v); });
+      let best = { t: 0, k: -1 };
+      for (let k = minSeg; k <= n - minSeg; k++) {
+        const n1 = k, n2 = n - k, m1 = c[k] / n1, m2 = (c[n] - c[k]) / n2;
+        const v1 = Math.max((c2[k] - n1 * m1 * m1) / (n1 - 1), 1e-9), v2 = Math.max((c2[n] - c2[k] - n2 * m2 * m2) / (n2 - 1), 1e-9);
+        const t = (m2 - m1) / Math.sqrt(v1 / n1 + v2 / n2);
+        if (Math.abs(t) > Math.abs(best.t)) best = { t, k, m1, m2 };
+      }
+      return best;
+    };
+    const b = bestT(vs);
+    if (b.k > 0 && Math.abs(b.m2 - b.m1) >= 0.5 * scale) {
+      let seed = 12345, ge = 0;
+      const rnd = () => (seed = (seed * 16807) % 2147483647) / 2147483647;
+      const arr = [...vs];
+      for (let r = 0; r < 200; r++) {
+        for (let i = arr.length - 1; i > 0; i--) { const j = Math.floor(rnd() * (i + 1)); [arr[i], arr[j]] = [arr[j], arr[i]]; }
+        if (Math.abs(bestT(arr).t) >= Math.abs(b.t)) ge++;
+      }
+      const pv = (ge + 1) / 201;
+      if (pv < 0.01) found.push({ kind: "jump", a: b.k, b: n - 1, from: b.m1, to: b.m2, score: Math.abs(b.t) });
+    }
+  }
+  // A Knick: Abschnitt bis heute mit stetigem Trend (Mann-Kendall); der Start mit dem stärksten |z|
+  {
+    const mk = (a) => {
+      const m = n - a;
+      let S = 0;
+      for (let i = a; i < n; i++) for (let j = i + 1; j < n; j++) S += Math.sign(vs[j] - vs[i]);
+      const varS = (m * (m - 1) * (2 * m + 5)) / 18;
+      return S === 0 ? 0 : (S - Math.sign(S)) / Math.sqrt(varS);
+    };
+    const stepK = Math.max(1, Math.floor(n / 40));
+    let best = null;
+    for (let a = 0; a <= n - minSeg; a += stepK) {
+      if (P[n - 1].t - P[a].t < 14) break;
+      const z = mk(a);
+      if (Math.abs(z) > 2.576 && (!best || Math.abs(z) > Math.abs(best.z))) best = { a, z };
+    }
+    if (best) {
+      const seg = P.slice(best.a), sl = [];
+      for (let i = 0; i < seg.length; i++) for (let j = i + 1; j < seg.length; j++) if (seg[j].t !== seg[i].t) sl.push((seg[j].v - seg[i].v) / (seg[j].t - seg[i].t));
+      const slope = med(sl), icpt = med(seg.map((p) => p.v - slope * p.t));
+      // sichtbar genug: über den Abschnitt mind. 0,5 Streuung Veränderung
+      // Knick heißt: die Gerade startet dort, wo die Werte vorher lagen (sonst ist es ein Ausreißer/eine Phase, kein Trend)
+      const before = vs.slice(Math.max(0, best.a - 10), best.a);
+      const startOk = !before.length || Math.abs(icpt + slope * seg[0].t - med(before)) <= 0.6 * scale;
+      if (startOk && Math.abs(slope * (seg[seg.length - 1].t - seg[0].t)) >= 0.5 * scale && Math.sign(slope) === Math.sign(best.z))
+        found.push({ kind: "trend", a: best.a, b: n - 1, slope, icpt, score: Math.abs(best.z) });
+    }
+  }
+  // C Phase: Lauf von mind. 5 aufeinanderfolgenden Tagen außerhalb Median ± Streuung (nicht bei Wochenmitteln)
+  if (!coarse) {
+    let best = null;
+    const sc = Math.min(scale, sdv); // bei groben Skalen (1–5) ist die MAD zu breit
+    for (const sign of [1, -1]) {
+      let i = 0;
+      while (i < n) {
+        if (sign * (vs[i] - m0) <= 0.75 * sc) { i++; continue; }
+        let j = i;
+        while (j + 1 < n && P[j + 1].t - P[j].t === 1 && sign * (vs[j + 1] - m0) > 0.75 * sc) j++;
+        const len = j - i + 1;
+        const mean = vs.slice(i, j + 1).reduce((a, b) => a + b, 0) / len;
+        // Zufall? q = Anteil aller Werte jenseits der Schwelle; ein Lauf der Länge len irgendwo: ≈ 2·n·q^len
+        const q = vs.filter((v) => sign * (v - m0) > 0.75 * sc).length / n;
+        if (len >= 5 && j < n - 1 && sign * (mean - m0) >= 1.25 * sc && 2 * n * q ** len < 0.01) { // reicht bis heute → eher Sprung/Knick
+          const score = (Math.abs(mean - m0) / sc) * Math.sqrt(len);
+          if (!best || score > best.score) best = { kind: "phase", a: i, b: j, mean, base: m0, sign, score };
+        }
+        i = j + 1;
+      }
+    }
+    if (best) found.push(best);
+  }
+  if (!found.length) return null;
+  const r = found.sort((x, y) => y.score - x.score)[0];
+  r.P = P; r.coarse = coarse;
+  return r;
+}
+
 // Verlauf über die Zeit: monotone Kurve, Fläche zum Durchschnitt (darüber/darunter eingefärbt), Höchst- und Tiefstwert am Punkt,
 // Antippen zeigt eine Sprechblase (wireCurves). pts: [{ d, v }]
 // connect: Lücken überbrücken (z. B. Elo bleibt an Tagen ohne Partie gleich)
-function curveChart(pts0, days, { avg, dir = null, id = "", label = "", range = null, fmt = fmtBig, tipFmt = null, dev = null, connect = false }) {
+function curveChart(pts0, days, { avg, dir = null, id = "", label = "", range = null, fmt = fmtBig, tipFmt = null, dev = null, connect = false, delta = null, pattern = true }) {
   if (!pts0.length) return "";
   const W = 340, H = 172, PL = 12, PR = 12, PT = 24, PB = 34;
   const nums = pts0.map((x) => x.v);
@@ -777,7 +889,37 @@ function curveChart(pts0, days, { avg, dir = null, id = "", label = "", range = 
   const step = days.length <= 14 ? 1 : Math.ceil(days.length / 5);
   const xl = days.map((d, i) => (i % step === 0 || i === days.length - 1) && (days.length <= 14 || i === days.length - 1 || days.length - 1 - i >= step * 0.6)
     ? `<text x="${r1(xi(d))}" y="${H - 7}" text-anchor="${days.length > 14 && i === 0 ? "start" : days.length > 14 && i === days.length - 1 ? "end" : "middle"}" class="xl" data-d="${d}">${days.length <= 14 ? WD_SHORT[parseIso(d).getDay()] : `${parseIso(d).getDate()}.${parseIso(d).getMonth() + 1}.`}</text>` : "").join("");
-  return `<div class="lchart">
+  // Auffälligkeit: betroffener Abschnitt der Kurve farbig, Trend bzw. neues Niveau gestrichelt, Satz darunter
+  let patSvg = "", patTxt = "";
+  const pat = pattern ? findPattern(pts0, days) : null;
+  if (pat) {
+    const dPos = (dd) => pts.findIndex((p) => p.d >= dd);
+    const i0 = Math.max(0, dPos(pat.P[pat.a].d)), lastD = pat.P[pat.b].d;
+    let i1 = pts.length - 1; if (pat.kind === "phase") i1 = pts.findIndex((p) => p.d >= lastD);
+    const up = pat.kind === "trend" ? pat.slope > 0 : pat.kind === "jump" ? pat.to > pat.from : pat.sign > 0;
+    const col = !dir ? "var(--hold)" : up === (dir === "high") ? "var(--s3)" : "var(--s2)";
+    const part = pts.slice(i0, i1 + 1);
+    const pSegs = [];
+    part.forEach((p, i) => { if (!i || (!connect && days.indexOf(p.d) - days.indexOf(part[i - 1].d) > 1)) pSegs.push([]); pSegs[pSegs.length - 1].push(p); });
+    patSvg = pSegs.filter((x) => x.length > 1).map((x) => `<path d="${curve(x)}" class="lnp" style="stroke:${col}"/>`).join("");
+    const dmy = (dd) => `${parseIso(dd).getDate()}.${parseIso(dd).getMonth() + 1}.`;
+    const dl = delta || ((x) => fmtBig(Math.abs(x)));
+    const t0 = days.indexOf(pts[i0].d), tEnd = days.length - 1;
+    const ty = (t) => r1(yi(pat.icpt + pat.slope * t));
+    if (pat.kind === "trend") {
+      patSvg += `<line x1="${pts[i0].x}" y1="${ty(t0)}" x2="${r1(xi(days[tEnd]))}" y2="${ty(tEnd)}" class="trendln" style="stroke:${col}"/>`;
+      const perM = pat.slope * 30.44;
+      patTxt = [`${up ? "▲" : "▼"} ${i0 === 0 ? "im ganzen Zeitraum" : `seit ${dmy(pts[i0].d)}`} ${up ? "+" : "−"}${dl(perM)} pro Monat`, i0 === 0 ? "stetiger Trend" : "vorher gleichbleibend"];
+    } else if (pat.kind === "jump") {
+      const yl = r1(yi(pat.to));
+      patSvg += `<line x1="${pts[i0].x}" y1="${yl}" x2="${r1(xi(days[tEnd]))}" y2="${yl}" class="trendln" style="stroke:${col}"/>`;
+      patTxt = [`${up ? "▲" : "▼"} seit ${dmy(pts[i0].d)} ${dl(pat.to - pat.from)} ${up ? "mehr" : "weniger"}`, `Ø vorher ${f(pat.from)}, seitdem ${f(pat.to)}`];
+    } else {
+      patTxt = [`${up ? "▲" : "▼"} ${dmy(pts[i0].d)}–${dmy(pts[i1].d)} deutlich ${up ? "höher" : "niedriger"}`, `Ø ${f(pat.mean)} statt sonst ${f(pat.base)}`];
+    }
+    patTxt = `<p class="ptrend"><b style="color:${col}">${esc(patTxt[0])}</b><span>${esc(patTxt[1])}</span></p>`;
+  }
+  return `<div class="lchart${pat ? " haspat" : ""}">
     <svg class="line" viewBox="0 0 ${W} ${H}" data-pts='${esc(JSON.stringify(tips))}' role="img" aria-label="${esc(label)}">
       <defs>
         <linearGradient id="${gid}u" x1="0" y1="${PT}" x2="0" y2="${ya}" gradientUnits="userSpaceOnUse"><stop offset="0" style="stop-color:${cUp};stop-opacity:.45"/><stop offset="1" style="stop-color:${cUp};stop-opacity:.05"/></linearGradient>
@@ -788,6 +930,7 @@ function curveChart(pts0, days, { avg, dir = null, id = "", label = "", range = 
       ${areas.map((a) => `<path d="${a}" fill="url(#${gid}u)" clip-path="url(#${gid}cu)"/><path d="${a}" fill="url(#${gid}d)" clip-path="url(#${gid}cd)"/>`).join("")}
       <line x1="${PL}" x2="${W - PR}" y1="${ya}" y2="${ya}" class="avg"/>
       ${lines.map((l) => `<path d="${l}" class="ln"/>`).join("")}
+      ${patSvg}
       ${pts.length <= 45 ? pts.map((p) => `<circle cx="${p.x}" cy="${p.y}" r="${pts.length > 20 ? 2 : 3}" class="dot"/>`).join("") : ""}
       ${pMax ? tag(pMax, true) : ""}${pMin && pMin !== pMax ? tag(pMin, false) : ""}
       <g class="avgpill" transform="translate(${pillLeft ? PL : W - PR - 60},${r1(ya - 9)})"><rect width="60" height="18" rx="9"/><text x="30" y="12.5" text-anchor="middle">Ø ${esc(f(avg))}</text></g>
@@ -796,6 +939,7 @@ function curveChart(pts0, days, { avg, dir = null, id = "", label = "", range = 
       ${xl}
     </svg>
     <div class="ltip" hidden><span class="lt1"></span><strong class="lt2"></strong><span class="lt3"></span></div>
+    ${patTxt}
   </div>`;
 }
 

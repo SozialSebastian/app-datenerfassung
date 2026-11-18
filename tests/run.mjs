@@ -681,6 +681,31 @@ test("Analyse „Alles“: jede Kachel beginnt mit der ersten eigenen Antwort", 
   await ctx.close();
 });
 
+test("Auffälligkeiten im Verlauf: Sprung, Phase, Knick erkannt – Rauschen bleibt ohne Linie", async () => {
+  const { page, ctx, errors } = await open({ data: { version: 1, lastBackup: null, answers: {}, questions: [] } });
+  const r = await page.evaluate(() => {
+    let seed = 5; const rnd = () => (seed = (seed * 16807) % 2147483647) / 2147483647;
+    const noise = (x) => (rnd() + rnd() + rnd() - 1.5) * x;
+    const days = []; for (let i = 0; i < 90; i++) days.push(addDays("2026-08-01", i));
+    const mk = (f) => days.map((d, i) => ({ d, v: f(i) }));
+    const k = (p) => (p ? p.kind : null);
+    return {
+      flat: k(findPattern(mk(() => 7 + noise(0.6)), days)),
+      jump: k(findPattern(mk((i) => (i < 60 ? 7.2 : 6.2) + noise(0.5)), days)),
+      phase: k(findPattern(mk((i) => 3 + (i >= 40 && i < 48 ? 2 : 0) + noise(0.4)), days)),
+      trend: k(findPattern(mk((i) => 7 + (i > 40 ? (i - 40) * 0.04 : 0) + noise(0.4)), days)),
+      short: k(findPattern(mk((i) => (i < 60 ? 7.2 : 6.2)).slice(0, 25), days.slice(0, 25)))
+    };
+  });
+  assert.equal(r.flat, null);
+  assert.equal(r.jump, "jump");
+  assert.equal(r.phase, "phase");
+  assert.ok(r.trend === "trend" || r.trend === "jump", r.trend);
+  assert.equal(r.short, null);
+  assert.deepEqual(errors, []);
+  await ctx.close();
+});
+
 test("Schritte nach Stunde: Tagessumme und Stundenverlauf, angeschnittener erster Tag fällt weg", async () => {
   const { listEntries } = await import("../worker/src/index.js");
   const t = (x) => `2026-10-${x}:00+02:00`;
