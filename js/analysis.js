@@ -93,9 +93,12 @@ function wireRange(root, attr, set) {
 
 const GEAR = `<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/></svg>`;
 
+// Körperwerte aus Apple Health: stehen im Bereich Gesundheit (unter Fitness), nicht in der Analyse
+const HEALTH_BODY_KEYS = ["ruhepuls", "hrv", "vo2max", "atemfrequenz"];
+const isBodyQ = (q) => q.source === "health" && HEALTH_BODY_KEYS.includes(q.healthKey);
 function analysisQuestions(days) {
   // Schach-Werte stehen gebündelt in der Schach-Kachel, nicht als eigene Karten
-  return ordered().map((o) => o.q).filter((q) => q.source !== "chess" && !isIntolQ(q) && (!q.archived || days.some((d) => hasData((state.answers[d] || {})[q.id]))));
+  return ordered().map((o) => o.q).filter((q) => q.source !== "chess" && !isIntolQ(q) && !isBodyQ(q) && (!q.archived || days.some((d) => hasData((state.answers[d] || {})[q.id]))));
 }
 
 function renderAnalysis() {

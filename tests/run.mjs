@@ -711,6 +711,21 @@ test("Auffälligkeiten im Verlauf: Sprung, Phase, Knick erkannt – Rauschen ble
   await ctx.close();
 });
 
+test("Ruhepuls, HRV, VO₂max, Atemfrequenz: nicht in der Analyse, sondern unter Gesundheit", async () => {
+  const d0 = new Date(); const ds = (i) => { const d = new Date(d0); d.setDate(d.getDate() - i); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`; };
+  const answers = {}; for (let i = 1; i < 30; i++) answers[ds(i)] = { r: 50 + (i % 5), h: 60 + (i % 7) };
+  const H = (id, k, t) => ({ id, text: t, type: "number", healthKey: k, source: "health", format: null, options: [], archived: false, cond: null });
+  const data = { version: 1, lastBackup: null, answers, profile: { born: 1996, sex: "m" }, questions: [H("r", "ruhepuls", "Ruhepuls"), H("h", "hrv", "HRV")] };
+  const { page, ctx, errors } = await open({ data });
+  await page.click('[data-tab="analysis"]');
+  assert.equal(await page.locator('.acard[data-qid="r"]').count(), 0);
+  await page.click('[data-tab="health"]');
+  assert.equal(await page.locator('.acard[data-qid="r"]').count(), 1);
+  assert.equal(await page.locator('.acard[data-qid="h"]').count(), 1);
+  assert.deepEqual(errors, []);
+  await ctx.close();
+});
+
 test("Schritte nach Stunde: Tagessumme und Stundenverlauf, angeschnittener erster Tag fällt weg", async () => {
   const { listEntries } = await import("../worker/src/index.js");
   const t = (x) => `2026-10-${x}:00+02:00`;

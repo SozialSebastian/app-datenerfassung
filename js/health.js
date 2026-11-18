@@ -354,6 +354,10 @@ function renderHealth() {
         <p class="small" style="margin:4px 0 0">${n ? `Median deines Alters: ${fmtNum(Math.round(n * 10) / 10)} · ` : ""}Fitness-Alter: <strong>${Math.round(fa)} Jahre</strong></p>`;
     })();
 
+  // Verläufe der Körperwerte (früher in der Analyse): Ruhepuls, HRV, VO₂max, Atemfrequenz – letzte 90 Tage
+  const bdays = rangeDays("90");
+  const bodyQs = HEALTH_BODY_KEYS.map((k) => state.questions.find((q) => isBodyQ(q) && q.healthKey === k && !q.archived)).filter((q) => q && bdays.some((d) => hasData((state.answers[d] || {})[q.id])));
+  const bodyCards = bodyQs.length ? `<h2 class="hsec">Verläufe <span class="muted small">letzte 90 Tage</span></h2>${bodyQs.map((q) => analysisCard(q, bdays)).join("")}` : "";
   view.innerHTML = `
     <div class="dayhead"><h1>Gesundheit</h1><button class="gear" id="hsetup" aria-label="Daten einrichten">${GEAR}</button></div>
     ${profile}
@@ -363,8 +367,10 @@ function renderHealth() {
     ${hcard("strain", "Belastung", strainBody)}
     ${hcard("sleep", "Schlaf", sleepBody)}
     ${hcard("fit", "Fitness", fitBody)}
+    ${bodyCards}
     <p class="muted small" style="margin:4px 4px 0">Schätzungen aus deinen Apple-Health-Werten, angelehnt an Studien – keine Diagnose.</p>`;
 
+  wireCurves(view);
   $("#hprofile")?.addEventListener("click", () => {
     settingsSec = "profil"; tab = "data"; render();
     setTimeout(() => { $("#profil")?.scrollIntoView({ block: "start" }); $("#pborn")?.focus(); }, 50);
