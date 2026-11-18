@@ -382,6 +382,10 @@ label.switch input { width: 20px; height: 20px; accent-color: var(--act); }
 .trow { display: grid; grid-template-columns: 18px 1fr; gap: 8px; align-items: start; font-size: 15px; line-height: 1.4; }
 .ticon { width: 18px; text-align: center; font-weight: 700; line-height: 1.4; }
 .ticon.up { color: var(--s6); } .ticon.down { color: var(--hold); } .ticon.dot { color: var(--ink-2); }
+.goals .thead { display: flex; justify-content: space-between; align-items: center; gap: 12px; margin-bottom: 4px; }
+.goals .thead .atitle { margin: 0; }
+.goals .thead .gear { border: 0; background: var(--bg); width: 36px; height: 36px; border-radius: 50%; display: grid; place-items: center; color: var(--ink); }
+.goals .thead .gear svg { width: 20px; height: 20px; }
 .trends .thead { display: flex; justify-content: space-between; align-items: center; gap: 12px; margin-bottom: 4px; }
 .trends .thead .atitle { margin: 0; }
 .trends .thead .gear { border: 0; background: var(--bg); width: 36px; height: 36px; border-radius: 50%; display: grid; place-items: center; color: var(--ink); }
@@ -459,6 +463,8 @@ input.timein::-webkit-date-and-time-value { text-align: center; }
 .gline { display: flex; align-items: center; gap: 8px; margin-top: 10px; font-size: 15px; color: var(--ink-2); flex-wrap: wrap; }
 input.gin { width: 6ch; padding: 8px 10px; border-radius: var(--r-sm); border: 1.5px solid var(--line); background: var(--bg); color: var(--ink); font-size: 18px; font-weight: 700; text-align: center; font-variant-numeric: tabular-nums; }
 input.gin.wide { width: 9ch; }
+.pgrid { display: grid; grid-template-columns: 8.2em 1fr; align-items: center; gap: 10px 8px; margin-top: 10px; font-size: 15px; color: var(--ink-2); }
+.pgrid .pval { display: flex; align-items: center; gap: 8px; }
 .gprev { margin: 12px 0 4px; }
 .gbtns { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 6px; }
 .gedit { border: 0; background: none; padding: 6px 0 0; text-align: left; font-size: 15px; color: var(--ink); }

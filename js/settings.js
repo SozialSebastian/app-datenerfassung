@@ -306,8 +306,11 @@ function settingsNav() {
 /* ================= Profil: Angaben über dich ================= */
 // Arbeitsfragen: Vorlage „Arbeit“ (oder schon mit Vertrag) mit Stunden-Folgefrage
 const workQuestions = () => state.questions.filter((q) => !q.archived && hoursChildOf(q) && (q.template === "work" || q.contract));
+// eine Profilzeile: Bezeichnung links in fester Spalte, Eingabe und Einheit rechts daneben
+const prow = (label, input, unit) => `<span class="plab">${label}</span><span class="pval">${input}<span>${unit}</span></span>`;
 function profilePanel() {
   const p = state.profile || {};
+  const hk = typeof hvals === "function" ? hvals("gewicht", 120)[0] || null : null;
   const jobs = workQuestions();
   return `<section class="panel" id="profil">
       <h2>Profil</h2>
@@ -315,13 +318,17 @@ function profilePanel() {
         <label class="field">Geburtsjahr<input id="pborn" type="number" inputmode="numeric" placeholder="z. B. 1998" value="${p.born || ""}"></label>
         <label class="field">Geschlecht<select id="psex"><option value="">–</option><option value="m" ${p.sex === "m" ? "selected" : ""}>männlich</option><option value="w" ${p.sex === "w" ? "selected" : ""}>weiblich</option></select></label>
       </div>
-      <div class="gline" style="margin-top:0"><span>Körpergröße</span><input id="pheight" class="gin" type="text" inputmode="numeric" value="${p.height || ""}" placeholder="180"><span>cm</span></div>
-      <div class="gline" style="margin-top:0"><span>Schlafbedarf</span><input id="psleep" class="gin" type="text" inputmode="decimal" value="${fmtNum(p.sleepNeed || 8)}"><span>Stunden</span></div>
+      <div class="pgrid">
+        ${prow("Körpergröße", `<input id="pheight" class="gin" type="text" inputmode="numeric" value="${p.height || ""}" placeholder="180">`, "cm")}
+        ${prow("Gewicht", `<input id="pweight" class="gin" type="text" inputmode="decimal" value="${p.weight ? fmtNum(p.weight) : ""}" placeholder="${hk ? fmtNum(hk) : "75"}">`, "kg")}
+        ${prow("Schlafbedarf", `<input id="psleep" class="gin" type="text" inputmode="decimal" value="${fmtNum(p.sleepNeed || 8)}">`, "Stunden")}
+      </div>
+      <p class="muted small" style="margin:6px 0 0">Das Gewicht zählt nur, wenn Apple Health in den letzten 120 Tagen keins liefert${hk ? ` (dort zuletzt ${fmtNum(hk)} kg)` : ""}.</p>
       ${jobs.map((q) => `<div class="subsep"></div>
         <div class="olab">Arbeitsvertrag · ${esc(q.text)}</div>
-        <div class="gline" style="margin-top:0"><span>Vertraglich</span><input class="gin" data-ch="${q.id}" type="text" inputmode="decimal" value="${esc(q.contract ? fmtNum(q.contract.h) : "")}" placeholder="20"><span>Stunden</span></div>
+        <div class="pgrid">${prow("Vertraglich", `<input class="gin" data-ch="${q.id}" type="text" inputmode="decimal" value="${esc(q.contract ? fmtNum(q.contract.h) : "")}" placeholder="20">`, "Stunden")}</div>
         <div class="seg seg-2" role="group" style="margin:10px 0">${[["week", "pro Woche"], ["month", "pro Monat"]].map(([v, l]) => `<button type="button" data-cper="${q.id}:${v}" aria-pressed="${(q.contract?.per || "week") === v}">${l}</button>`).join("")}</div>
-        <div class="gline" style="margin-top:0"><span>Stundenlohn</span><input class="gin wide" data-cw="${q.id}" type="text" inputmode="decimal" value="${esc(q.contract && q.contract.wage ? q.contract.wage.toFixed(2).replace(".", ",") : "")}" placeholder="15,00"><span>€</span></div>`).join("")}
+        <div class="pgrid">${prow("Stundenlohn", `<input class="gin wide" data-cw="${q.id}" type="text" inputmode="decimal" value="${esc(q.contract && q.contract.wage ? q.contract.wage.toFixed(2).replace(".", ",") : "")}" placeholder="15,00">`, "€")}</div>`).join("")}
       <p class="muted small" style="margin:10px 0 0">Für Mosaik-Alter, Pulszonen, Schlafschuld, Ernährung (Protein-Ziel, Energiebedarf)${jobs.length ? " und den effektiven Stundenlohn" : ""}. Bleibt auf diesem iPhone.</p>
     </section>`;
 }
@@ -338,6 +345,12 @@ function wireProfile() {
     const h = parseNum(e.target.value);
     if (e.target.value && !(h >= 120 && h <= 230)) { e.target.value = P().height || ""; return toast("Körpergröße zwischen 120 und 230 cm"); }
     if (h) P().height = Math.round(h); else delete P().height;
+    save(); toast("Gesichert");
+  });
+  $("#pweight")?.addEventListener("change", (e) => {
+    const w = parseNum(e.target.value);
+    if (e.target.value && !(w >= 30 && w <= 250)) { e.target.value = P().weight ? fmtNum(P().weight) : ""; return toast("Gewicht zwischen 30 und 250 kg"); }
+    if (w) P().weight = Math.round(w * 10) / 10; else delete P().weight;
     save(); toast("Gesichert");
   });
   $("#psleep")?.addEventListener("change", (e) => {

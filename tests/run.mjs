@@ -1484,6 +1484,9 @@ test("Fragen per Gedrückthalten verschieben", async () => {
   const data = { version: 1, lastBackup: null, answers: {}, questions: ["A", "B", "C"].map((x) => yesNo(x.toLowerCase(), x + "?")) };
   const { page, ctx, errors } = await open({ data });
   await page.click('[data-tab="data"]');
+  // das Profil steht darüber: Fragenliste in den sichtbaren Bereich holen
+  await page.evaluate(() => { const r = document.querySelector('[data-qrow="a"]'); window.scrollBy(0, r.getBoundingClientRect().top - 120); });
+  await page.waitForTimeout(100);
   const a = await page.locator('[data-qrow="a"] .qmain').boundingBox(), c = await page.locator('[data-qrow="c"] .qmain').boundingBox();
   await page.mouse.move(a.x + 30, a.y + a.height / 2); await page.mouse.down(); await page.waitForTimeout(600);
   for (let i = 1; i <= 8; i++) await page.mouse.move(a.x + 30, a.y + a.height / 2 + (c.y + c.height * 0.8 - a.y - a.height / 2) * i / 8);

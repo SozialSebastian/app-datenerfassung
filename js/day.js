@@ -50,7 +50,7 @@ function renderDay() {
     body = `${mOpen ? `<button class="btn block hold-btn" id="startmorning">Morgenfragen beantworten (${mOpen})</button>` : ""}<button class="btn block ${done < qs.length && !mOpen ? "hold-btn" : "ghost"}" id="startquiz"${mOpen ? ' style="margin-top:8px"' : ""}>${startLabel}</button>
       <p class="progress">${done} von ${qs.length} beantwortet</p>`;
     // darunter: Ziele (nur heute), dann Apple Health/Ernährung/Schach, dann Themen-Filter und Fragen
-    if (current === todayIso() && goalItems().length) body += goalsPanel();
+    if (current === todayIso()) body += goalsPanel();
     body += healthHtml;
     // Filter nach Thema wie in der Analyse (nur die Anzeige; Abfrage und Zähler gelten für alle Fragen)
     const usedThemes = THEMES.filter((th) => qs.some((q) => themeOf(q) === th.k));
@@ -81,7 +81,6 @@ function renderDay() {
       </div>
       <div class="headbtns">
         ${isToday ? "" : `<button class="todaybtn" id="gotoday">Zu heute</button>`}
-        <button class="gear" id="goalsbtn" aria-label="Ziele festlegen">${GEAR}</button>
       </div>
     </div>
     ${placeLine(current)}
@@ -92,7 +91,9 @@ function renderDay() {
   view.querySelectorAll("[data-date]").forEach((b) => b.addEventListener("click", () => { current = b.dataset.date; renderDay(); }));
   $("#gotoday")?.addEventListener("click", () => { current = todayIso(); renderDay(); });
   $("#firstq")?.addEventListener("click", openNewQuestion);
-  $("#goalsbtn").addEventListener("click", openGoals);
+  $("#goalsbtn")?.addEventListener("click", (e) => { e.stopPropagation(); openGoals(); });
+  // Ziele-Kachel gedrückt halten: Ziele festlegen (wie die anderen Kacheln)
+  view.querySelectorAll(".panel.goals").forEach((card) => onHold(card, openGoals));
   $("#placeedit")?.addEventListener("click", () => openPlaces(current));
   if (isToday) refreshNowWeather();
   view.querySelectorAll("[data-hq]").forEach((row) => {

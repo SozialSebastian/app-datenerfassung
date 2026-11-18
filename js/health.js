@@ -115,7 +115,7 @@ function nutriScore(days) {
   const kcal = avg("kcal"), p = avg("p"), z = avg("z"), f = avg("f"), bs = avg("bs");
   // Protein-Ziel (DGE 0,8 g/kg) bezogen auf das Normalgewicht: bei Übergewicht zählt höchstens das Gewicht bei BMI 25,
   // ohne gemessenes Gewicht das Gewicht bei BMI 22 aus der Körpergröße
-  const kgM = hvals("gewicht", 120)[0] || null, hM = PROFILE().height ? PROFILE().height / 100 : null;
+  const kgM = hvals("gewicht", 120)[0] || PROFILE().weight || null, hM = PROFILE().height ? PROFILE().height / 100 : null;
   const kg = kgM && hM ? Math.min(kgM, 25 * hM * hM) : kgM || (hM ? 22 * hM * hM : null);
   const pTarget = kg ? 0.8 * kg : null;
   const parts = [
@@ -542,7 +542,7 @@ const HINFO = {
     <p><strong>Ernährungs-Score</strong> (0–100) = Summe aus vier Teilen à 25 Punkten, aus den Ø-Werten:</p>
     <ul class="hul">
       <li><strong>Ballaststoffe</strong>: 25 · min(1, g / 30). Ziel 30 g (DGE).</li>
-      <li><strong>Protein</strong>: 25 · min(1, g / (0,8 · Bezugsgewicht)). Bezugsgewicht = Gewicht aus Apple Health, höchstens das Gewicht bei BMI 25 (25 · Größe²); ohne Gewicht das Normalgewicht bei BMI 22 aus der Körpergröße (Profil); ohne beides 25 · min(1, Anteil an der Energie / 15 %).</li>
+      <li><strong>Protein</strong>: 25 · min(1, g / (0,8 · Bezugsgewicht)). Bezugsgewicht = Gewicht aus Apple Health (sonst aus dem Profil), höchstens das Gewicht bei BMI 25 (25 · Größe²); ohne Gewicht das Normalgewicht bei BMI 22 aus der Körpergröße (Profil); ohne beides 25 · min(1, Anteil an der Energie / 15 %).</li>
       <li><strong>Zucker</strong>: Anteil a = 4 · g / kcal; bis 10 % volle 25 Punkte, ab 20 % keine, dazwischen linear: 25 · (0,20 − a) / 0,10. Gezählt wird aller Zucker (auch aus Obst), die WHO-Grenze von 10 % gilt für freien Zucker – deshalb die großzügigere Spanne bis 20 %.</li>
       <li><strong>Fett</strong>: Anteil a = 9 · g / kcal; bis 35 % volle Punkte, ab 45 % keine, linear dazwischen (DGE: 30–35 %).</li>
     </ul>

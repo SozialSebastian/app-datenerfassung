@@ -229,18 +229,19 @@ function goalHistory() {
 }
 
 // Bereich „Ziele“ in der Analyse
+const goalsHead = () => `<div class="thead"><h2 class="atitle">Ziele</h2><button class="gear" id="goalsbtn" aria-label="Ziele festlegen">${GEAR}</button></div>`;
 function goalsPanel() {
   const items = goalItems();
   if (!items.length) {
-    return `<section class="panel goals"><h2 class="atitle">Ziele</h2>
-      <p class="muted small" style="margin:0">Noch keine aktiven Ziele. Leg sie unter „Tag“ über das Zahnrad oben rechts an.</p></section>`;
+    return `<section class="panel goals">${goalsHead()}
+      <p class="muted small" style="margin:0">Noch keine aktiven Ziele. Über das Zahnrad legst du welche an.</p></section>`;
   }
   const evals = items.map((g) => evalGoal(g, goalCur(g))).sort((a, b) => STATUS_ORDER[a.status] - STATUS_ORDER[b.status]);
   const shown = evals;
   const hist = goalHistory();
 
   return `<section class="panel goals">
-    <h2 class="atitle">Ziele</h2>
+    ${goalsHead()}
     <ul class="glist">${shown.map(goalRow).join("")}</ul>
     ${hist.length ? `<details class="ghist">
       <summary>Rückblick: ${esc(hist[0].p.name)} ${hist[0].ok} von ${hist[0].all} erreicht</summary>
@@ -309,7 +310,7 @@ function goalDraft(q, period) {
   return { kind: "avg", cmp: betterDir(q) === "low" ? "le" : "ge", val, n: period === "week" ? 5 : period === "month" ? 20 : 250 };
 }
 
-// Zahnrad auf „Tag“: Zeitraum wählen, Ziele anlegen, ändern, löschen
+// Zahnrad der Ziele-Kachel auf „Tag“: Zeitraum wählen, Ziele anlegen, ändern, löschen
 function openGoals() {
   const dlg = $("#sheet");
   let edit = null; // Entwurf: { id, qid, ...Ziel }, isNew
