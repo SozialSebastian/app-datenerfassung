@@ -962,9 +962,6 @@ function curveChart(pts0, days, { avg, dir = null, id = "", label = "", range = 
       patSvg += `<line x1="${pts[i0].x}" y1="${yl}" x2="${r1(xi(days[tEnd]))}" y2="${yl}" class="trendln" style="stroke:${col}"/>`;
       tx = [`${up ? "▲" : "▼"} seit ${dmy(pts[i0].d)} ${dl(pat.to - pat.from)} ${up ? "mehr" : "weniger"}`, `Ø vorher ${f(pat.from)}, seitdem ${f(pat.to)}`];
     } else if (pat.kind === "spread") {
-      // Band Ø ± Streuung ab dem Wechsel (fein gestrichelt)
-      const x1 = pts[i0].x, x2 = r1(xi(days[tEnd]));
-      for (const v of [pat.mean2 + pat.sd2, pat.mean2 - pat.sd2]) patSvg += `<line x1="${x1}" y1="${r1(yi(v))}" x2="${x2}" y2="${r1(yi(v))}" class="bandln" style="stroke:${col}"/>`;
       tx = [`${up ? "▲" : "▼"} seit ${dmy(pts[i0].d)} ${up ? "unruhiger" : "ruhiger"}`, `Schwankung ± ${dl(pat.sd1)} → ± ${dl(pat.sd2)}`];
     } else {
       tx = [`${up ? "▲" : "▼"} ${dmy(pts[i0].d)}–${dmy(pts[i1].d)} deutlich ${up ? "höher" : "niedriger"}`, `Ø ${f(pat.mean)} statt sonst ${f(pat.base)}`];
