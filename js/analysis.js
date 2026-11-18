@@ -841,11 +841,33 @@ function findPatterns(pts0, days) {
       }
     }
   }
-  // bis zu 3 Auffälligkeiten, die sich zeitlich nicht überschneiden – die stärksten zuerst
+  // D Schwankung: ab einem Zeitpunkt deutlich ruhiger oder unruhiger (Niveau herausgerechnet über gleitenden Median)
+  if (!coarse && n >= 2 * minSeg + 6) {
+    const res = vs.map((v, i) => v - med(vs.slice(Math.max(0, i - 3), Math.min(n, i + 4))));
+    // je Trennpunkt k: z = (ln s₂² − ln s₁²) / √(2/(n₁−1) + 2/(n₂−1))  (Näherung für den Vergleich zweier Varianzen);
+    // weil viele k probiert werden, muss |z| > 3 sein (statt 1,96)
+    const c2 = [0]; res.forEach((v, i) => c2.push(c2[i] + v * v));
+    let b = { z: 0, k: -1, lr: 0 };
+    for (let k = Math.max(minSeg, 10); k <= n - Math.max(minSeg, 10); k++) {
+      const s1 = c2[k] / k, s2 = (c2[n] - c2[k]) / (n - k);
+      if (s1 <= 1e-12 || s2 <= 1e-12) continue;
+      const z = Math.log(s2 / s1) / Math.sqrt(2 / (k - 1) + 2 / (n - k - 1));
+      if (Math.abs(z) > Math.abs(b.z)) b = { z, k, lr: 0.5 * Math.log(s2 / s1) };
+    }
+    if (b.k > 0 && Math.abs(b.lr) >= Math.log(1.4)) {
+      if (Math.abs(b.z) > 3) {
+        const sdOf = (xs) => { const m = xs.reduce((a, c) => a + c, 0) / xs.length; return Math.sqrt(xs.reduce((a, c) => a + (c - m) ** 2, 0) / (xs.length - 1)); };
+        const A = vs.slice(0, b.k), B2 = vs.slice(b.k);
+        found.push({ kind: "spread", a: b.k, b: n - 1, sd1: sdOf(A), sd2: sdOf(B2), mean2: B2.reduce((x, y) => x + y, 0) / B2.length, score: Math.abs(b.lr) * Math.sqrt(n) });
+      }
+    }
+  }
+  // bis zu 3 Auffälligkeiten, die sich zeitlich nicht überschneiden – die stärksten zuerst.
+  // Eine Schwankungs-Änderung darf neben einem Sprung/Trend stehen (andere Art von Veränderung).
   const out = [];
   for (const c of found.sort((x, y) => y.score - x.score)) {
     if (out.length >= 3) break;
-    if (out.some((o) => c.a <= o.b && o.a <= c.b)) continue;
+    if (out.some((o) => c.a <= o.b && o.a <= c.b && (c.kind === "spread") === (o.kind === "spread"))) continue;
     c.P = P; c.coarse = coarse;
     out.push(c);
   }
@@ -918,12 +940,14 @@ function curveChart(pts0, days, { avg, dir = null, id = "", label = "", range = 
     const dPos = (dd) => pts.findIndex((p) => p.d >= dd);
     const i0 = Math.max(0, dPos(pat.P[pat.a].d)), lastD = pat.P[pat.b].d;
     let i1 = pts.length - 1; if (pat.kind === "phase") i1 = pts.findIndex((p) => p.d >= lastD);
-    const up = pat.kind === "trend" ? pat.slope > 0 : pat.kind === "jump" ? pat.to > pat.from : pat.sign > 0;
-    const col = !dir ? "var(--hold)" : up === (dir === "high") ? "var(--s3)" : "var(--s2)";
+    const up = pat.kind === "trend" ? pat.slope > 0 : pat.kind === "jump" ? pat.to > pat.from : pat.kind === "spread" ? pat.sd2 > pat.sd1 : pat.sign > 0;
+    // Schwankung: ruhiger = gut (grün), unruhiger = orange
+    const col = pat.kind === "spread" ? (up ? "var(--s2)" : "var(--s3)") : !dir ? "var(--hold)" : up === (dir === "high") ? "var(--s3)" : "var(--s2)";
+    const overlapped = pat.kind === "spread" && pats.some((o) => o !== pat && o.kind !== "spread" && o.a <= pat.b && pat.a <= o.b);
     const part = pts.slice(i0, i1 + 1);
     const pSegs = [];
     part.forEach((p, i) => { if (!i || (!connect && days.indexOf(p.d) - days.indexOf(part[i - 1].d) > 1)) pSegs.push([]); pSegs[pSegs.length - 1].push(p); });
-    patSvg += pSegs.filter((x) => x.length > 1).map((x) => `<path d="${curve(x)}" class="lnp" style="stroke:${col}"/>`).join("");
+    if (!overlapped) patSvg += pSegs.filter((x) => x.length > 1).map((x) => `<path d="${curve(x)}" class="lnp" style="stroke:${col}"/>`).join("");
     const dmy = (dd) => `${parseIso(dd).getDate()}.${parseIso(dd).getMonth() + 1}.`;
     const dl = delta || ((x) => fmtBig(Math.abs(x)));
     const t0 = days.indexOf(pts[i0].d), tEnd = days.length - 1;
@@ -937,6 +961,11 @@ function curveChart(pts0, days, { avg, dir = null, id = "", label = "", range = 
       const yl = r1(yi(pat.to));
       patSvg += `<line x1="${pts[i0].x}" y1="${yl}" x2="${r1(xi(days[tEnd]))}" y2="${yl}" class="trendln" style="stroke:${col}"/>`;
       tx = [`${up ? "▲" : "▼"} seit ${dmy(pts[i0].d)} ${dl(pat.to - pat.from)} ${up ? "mehr" : "weniger"}`, `Ø vorher ${f(pat.from)}, seitdem ${f(pat.to)}`];
+    } else if (pat.kind === "spread") {
+      // Band Ø ± Streuung ab dem Wechsel (fein gestrichelt)
+      const x1 = pts[i0].x, x2 = r1(xi(days[tEnd]));
+      for (const v of [pat.mean2 + pat.sd2, pat.mean2 - pat.sd2]) patSvg += `<line x1="${x1}" y1="${r1(yi(v))}" x2="${x2}" y2="${r1(yi(v))}" class="bandln" style="stroke:${col}"/>`;
+      tx = [`${up ? "▲" : "▼"} seit ${dmy(pts[i0].d)} ${up ? "unruhiger" : "ruhiger"}`, `Schwankung ± ${dl(pat.sd1)} → ± ${dl(pat.sd2)}`];
     } else {
       tx = [`${up ? "▲" : "▼"} ${dmy(pts[i0].d)}–${dmy(pts[i1].d)} deutlich ${up ? "höher" : "niedriger"}`, `Ø ${f(pat.mean)} statt sonst ${f(pat.base)}`];
     }
