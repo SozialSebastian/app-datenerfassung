@@ -514,13 +514,24 @@ function sportPanel(days) {
 }
 
 // Kuchen mit Beschriftung direkt am Stück (Name fett, darunter der Anteil), für alle Fragentypen
+const PIE_MAX = 7; // höchstens so viele Stücke mit eigener Beschriftung, der Rest wird „Weitere“
 function labeledPie(items, unit, center = null) {
-  const sl = items.filter((x) => x.c > 0);
+  let sl = items.filter((x) => x.c > 0);
   const total = sl.reduce((s, x) => s + x.c, 0);
   if (!total) return "";
+  // viele kleine Stücke: die größten einzeln, den Rest als ein graues Stück „Weitere“ – Namen darunter als Liste
+  let rest = [];
+  if (sl.length > PIE_MAX) {
+    const sorted = [...sl].sort((a, b) => b.c - a.c);
+    const keep = new Set(sorted.slice(0, PIE_MAX - 1));
+    rest = sorted.slice(PIE_MAX - 1);
+    sl = [...sl.filter((x) => keep.has(x)), { label: `Weitere (${rest.length})`, c: rest.reduce((t, x) => t + x.c, 0), color: "var(--ink-2)" }];
+  }
   const W = 360, R = 60, w = 22, cx = W / 2, LH = 36; // LH: Mindestabstand zweizeiliger Beschriftungen
-  // Höhe nach Anzahl der Beschriftungen je Seite
-  const H = Math.max(210, Math.ceil(sl.length / 2) * LH + 50), cy = H / 2;
+  // Höhe nach der Seite mit den meisten Beschriftungen (rechts: Winkel −90°…90°)
+  let acc = 0, nR = 0;
+  for (const x of sl) { const am = -Math.PI / 2 + ((acc + x.c / 2) / total) * 2 * Math.PI; if (Math.cos(am) >= 0) nR++; acc += x.c; }
+  const H = Math.max(210, Math.max(nR, sl.length - nR) * LH + 50), cy = H / 2;
   let a0 = -Math.PI / 2;
   const pt = (r, a) => [cx + r * Math.cos(a), cy + r * Math.sin(a)];
   const arcs = [], labs = [];
@@ -558,7 +569,8 @@ function labeledPie(items, unit, center = null) {
   }).join("");
   // in der Mitte: Ø (Skala) bzw. Gesamtzahl
   const mid = center ? `<text x="${cx}" y="${cy + (center.sub ? 4 : 9)}" text-anchor="middle" class="pc">${esc(center.big)}</text>${center.sub ? `<text x="${cx}" y="${cy + 21}" text-anchor="middle" class="ps">${esc(center.sub)}</text>` : ""}` : "";
-  return `<svg class="spie" viewBox="0 0 ${W} ${H}" role="img" aria-label="Kuchendiagramm">${arcs.join("")}${txt}${mid}</svg>`;
+  const more = rest.length ? `<p class="pmore">${rest.map((x) => `${esc(x.label)} <b>${x.c}×</b>`).join(" · ")}</p>` : "";
+  return `<svg class="spie" viewBox="0 0 ${W} ${H}" role="img" aria-label="Kuchendiagramm">${arcs.join("")}${txt}${mid}</svg>${more}`;
 }
 
 // Säulen über die Zeit: wie oft die gewählte Antwort vorkam (pro Tag, Woche oder Monat)

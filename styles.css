@@ -964,3 +964,5 @@ input.tgl:disabled { opacity: .45; }
 .ansrow .aold { color: #d9a400; }
 .ansrow .pill { background: var(--bg); border-radius: 999px; padding: 3px 10px; font-size: 13px; font-weight: 700; font-variant-numeric: tabular-nums; }
 .ansrow .iconbtn { width: 36px; height: 36px; font-size: 16px; flex: none; }
+.pmore { margin: 4px 0 0; font-size: 13px; color: var(--ink-2); line-height: 1.6; }
+.pmore b { color: var(--ink); font-weight: 700; }
