@@ -269,11 +269,10 @@ function kidLine(c, days, skipStack) {
   return `<div class="kid">${head}<div class="kstats"><b>Ø ${f(avg)}</b>${extra}</div>${curve}${contractBlock(c, days)}</div>`;
 }
 
-// Reicht der Zeitraum bis zum Anfang aller Daten (z. B. „Alles“), beginnt jede Kachel erst mit der ersten Antwort auf ihre Frage
+// Jede Kachel beginnt mit der ersten Antwort auf ihre Frage im Zeitraum (egal ob 30 Tage, 12 Monate oder „Alles“) –
+// kein leerer Vorlauf, Anteile und Ø beziehen sich auf die Tage, seit es die Frage gibt
 function trimToData(q, days) {
   if (days.length < 2) return days;
-  const firstAll = Object.keys(state.answers).sort()[0];
-  if (!firstAll || days[0] > firstAll) return days;
   const first = days.find((d) => isAnswered((state.answers[d] || {})[q.id]));
   return first ? days.slice(days.indexOf(first)) : days;
 }
@@ -902,6 +901,8 @@ const findPattern = (pts, days) => findPatterns(pts, days)?.[0] || null;
 // Antippen zeigt eine Sprechblase (wireCurves). pts: [{ d, v }]
 // connect: Lücken überbrücken (Standard: ja – Tage ohne Wert werden einfach übersprungen, die Kurve läuft durch)
 function curveChart(pts0, days, { avg, dir = null, id = "", label = "", range = null, fmt = fmtBig, tipFmt = null, dev = null, connect = true, delta = null, pattern = true }) {
+  // Verlauf beginnt beim ersten Wert (kein leerer Bereich davor)
+  if (pts0.length && days.length > 1 && pts0[0].d > days[0]) { const k = days.indexOf(pts0[0].d); if (k > 0) days = days.slice(k); }
   if (!pts0.length) return "";
   const W = 340, H = 172, PL = 12, PR = 12, PT = 24, PB = 34;
   const nums = pts0.map((x) => x.v);

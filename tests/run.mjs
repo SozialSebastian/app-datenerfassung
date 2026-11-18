@@ -677,6 +677,8 @@ test("Analyse „Alles“: jede Kachel beginnt mit der ersten eigenen Antwort", 
   assert.equal(r.a, r.n);
   assert.equal(r.b, 20);
   assert.equal(r.d7, 7);
+  // auch bei festem Zeitraum: 30 Tage gewählt, Frage erst seit 20 Tagen → 20 Tage
+  assert.equal(await page.evaluate(() => trimToData(qById("b"), rangeDays("30")).length), 20);
   assert.deepEqual(errors, []);
   await ctx.close();
 });
