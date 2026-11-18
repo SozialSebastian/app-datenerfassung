@@ -771,7 +771,8 @@ function findPatterns(pts0, days) {
       while (i < n) {
         if (sign * (vs[i] - m0) <= 0.75 * sc) { i++; continue; }
         let j = i;
-        while (j + 1 < n && P[j + 1].t - P[j].t === 1 && sign * (vs[j + 1] - m0) > 0.75 * sc) j++;
+        // „am Stück“ = aufeinanderfolgende Werte (bei lückenhaften Reihen wie Schach zählen Tage ohne Wert nicht als Unterbrechung)
+        while (j + 1 < n && sign * (vs[j + 1] - m0) > 0.75 * sc) j++;
         const len = j - i + 1;
         const mean = vs.slice(i, j + 1).reduce((a, b) => a + b, 0) / len;
         // Zufall? q = Anteil aller Werte jenseits der Schwelle; ein Lauf der Länge len irgendwo: ≈ 2·n·q^len
@@ -813,7 +814,9 @@ function findPatterns(pts0, days) {
       let seed = 12345, ge = 0;
       const rnd = () => (seed = (seed * 16807) % 2147483647) / 2147483647;
       const blocks = [];
-      for (let i = 0; i < n; i += 7) blocks.push(vj.slice(i, i + 7));
+      // Blockgröße passend zur Datenmenge: bei wenigen Werten einzeln mischen (sonst gäbe es kaum Mischmöglichkeiten)
+      const bl = Math.max(1, Math.min(7, Math.floor(n / 10)));
+      for (let i = 0; i < n; i += bl) blocks.push(vj.slice(i, i + bl));
       for (let r = 0; r < 300; r++) {
         for (let i = blocks.length - 1; i > 0; i--) { const j = Math.floor(rnd() * (i + 1)); [blocks[i], blocks[j]] = [blocks[j], blocks[i]]; }
         if (Math.abs(bestT(blocks.flat()).t) >= Math.abs(b.t)) ge++;
