@@ -637,6 +637,27 @@ test("Profil: Geburtsjahr, Geschlecht, Schlafbedarf und Arbeitsvertrag unter Ein
   await ctx.close();
 });
 
+test("Antworten bearbeiten: Anzahl je Antwort, alte Texte, verwaiste Antworten löschen", async () => {
+  const data = { version: 1, lastBackup: null, questions: [
+    { id: "t", text: "Wo warst du tanzen?", type: "choice", options: ["Kurs", "Milonga", "Training/Practica"], multi: false, archived: false, cond: null },
+    { id: "du", text: "Dauer", type: "number", format: "duration", options: [], archived: false, inline: true, cond: { qid: "t", values: ["Practica"] } }],
+    answers: { "2026-11-01": { t: "Kurs" }, "2026-11-02": { t: "Practica", du: 2 }, "2026-11-03": { t: "Practica" }, "2026-11-04": { t: "Milonga", x9: 3 }, "2026-11-05": { x9: 1 } } };
+  const { page, ctx, errors } = await open({ data });
+  await page.click('[data-tab="data"]');
+  const txt = await page.locator("#antworten").innerText();
+  assert.match(txt, /Practica\s*2×[\s\S]*Kurs\s*1×/);
+  assert.match(txt, /Verwaiste Antworten[\s\S]*2/);
+  await page.click('#antworten .alist:first-of-type [data-aval="Practica"]');
+  const r = await page.evaluate(() => ({ a2: state.answers["2026-11-02"], a3: state.answers["2026-11-03"] }));
+  assert.equal(r.a2, undefined); // Frage und Dauer weg, leerer Tag entfernt
+  assert.equal(r.a3, undefined);
+  await page.click("#orphdel");
+  assert.equal(await page.evaluate(() => Object.values(state.answers).some((a) => "x9" in a)), false);
+  assert.equal(await page.evaluate(() => state.answers["2026-11-04"].t), "Milonga");
+  assert.deepEqual(errors, []);
+  await ctx.close();
+});
+
 test("Schritte nach Stunde: Tagessumme und Stundenverlauf, angeschnittener erster Tag fällt weg", async () => {
   const { listEntries } = await import("../worker/src/index.js");
   const t = (x) => `2026-10-${x}:00+02:00`;

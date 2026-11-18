@@ -50,6 +50,8 @@ function renderData() {
 
     ${questionsPanel()}
 
+    ${answersPanel()}
+
     <section class="panel">
       <h2>Wochenbericht</h2>
       <p class="muted small">Fasst deine Woche zusammen: erfasste Tage, Ziele, Trends und deine Fragen im Vergleich zu sonst.</p>
@@ -164,6 +166,7 @@ function renderData() {
 
   wireQuestions($("#qpanel"));
   wireProfile();
+  wireAnswers();
   $("#xlsx").addEventListener("click", exportExcel);
   $("#backup").addEventListener("click", exportBackup);
   $("#restore").addEventListener("click", () => $("#restorefile").click());
@@ -348,4 +351,77 @@ function wireProfile() {
     setC(id, { per });
     b.parentElement.querySelectorAll("button").forEach((x) => x.setAttribute("aria-pressed", x === b));
   }));
+}
+
+/* ================= Antworten bearbeiten ================= */
+// Auswahlfragen mit gespeicherten Antworten; je Antworttext die Anzahl, alte (nicht mehr vorhandene) Texte markiert
+let ansQ = null;
+const ansQuestions = () => ordered().map((o) => o.q).filter((q) => q.type === "choice" && !isHealthQ(q) && answerCount(q.id));
+function answerTally(q) {
+  const cnt = {};
+  for (const a of Object.values(state.answers)) {
+    const v = a[q.id];
+    if (!hasData(v)) continue;
+    for (const k of Array.isArray(v) ? v : [v]) cnt[k] = (cnt[k] || 0) + 1;
+  }
+  return Object.entries(cnt).sort((x, y) => y[1] - x[1]);
+}
+const isOldText = (q, k) => !q.options.includes(k);
+// Antworten zu Fragen, die es nicht mehr gibt
+function orphanIds() {
+  const ids = new Set(state.questions.map((q) => q.id)), out = {};
+  for (const a of Object.values(state.answers)) for (const id of Object.keys(a)) if (!ids.has(id)) out[id] = (out[id] || 0) + 1;
+  return out;
+}
+function answersPanel() {
+  const qs = ansQuestions();
+  if (ansQ && !qs.some((q) => q.id === ansQ)) ansQ = null;
+  const q = qById(ansQ) || qs[0];
+  const tally = q ? answerTally(q) : [];
+  const orph = Object.values(orphanIds()).reduce((t, n) => t + n, 0);
+  const old = qs.flatMap((x) => answerTally(x).filter(([k]) => isOldText(x, k)).map(([k, n]) => ({ q: x, k, n })));
+  const row = (qq, k, n, sub) => `<div class="ansrow"><span class="atxt${isOldText(qq, k) ? " aold" : ""}">${esc(k)}${sub ? `<small>${esc(sub)}</small>` : ""}</span><span class="pill">${n}×</span><button type="button" class="iconbtn" data-adel="${qq.id}" data-aval="${esc(k)}" aria-label="Antworten „${esc(k)}“ löschen">✕</button></div>`;
+  return `<section class="panel" id="antworten">
+      <h2>Antworten bearbeiten</h2>
+      ${qs.length ? `<label class="field" style="margin-bottom:6px"><select id="ansq">${qs.map((x) => `<option value="${x.id}" ${x === q ? "selected" : ""}>${esc(x.text)}${x.archived ? " (ausgeblendet)" : ""}</option>`).join("")}</select></label>
+      <div class="alist">${tally.map(([k, n]) => row(q, k, n)).join("")}</div>` : `<p class="muted small">Noch keine Antworten auf Auswahlfragen.</p>`}
+      ${orph || old.length ? `<div class="olab" style="margin-top:16px">Aufräumen</div>
+      <div class="alist">
+        ${orph ? `<div class="ansrow"><span class="atxt">Verwaiste Antworten<small>Frage gelöscht</small></span><span class="pill">${orph}</span><button type="button" class="iconbtn" id="orphdel" aria-label="Verwaiste Antworten löschen">✕</button></div>` : ""}
+        ${old.map((o) => row(o.q, o.k, o.n, o.q.text)).join("")}
+      </div>` : ""}
+    </section>`;
+}
+// Antworttext k bei Frage q überall entfernen; Folgefragen, deren Bedingung dann nicht mehr passt, mit aufräumen
+function deleteAnswerValue(q, k) {
+  const kids = [...descendants(q.id)].map(qById).filter(Boolean);
+  for (const [d, a] of Object.entries(state.answers)) {
+    const v = a[q.id];
+    if (Array.isArray(v) ? !v.includes(k) : v !== k) continue;
+    if (Array.isArray(v) && v.length > 1) a[q.id] = v.filter((x) => x !== k);
+    else delete a[q.id];
+    for (let changed = true; changed; ) {
+      changed = false;
+      for (const c of kids) if (c.id in a && !condMet(c, a)) { delete a[c.id]; changed = true; }
+    }
+    if (!Object.keys(a).length) delete state.answers[d];
+  }
+  save();
+}
+function wireAnswers() {
+  $("#ansq")?.addEventListener("change", (e) => { ansQ = e.target.value; const y = scrollY; renderData(); scrollTo(0, y); });
+  document.querySelectorAll("[data-adel]").forEach((b) => b.addEventListener("click", () => {
+    const q = qById(b.dataset.adel), k = b.dataset.aval;
+    const n = (answerTally(q).find(([x]) => x === k) || [, 0])[1];
+    if (!confirm(`${n} Antwort${n === 1 ? "" : "en"} „${k}“ bei „${q.text}“ löschen? Das lässt sich nicht rückgängig machen.`)) return;
+    deleteAnswerValue(q, k);
+    const y = scrollY; renderData(); scrollTo(0, y); toast(`${n} Antwort${n === 1 ? "" : "en"} gelöscht`);
+  }));
+  $("#orphdel")?.addEventListener("click", () => {
+    const o = orphanIds(), n = Object.values(o).reduce((t, x) => t + x, 0);
+    if (!confirm(`${n} Antworten zu gelöschten Fragen entfernen? Das lässt sich nicht rückgängig machen.`)) return;
+    for (const [d, a] of Object.entries(state.answers)) { for (const id of Object.keys(o)) delete a[id]; if (!Object.keys(a).length) delete state.answers[d]; }
+    save();
+    const y = scrollY; renderData(); scrollTo(0, y); toast(`${n} Antworten entfernt`);
+  });
 }
