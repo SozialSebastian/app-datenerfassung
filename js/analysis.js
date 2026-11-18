@@ -249,7 +249,7 @@ function kidLine(c, days, skipStack) {
     vals.forEach((v) => (Array.isArray(v) ? v : [v]).forEach((k) => (cnt[k] = (cnt[k] || 0) + 1)));
     const rows = Object.entries(cnt).sort((a, b) => b[1] - a[1]);
     // eingestellt „Kuchen“: Kuchen auch in der gemeinsamen Kachel (gleiche Farben wie die Säulen)
-    if (qset(c).chart === "pie") return `<div class="kid">${head}${labeledPie(rows.map(([k, n]) => ({ label: k, c: n, color: stackColor(c, k) })), null, { big: String(rows.reduce((t, [, n]) => t + n, 0)), sub: c.multi ? "Nennungen" : "Antworten" })}</div>`;
+    if (qset(c).chart === "pie") return `<div class="kid">${head}${labeledPie(rows.map(([k, n]) => ({ label: k, c: n, color: stackColor(c, k) })), null, { big: String(rows.reduce((t, [, n]) => t + n, 0)), sub: c.multi ? "Nennungen" : "Antworten" }, { weeks: qset(c).pieWeek ? days.length / 7 : 0 })}</div>`;
     return `<div class="kid">${head}<div class="klegend">${rows.map(([k, n]) => `<span>${skipStack ? `<i style="background:${stackColor(c, k)}"></i>` : ""}${esc(k)} <b>${n}×</b></span>`).join("")}</div></div>`;
   }
   const nums = vals.filter((v) => typeof v === "number");
@@ -324,14 +324,10 @@ function analysisCard(q, days) {
       body = kpiRow(c, perWeek, pct(c, n), days, prev, betterDir(q));
     } else if (set.chart === "pie") {
       // Kuchen: Anteile an allen Nennungen (bei Mehrfachauswahl ≠ Anteil der Tage)
-      let slices = dist.filter((x) => x.c > 0);
-      if (slices.length > SERIES) {
-        const rest = slices.slice(SERIES - 1);
-        slices = slices.slice(0, SERIES - 1).concat([{ key: "__rest", label: "Weitere", c: rest.reduce((s, x) => s + x.c, 0), rest: true }]);
-      }
+      const slices = dist.filter((x) => x.c > 0);
       const total = slices.reduce((s, x) => s + x.c, 0);
       const colorIdx = (k) => dist.findIndex((x) => x.key === k); // Farbe hängt an der Antwort, nicht am Rang
-      body = hero + labeledPie(slices.map((x) => ({ label: x.label, c: x.c, color: x.rest ? "var(--ink-2)" : `var(--s${(colorIdx(x.key) % SERIES) + 1})` })), null, { big: String(total), sub: q.multi ? "Nennungen" : "Antworten" });
+      body = hero + labeledPie(slices.map((x) => ({ label: x.label, c: x.c, color: x.rest ? "var(--ink-2)" : `var(--s${(colorIdx(x.key) % SERIES) + 1})` })), null, { big: String(total), sub: q.multi ? "Nennungen" : "Antworten" }, { weeks: set.pieWeek ? days.length / 7 : 0 });
     } else {
       const max = Math.max(...dist.map((x) => x.c), 1);
       body = `${hero}
@@ -517,32 +513,48 @@ function sportPanel(days) {
 // Kuchendiagramm mit Beschriftung außen. Kleine Stücke mit gleicher Anzahl (nebeneinander) teilen sich eine
 // Beschriftung („Dennis, Steffen, Henni · je 3 % (1×)“). Beschriftungen werden auf beide Seiten verteilt:
 // oben und unten am Ring dürfen sie auf die weniger volle Seite wechseln.
-function labeledPie(items, unit, center = null) {
+function labeledPie(items, unit, center = null, opt = {}) {
   const sl = items.filter((x) => x.c > 0);
   const total = sl.reduce((s, x) => s + x.c, 0);
   if (!total) return "";
-  const W = 360, R = 60, w = 22, cx = W / 2, LINE = 16;
+  const W = 390, R = 60, w = 22, cx = W / 2, LINE = 16, SIDE = 12; // SIDE: Zeichen je Zeile links/rechts
   // Winkel je Stück
   let a0 = -Math.PI / 2;
   const segs = sl.map((s) => { const a1 = a0 + (s.c / total) * 2 * Math.PI, x = { s, a0, a1 }; a0 = a1; return x; });
-  // Beschriftungsgruppen: gleiche Anzahl, nebeneinander, jeweils unter 10 %
+  // Beschriftungsgruppen: gleiche Anzahl, nebeneinander, jeweils unter 5 %
   const groups = [];
   for (const g of segs) {
     const last = groups[groups.length - 1];
-    if (last && last.c === g.s.c && g.s.c / total < 0.1) last.segs.push(g);
+    if (last && last.c === g.s.c && g.s.c / total < 0.05) last.segs.push(g);
     else groups.push({ c: g.s.c, segs: [g] });
   }
   // Text je Gruppe: Namen in Zeilen (Seite links ist schmal → ~12 Zeichen je Zeile)
-  const short = (t) => (t.length > 15 ? t.slice(0, 14) + "…" : t);
+  // Zeilenumbruch ohne Abschneiden: Namen mit Komma aneinander, lange Texte an Leerzeichen, „/“ oder „-“ umbrechen,
+  // notfalls hart nach max Zeichen
+  const pieces = (t, max) => {
+    const out = [];
+    for (const tok of t.split(/(?<=[\s/-])/)) {
+      let x = tok;
+      while (x.length > max + 1) { out.push(x.slice(0, max)); x = x.slice(max); }
+      if (x) out.push(x);
+    }
+    return out;
+  };
   const wrap = (names, max) => {
     const lines = [];
-    for (const n of names) {
-      const t = short(n), cur = lines[lines.length - 1];
-      if (cur && (cur + ", " + t).length <= max) lines[lines.length - 1] = cur + ", " + t;
-      else lines.push(t);
-    }
-    return lines;
+    names.forEach((n, ni) => {
+      const parts = pieces(n + (ni < names.length - 1 ? "," : ""), max);
+      parts.forEach((p, pi) => {
+        const cur = lines[lines.length - 1];
+        const sep = pi === 0 ? " " : "";
+        if (cur !== undefined && (cur + sep + p).trimEnd().length <= max && (pi > 0 || ni > 0)) lines[lines.length - 1] = (cur + sep + p);
+        else lines.push(p.trimStart());
+      });
+    });
+    return lines.map((l) => l.trim());
   };
+  const wk = opt.weeks > 0 ? opt.weeks : 0;
+  const extra = wk ? 1 : 0; // zusätzliche Zeile „Ø … / Woche“
   for (const g of groups) {
     g.am = (g.segs[0].a0 + g.segs[g.segs.length - 1].a1) / 2;
     g.right = Math.cos(g.am) >= 0;
@@ -551,9 +563,10 @@ function labeledPie(items, unit, center = null) {
   }
   // Platz sparen: je eine Gruppe nahe oben bzw. unten am Ring darf über/unter den Ring wandern (dort ist die ganze Breite frei),
   // wenn die vollere Seite dadurch kürzer wird
-  const linesOn = (g) => wrap(g.names, 10).length + 1;
+  const linesOn = (g) => wrap(g.names, SIDE).length + 1 + extra;
   const load = (side) => groups.filter((g) => !g.zone && g.right === side).reduce((t, g) => t + linesOn(g), 0);
-  const wideChars = (g) => Math.max(10, Math.floor((W - (cx + R * Math.cos(g.am)) - 16) / 8));
+  const MIDW = 2 * (R + w / 2 + 14); // Breite zwischen den Beschriftungen links und rechts
+  const wideChars = () => Math.floor(MIDW / 7.8);
   for (const zone of ["top", "bot"]) {
     const from = load(true) >= load(false);
     const cand = groups.filter((g) => !g.zone && g.right === from && (zone === "top" ? Math.sin(g.am) < -0.7 : Math.sin(g.am) > 0.7))
@@ -564,8 +577,8 @@ function labeledPie(items, unit, center = null) {
     cand.zone = zone;
     if (Math.max(load(true), load(false)) >= before) cand.zone = undefined;
   }
-  for (const g of groups) g.lines = wrap(g.names, g.zone ? wideChars(g) : 10);
-  const hOf = (g) => g.lines.length * LINE + 22, ringOut = R + w / 2 + 12;
+  for (const g of groups) g.lines = wrap(g.names, g.zone ? wideChars() : SIDE);
+  const hOf = (g) => (g.lines.length + extra) * LINE + 22, ringOut = R + w / 2 + 12;
   const topH = Math.max(0, ...groups.filter((g) => g.zone === "top").map(hOf));
   const botH = Math.max(0, ...groups.filter((g) => g.zone === "bot").map(hOf));
   const side = Math.max(210, Math.max(load(true), load(false)) * LINE + 30 + groups.length * 4);
@@ -582,7 +595,7 @@ function labeledPie(items, unit, center = null) {
   // Beschriftungen: Knick außen am Ring, dann waagerecht zur Seite; je Seite von oben nach unten ohne Überlappung
   for (const g of groups) {
     [g.ex, g.ey] = pt(R + w / 2 + 3, g.am); [g.kx, g.ky] = pt(R + w / 2 + 14, g.am); g.h = hOf(g);
-    if (g.zone) g.ky = g.zone === "top" ? cy - ringOut - (g.h - 16) : cy + ringOut + 12; // erste Zeile so, dass alles außerhalb des Rings liegt
+    if (g.zone) g.ky = g.zone === "top" ? cy - ringOut - g.h + 10 : cy + ringOut + 24; // Text über bzw. unter dem Ring, Linie mittig dazu
   }
   for (const side of [true, false]) {
     const xs = groups.filter((g) => !g.zone && g.right === side).sort((a, b) => a.ky - b.ky);
@@ -593,17 +606,34 @@ function labeledPie(items, unit, center = null) {
     const under = xs.length ? 18 - xs[0].ky : 0;
     if (under > 0) xs.forEach((g) => (g.ky += under));
   }
+  const fw = (x) => fmtNum(Math.round(x * 10) / 10);
   const txt = groups.map((g) => {
-    // über/unter dem Ring: Linie senkrecht vom Stück nach oben/unten, Text rechts daneben über die freie Breite
-    const tx = g.zone ? g.ex + 9 : g.right ? cx + R + w / 2 + 30 : cx - R - w / 2 - 30;
-    const dx = g.zone ? g.ex : tx + (g.right ? -7 : 7), anchor = g.zone || g.right ? "start" : "end";
-    const kx = g.zone ? g.ex : g.kx;
-    const pct = Math.round((g.c / total) * 100);
+    const pct = Math.round((g.c / total) * 100), je = g.segs.length > 1 ? "je " : "";
+    const val = `<tspan class="pp" style="fill:${g.color}">${je}${pct} %</tspan> (${g.c}×)`;
+    const wkl = wk ? `${je}Ø ${fw(g.c / wk)}/Wo.` : "";
+    if (g.zone) {
+      // über/unter dem Ring: Text mittig über der Linie, Linie senkrecht vom Stück
+      const longest = Math.max(...g.lines.map((l) => l.length), 12) * 7.6;
+      const mx = clamp(g.ex, cx - MIDW / 2 + longest / 2, cx + MIDW / 2 - longest / 2);
+      const nL = g.lines.length + 1 + extra;
+      const top = g.ky - 3; // Grundlinie der ersten Zeile
+      const lineEnd = g.zone === "top" ? top + (nL - 1) * LINE + 8 : top - 16;
+      const rows = [...g.lines.map((l) => `<text x="${mx.toFixed(1)}" y="__Y__" text-anchor="middle" class="pk">${esc(l)}</text>`),
+        `<text x="${mx.toFixed(1)}" y="__Y__" text-anchor="middle" class="pv">${val}</text>`,
+        ...(wk ? [`<text x="${mx.toFixed(1)}" y="__Y__" text-anchor="middle" class="pv">${wkl}</text>`] : [])]
+        .map((r, i) => r.replace("__Y__", (top + i * LINE + (i >= g.lines.length ? 0 : 0)).toFixed(1))).join("");
+      return `<polyline points="${g.ex.toFixed(1)},${g.ey.toFixed(1)} ${g.ex.toFixed(1)},${lineEnd.toFixed(1)}" class="pl" style="stroke:${g.color}"/>
+        <circle cx="${g.ex.toFixed(1)}" cy="${lineEnd.toFixed(1)}" r="2.6" style="fill:${g.color}"/>${rows}<title>${esc(g.names.join(", "))}</title>`;
+    }
+    const tx = g.right ? cx + R + w / 2 + 24 : cx - R - w / 2 - 24;
+    const dx = tx + (g.right ? -7 : 7), anchor = g.right ? "start" : "end";
     const name = g.lines.map((l, i) => `<text x="${tx.toFixed(1)}" y="${(g.ky - 3 + i * LINE).toFixed(1)}" text-anchor="${anchor}" class="pk">${esc(l)}</text>`).join("");
-    return `<polyline points="${g.ex.toFixed(1)},${g.ey.toFixed(1)} ${kx.toFixed(1)},${g.ky.toFixed(1)} ${dx.toFixed(1)},${g.ky.toFixed(1)}" class="pl" style="stroke:${g.color}"/>
+    const y2 = g.ky + 13 + (g.lines.length - 1) * LINE;
+    return `<polyline points="${g.ex.toFixed(1)},${g.ey.toFixed(1)} ${g.kx.toFixed(1)},${g.ky.toFixed(1)} ${dx.toFixed(1)},${g.ky.toFixed(1)}" class="pl" style="stroke:${g.color}"/>
       <circle cx="${dx.toFixed(1)}" cy="${g.ky.toFixed(1)}" r="2.6" style="fill:${g.color}"/>
       ${name}<title>${esc(g.names.join(", "))}</title>
-      <text x="${tx.toFixed(1)}" y="${(g.ky + 13 + (g.lines.length - 1) * LINE).toFixed(1)}" text-anchor="${anchor}" class="pv"><tspan class="pp" style="fill:${g.color}">${g.segs.length > 1 ? "je " : ""}${pct} %</tspan> (${g.c}×)</text>`;
+      <text x="${tx.toFixed(1)}" y="${y2.toFixed(1)}" text-anchor="${anchor}" class="pv">${val}</text>
+      ${wk ? `<text x="${tx.toFixed(1)}" y="${(y2 + LINE).toFixed(1)}" text-anchor="${anchor}" class="pv">${wkl}</text>` : ""}`;
   }).join("");
   const mid = center ? `<text x="${cx}" y="${cy + (center.sub ? 4 : 9)}" text-anchor="middle" class="pc">${esc(center.big)}</text>${center.sub ? `<text x="${cx}" y="${cy + 21}" text-anchor="middle" class="ps">${esc(center.sub)}</text>` : ""}` : "";
   return `<svg class="spie" viewBox="0 0 ${W} ${H}" role="img" aria-label="Kuchendiagramm">${arcs.join("")}${txt}${mid}</svg>`;
@@ -832,6 +862,7 @@ function openAnalysisSettings(onlyQid) {
             ? `<div class="sq-row"><span>Zählt</span><select data-q="${q.id}" data-f="countKey">${q.options.map((o) => `<option ${o === (q.options.includes(s.countKey) ? s.countKey : q.options[0]) ? "selected" : ""}>${esc(o)}</option>`).join("")}</select></div>
                <p class="muted small" style="margin:6px 0 0">Zeigt nur: an wie vielen Tagen im Zeitraum diese Antwort kam.</p>`
             : q.type === "scale" && s.chart === "count" ? `<p class="muted small" style="margin:6px 0 0">Zeigt nur den Durchschnitt.</p>` : s.chart === "pie" ? "" : `<div class="sq-row"><span>Werte</span>${seg(q, "unit", [["pct", "%"], ["abs", "Anzahl"]], s.unit)}</div>`}` : ""}
+          ${s.chart === "pie" && q.type === "choice" ? `<label class="switch row"><input type="checkbox" data-q="${q.id}" data-f="pieWeek" ${s.pieWeek ? "checked" : ""}><span>Ø pro Woche anzeigen</span></label>` : ""}
           <label class="switch row"><input type="checkbox" data-q="${q.id}" data-f="trend" ${s.trend ? "checked" : ""}><span>Verlauf über die Zeit</span></label>
           <label class="switch row"><input type="checkbox" data-q="${q.id}" data-f="hideZeroQ" ${s.hideZero ? "checked" : ""}><span>Ausblenden, solange der Wert 0 ist</span></label>
           ${(() => {
@@ -858,6 +889,7 @@ function openAnalysisSettings(onlyQid) {
       else if (i.dataset.f === "show") setQ(i.dataset.q, { hidden: !i.checked });
       else if (i.dataset.f === "hideZero") { prefs.hideZero = i.checked; Object.values(prefs.q).forEach((x) => delete x.hideZero); savePrefs(); }
       else if (i.dataset.f === "hideZeroQ") setQ(i.dataset.q, { hideZero: i.checked });
+      else if (i.dataset.f === "pieWeek") setQ(i.dataset.q, { pieWeek: i.checked });
       else setQ(i.dataset.q, { trend: i.checked });
       draw(); renderAnalysis();
     }));
