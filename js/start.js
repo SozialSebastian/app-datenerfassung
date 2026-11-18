@@ -16,7 +16,7 @@ checkHash();
 
 // Analyse mit den Zielen öffnen (Tippen auf die Ziel-Erinnerung)
 function openGoalsView() {
-  quiz = null; tab = "analysis"; showAllGoals = true; prefs.goals = true; render();
+  quiz = null; tab = "day"; current = todayIso(); showAllGoals = true; render();
   setTimeout(() => document.querySelector(".goals")?.scrollIntoView({ block: "start" }), 50);
 }
 

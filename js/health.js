@@ -113,8 +113,11 @@ function nutriScore(days) {
   if (!days.length) return null;
   const avg = (k) => { const xs = days.map((x) => x[k]).filter((v) => v !== null); return xs.length ? mean(xs) : null; };
   const kcal = avg("kcal"), p = avg("p"), z = avg("z"), f = avg("f"), bs = avg("bs");
-  const kg = hvals("gewicht", 120)[0] || null;
-  const pTarget = kg ? 0.8 * kg : null; // DGE: 0,8 g je kg Körpergewicht
+  // Protein-Ziel (DGE 0,8 g/kg) bezogen auf das Normalgewicht: bei Übergewicht zählt höchstens das Gewicht bei BMI 25,
+  // ohne gemessenes Gewicht das Gewicht bei BMI 22 aus der Körpergröße
+  const kgM = hvals("gewicht", 120)[0] || null, hM = PROFILE().height ? PROFILE().height / 100 : null;
+  const kg = kgM && hM ? Math.min(kgM, 25 * hM * hM) : kgM || (hM ? 22 * hM * hM : null);
+  const pTarget = kg ? 0.8 * kg : null;
   const parts = [
     { k: "bs", label: "Ballaststoffe", val: bs, pts: bs === null ? null : 25 * clamp(bs / 30, 0, 1), txt: bs === null ? "–" : `Ø ${Math.round(bs)} g · Ziel 30 g` },
     { k: "p", label: "Protein", val: p, pts: p === null ? null : 25 * clamp(pTarget ? p / pTarget : (p * 4) / kcal / 0.15, 0, 1),
@@ -124,7 +127,10 @@ function nutriScore(days) {
   ];
   const have = parts.filter((x) => x.pts !== null);
   if (!have.length) return null;
-  return { score: Math.round((have.reduce((t, x) => t + x.pts, 0) / have.length) * 4), parts, kcal, p, kh: avg("kh"), f, n: days.length };
+  // Energiebedarf (Mifflin-St Jeor) × PAL 1,5 – nur zur Einordnung, geht nicht in den Score ein
+  const age = ageNow(), sex = PROFILE().sex;
+  const need = kgM && hM && age && sex ? Math.round((10 * kgM + 625 * hM - 5 * age + (sex === "m" ? 5 : -161)) * 1.5 / 50) * 50 : null;
+  return { score: Math.round((have.reduce((t, x) => t + x.pts, 0) / have.length) * 4), parts, kcal, p, kh: avg("kh"), f, n: days.length, need };
 }
 function bioParts(win, bis = todayIso()) {
   const age = ageNow(), sex = PROFILE().sex;
@@ -396,7 +402,7 @@ function renderHealth() {
           <div class="hringw">${ring(NS.score / 100, col, String(NS.score))}</div>
           <div class="hparts">${NS.parts.map((x) => `<div><b>${x.label} <em>${x.pts === null ? "–" : Math.round(x.pts)}/25</em></b><span>${esc(x.txt)}</span></div>`).join("")}</div>
         </div>
-        <p class="small" style="margin:6px 0 10px">Ø ${fmtBig(Math.round(NS.kcal))} kcal an ${NS.n} vollständig erfassten Tag${NS.n === 1 ? "" : "en"} der letzten Woche</p>
+        <p class="small" style="margin:6px 0 10px">Ø ${fmtBig(Math.round(NS.kcal))} kcal${NS.need ? ` (Bedarf ca. ${fmtBig(NS.need)})` : ""} an ${NS.n} vollständig erfassten Tag${NS.n === 1 ? "" : "en"} der letzten Woche</p>
         ${macro}` : `<p class="muted small">Für den Score braucht es mindestens einen vollständig erfassten Tag (ab 1.000 kcal) in der letzten Woche.</p>`}
         <div class="hbars hk">${all7.map((x) => `<div title="${x.kcal ? Math.round(x.kcal) + " kcal" : "nicht erfasst"}"><span style="height:${x.kcal ? Math.max(3, (x.kcal / maxK) * 100) : 0}%"></span><em>${WD_SHORT[parseIso(x.d).getDay()]}</em></div>`).join("")}</div>
         ${todayMeals.length ? `<p class="small" style="margin:10px 0 0"><strong>Heute:</strong> ${todayMeals.map((m) => esc(m.name || m.meal)).join(", ")} · ${Math.round(todaySum)} kcal</p>` : ""}`;
@@ -414,10 +420,6 @@ function renderHealth() {
         <p class="small" style="margin:4px 0 0">${n ? `Median deines Alters: ${fmtNum(Math.round(n * 10) / 10)} · ` : ""}Fitness-Alter: <strong>${Math.round(fa)} Jahre</strong></p>`;
     })();
 
-  // Verläufe der Körperwerte (früher in der Analyse): Ruhepuls, HRV, VO₂max, Atemfrequenz – letzte 90 Tage
-  const bdays = rangeDays("90");
-  const bodyQs = HEALTH_BODY_KEYS.map((k) => state.questions.find((q) => isBodyQ(q) && q.healthKey === k && !q.archived)).filter((q) => q && bdays.some((d) => hasData((state.answers[d] || {})[q.id])));
-  const bodyCards = bodyQs.length ? `<h2 class="hsec">Verläufe <span class="muted small">letzte 90 Tage</span></h2>${bodyQs.map((q) => analysisCard(q, bdays)).join("")}` : "";
   view.innerHTML = `
     <div class="dayhead"><h1>Gesundheit</h1><button class="gear" id="hsetup" aria-label="Daten einrichten">${GEAR}</button></div>
     ${profile}
@@ -428,10 +430,8 @@ function renderHealth() {
     ${hcard("sleep", "Schlaf", sleepBody)}
     ${hcard("nutri", "Ernährung", nutriBody)}
     ${hcard("fit", "Fitness", fitBody)}
-    ${bodyCards}
     <p class="muted small" style="margin:4px 4px 0">Schätzungen aus deinen Apple-Health-Werten, angelehnt an Studien – keine Diagnose.</p>`;
 
-  wireCurves(view);
   $("#hprofile")?.addEventListener("click", () => {
     settingsSec = "profil"; tab = "data"; render();
     setTimeout(() => { $("#profil")?.scrollIntoView({ block: "start" }); $("#pborn")?.focus(); }, 50);
@@ -542,10 +542,11 @@ const HINFO = {
     <p><strong>Ernährungs-Score</strong> (0–100) = Summe aus vier Teilen à 25 Punkten, aus den Ø-Werten:</p>
     <ul class="hul">
       <li><strong>Ballaststoffe</strong>: 25 · min(1, g / 30). Ziel 30 g (DGE).</li>
-      <li><strong>Protein</strong>: 25 · min(1, g / (0,8 · Gewicht)) – mit Gewicht aus Apple Health; sonst 25 · min(1, Anteil an der Energie / 15 %).</li>
+      <li><strong>Protein</strong>: 25 · min(1, g / (0,8 · Bezugsgewicht)). Bezugsgewicht = Gewicht aus Apple Health, höchstens das Gewicht bei BMI 25 (25 · Größe²); ohne Gewicht das Normalgewicht bei BMI 22 aus der Körpergröße (Profil); ohne beides 25 · min(1, Anteil an der Energie / 15 %).</li>
       <li><strong>Zucker</strong>: Anteil a = 4 · g / kcal; bis 10 % volle 25 Punkte, ab 20 % keine, dazwischen linear: 25 · (0,20 − a) / 0,10. Gezählt wird aller Zucker (auch aus Obst), die WHO-Grenze von 10 % gilt für freien Zucker – deshalb die großzügigere Spanne bis 20 %.</li>
       <li><strong>Fett</strong>: Anteil a = 9 · g / kcal; bis 35 % volle Punkte, ab 45 % keine, linear dazwischen (DGE: 30–35 %).</li>
     </ul>
+    <p><strong>Bedarf</strong> (nur zur Einordnung): Grundumsatz nach Mifflin-St Jeor = 10 · kg + 6,25 · cm − 5 · Alter + 5 (Männer) bzw. − 161 (Frauen), mal 1,5 für einen mäßig aktiven Alltag.</p>
     <p>Fehlt ein Teil, wird der Score aus den übrigen hochgerechnet. Der Balken zeigt die Energie-Anteile: Protein und Kohlenhydrate je 4 kcal/g, Fett 9 kcal/g.</p>
     <p><strong>Im Mosaik-Alter</strong> zählen die Ballaststoffe mit (halb gewichtet, ab 7 vollständig erfassten Tagen): 25–29 g am Tag gingen in der großen Lancet-Auswertung mit etwa 15 % geringerem Sterberisiko einher als wenig Ballaststoffe; Bezug sind 18 g.</p>
     <p class="muted small">Genauigkeit: Fotos werden je Mahlzeit typischerweise um 20–30 % verschätzt (Portionsgröße, Öl, Soßen). Ein Satz zum Foto oder ein Rezept aus Notion macht es genauer; für Trends über Wochen reicht es gut.</p>

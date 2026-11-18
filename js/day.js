@@ -49,6 +49,9 @@ function renderDay() {
     const mOpen = current === todayIso() && new Date().getHours() < 14 ? morningQuestions(current).filter((q) => !isAnswered(a[q.id])).length : 0;
     body = `${mOpen ? `<button class="btn block hold-btn" id="startmorning">Morgenfragen beantworten (${mOpen})</button>` : ""}<button class="btn block ${done < qs.length && !mOpen ? "hold-btn" : "ghost"}" id="startquiz"${mOpen ? ' style="margin-top:8px"' : ""}>${startLabel}</button>
       <p class="progress">${done} von ${qs.length} beantwortet</p>`;
+    // darunter: Ziele (nur heute), dann Apple Health/Ernährung/Schach, dann Themen-Filter und Fragen
+    if (current === todayIso() && goalItems().length) body += goalsPanel();
+    body += healthHtml;
     // Filter nach Thema wie in der Analyse (nur die Anzeige; Abfrage und Zähler gelten für alle Fragen)
     const usedThemes = THEMES.filter((th) => qs.some((q) => themeOf(q) === th.k));
     if (prefs.dayTheme && !usedThemes.some((th) => th.k === prefs.dayTheme)) prefs.dayTheme = "";
@@ -57,7 +60,6 @@ function renderDay() {
       <button data-dth="" aria-pressed="${!ft}">Alle</button>
       ${usedThemes.map((th) => `<button data-dth="${th.k}" aria-pressed="${ft === th.k}">${th.i} ${esc(th.l)}</button>`).join("")}
     </div>`;
-    if (!ft || ft === "health") body += healthHtml;
     let lastTheme = null;
     body += qs.filter((q) => !ft || themeOf(q) === ft).map((q) => {
       const val = a[q.id];

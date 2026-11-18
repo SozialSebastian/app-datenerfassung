@@ -93,12 +93,9 @@ function wireRange(root, attr, set) {
 
 const GEAR = `<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/></svg>`;
 
-// Körperwerte aus Apple Health: stehen im Bereich Gesundheit (unter Fitness), nicht in der Analyse
-const HEALTH_BODY_KEYS = ["ruhepuls", "hrv", "vo2max", "atemfrequenz"];
-const isBodyQ = (q) => q.source === "health" && HEALTH_BODY_KEYS.includes(q.healthKey);
 function analysisQuestions(days) {
   // Schach-Werte stehen gebündelt in der Schach-Kachel, nicht als eigene Karten
-  return ordered().map((o) => o.q).filter((q) => q.source !== "chess" && !isIntolQ(q) && !isBodyQ(q) && (!q.archived || days.some((d) => hasData((state.answers[d] || {})[q.id]))));
+  return ordered().map((o) => o.q).filter((q) => q.source !== "chess" && !isIntolQ(q) && (!q.archived || days.some((d) => hasData((state.answers[d] || {})[q.id]))));
 }
 
 function renderAnalysis() {
@@ -121,7 +118,6 @@ function renderAnalysis() {
     ${rangeControl(prefs.range, "range")}
     <p class="muted small" style="margin:0 0 16px">${days.length === 1 ? shortDate(days[0]) : `${shortDate(days[0])} – ${shortDate(days[days.length - 1])}`}</p>
     ${all.length && prefs.trends !== false ? trendsPanel(days) : ""}
-    ${all.length && prefs.goals !== false ? goalsPanel() : ""}
     ${prefs.sport !== false && sportQs().length && !(prefs.hideZero !== false && !days.some((d) => sportDay(d))) ? sportPanel(days) : ""}
     ${prefs.intol !== false ? intolPanel() : ""}
     ${prefs.places !== false && !(prefs.hideZero !== false && !days.some((d) => placeCities(d).length)) && (Object.keys(state.places || {}).length || (settings.places && settings.places.on)) ? placesPanel(days) : ""}
@@ -1055,12 +1051,6 @@ function openAnalysisSettings(onlyQid) {
           <label class="switch"><input type="checkbox" data-f="trends" ${prefs.trends !== false ? "checked" : ""}><span>Anzeigen</span></label>
         </div>
         <p class="muted small" style="margin:6px 0 0">Serien und auffällige Zusammenhänge oben in der Analyse.</p>
-      </section>
-      <section class="sq">
-        <div class="sq-head"><strong>Ziele</strong>
-          <label class="switch"><input type="checkbox" data-f="goals" ${prefs.goals !== false ? "checked" : ""}><span>Anzeigen</span></label>
-        </div>
-        <p class="muted small" style="margin:6px 0 0">Stand deiner Ziele. Festlegen unter „Tag“ über das Zahnrad.</p>
       </section>
       ${intolQ("intol-food") ? `<section class="sq">
         <div class="sq-head"><strong>Unverträglichkeiten</strong>

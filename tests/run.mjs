@@ -714,17 +714,17 @@ test("Auffälligkeiten im Verlauf: Sprung, Phase, Knick erkannt – Rauschen ble
   await ctx.close();
 });
 
-test("Ruhepuls, HRV, VO₂max, Atemfrequenz: nicht in der Analyse, sondern unter Gesundheit", async () => {
+test("Ruhepuls, HRV, VO₂max, Atemfrequenz: in der Analyse (nicht unter Gesundheit)", async () => {
   const d0 = new Date(); const ds = (i) => { const d = new Date(d0); d.setDate(d.getDate() - i); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`; };
   const answers = {}; for (let i = 1; i < 30; i++) answers[ds(i)] = { r: 50 + (i % 5), h: 60 + (i % 7) };
   const H = (id, k, t) => ({ id, text: t, type: "number", healthKey: k, source: "health", format: null, options: [], archived: false, cond: null });
   const data = { version: 1, lastBackup: null, answers, profile: { born: 1996, sex: "m" }, questions: [H("r", "ruhepuls", "Ruhepuls"), H("h", "hrv", "HRV")] };
   const { page, ctx, errors } = await open({ data });
   await page.click('[data-tab="analysis"]');
-  assert.equal(await page.locator('.acard[data-qid="r"]').count(), 0);
-  await page.click('[data-tab="health"]');
   assert.equal(await page.locator('.acard[data-qid="r"]').count(), 1);
   assert.equal(await page.locator('.acard[data-qid="h"]').count(), 1);
+  await page.click('[data-tab="health"]');
+  assert.equal(await page.locator('.acard[data-qid="r"]').count(), 0);
   assert.deepEqual(errors, []);
   await ctx.close();
 });
@@ -860,7 +860,7 @@ test("Ziel über das Zahnrad anlegen und in der Analyse sehen", async () => {
   // je nach Wochentag meldet die App kurz darauf „nicht mehr zu schaffen“ – Hinweis schließen
   await page.waitForTimeout(700);
   await page.evaluate(() => { const d = document.querySelector("#sheet"); if (d.open) d.close(); });
-  await page.click('[data-tab="analysis"]');
+  await page.click('[data-tab="day"]');
   assert.match(await page.locator(".goals").innerText(), /Heute bouldern\?[\s\S]*\d von 2×/);
   assert.deepEqual(errors, []);
   await ctx.close();
@@ -970,7 +970,7 @@ test("Ziel „nie“: eigene Darstellung, keine Warnung, kein Überlaufen", asyn
   const { page, ctx, errors } = await open({ data });
   await page.waitForTimeout(800);
   await page.evaluate(() => { const d = document.querySelector("#sheet"); if (d.open) d.close(); });
-  await page.click('[data-tab="analysis"]');
+  await page.click('[data-tab="day"]');
   const txt = await page.locator(".goals").innerText();
   assert.doesNotMatch(txt, /im Monat|noch \d+ Tage|an \d+ Tagen eingehalten|auf Kurs ·/); // schlank: nur Name, Status, Balken, Stand
   assert.match(txt, /Bisher eingehalten/);
