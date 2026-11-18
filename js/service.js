@@ -167,7 +167,9 @@ const HEALTH_NAMES = {
   hrv: ["Herzfrequenzvariabilität", "ms"], kalorien: ["Aktivkalorien", "kcal"], aktivkalorien: ["Aktivkalorien", "kcal"],
   training: ["Trainingsminuten", "min"], stehen: ["Stehstunden", "h"], distanz: ["Distanz", "km"], gewicht: ["Gewicht", "kg"],
   achtsamkeit: ["Achtsamkeitsminuten", "min"], stockwerke: ["Stockwerke", ""],
-  vo2max: ["VO₂max", "ml/kg/min"], atemfrequenz: ["Atemfrequenz", "/min"]
+  vo2max: ["VO₂max", "ml/kg/min"], atemfrequenz: ["Atemfrequenz", "/min"],
+  // Ernährung (Tagessummen aus der Notion-Datenbank „Mahlzeiten“)
+  nahrung_kcal: ["Kalorien (Essen)", "kcal"], protein: ["Protein", "g"], kohlenhydrate: ["Kohlenhydrate", "g"], zucker: ["Zucker", "g"], fett: ["Fett", "g"], ballaststoffe: ["Ballaststoffe", "g"]
 };
 // Tagesverläufe für den Bereich Gesundheit (keine eigenen Felder): Puls, Schritte je Stunde, Trainingszeiten
 const HEALTH_SERIES = ["puls_serie", "schrittez_serie", "workouts"];

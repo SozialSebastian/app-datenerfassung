@@ -78,9 +78,19 @@ function notionSettingsPanel() {
       <p class="small hstatus ${n ? "ok" : ""}">${n ? `<strong>Verbunden.</strong> ${n} Rezepte${state.recipes.at ? `, zuletzt geholt ${new Date(state.recipes.at).toLocaleString("de-DE", { day: "numeric", month: "numeric", hour: "2-digit", minute: "2-digit" })}` : ""}.${has ? "" : " Leg unter Fragen → + → Vorlage „Gekocht“ die Frage an."}` : "Noch nicht eingerichtet."}</p>
       ${settings.notion.err ? `<p class="small" style="margin:8px 0 0;color:var(--danger)">Letzter Fehler: ${esc(settings.notion.err)}</p>` : ""}
       ${settings.token ? `<button class="btn ghost block" id="notionnow" style="margin-top:12px">Rezepte jetzt holen</button>` : `<p class="muted small">Trag zuerst unten unter „Verbindung“ deinen Schlüssel ein.</p>`}
+      <div class="subsep"></div>
+      <p class="muted small"><strong>Mahlzeiten:</strong> Fotografier dein Essen im Claude-Projekt „App“. Claude schätzt die Nährwerte und trägt sie in die Notion-Datenbank „Mahlzeiten“ ein; Mosaik holt sie beim Öffnen ab (letzte 14 Tage werden jedes Mal abgeglichen, Änderungen in Notion gelten). Die Datenbank muss – wie die Rezepte-Seite – für die Verbindung „Mosaik“ freigegeben sein.</p>
+      <p class="small hstatus ${Object.keys(mealStore().items).length ? "ok" : ""}">${Object.keys(mealStore().items).length ? `<strong>${Object.keys(mealStore().items).length} Mahlzeiten</strong>${settings.notion.mealsAt ? `, zuletzt geholt ${new Date(settings.notion.mealsAt).toLocaleString("de-DE", { day: "numeric", month: "numeric", hour: "2-digit", minute: "2-digit" })}` : ""}.` : "Noch keine Mahlzeiten."}</p>
+      ${settings.notion.mealsErr ? `<p class="small" style="margin:8px 0 0;color:var(--danger)">Letzter Fehler: ${esc(settings.notion.mealsErr)}</p>` : ""}
+      ${settings.token ? `<button class="btn ghost block" id="mealsnow" style="margin-top:12px">Mahlzeiten jetzt holen</button>` : ""}
     </section>`;
 }
 function wireNotionSettings() {
+  $("#mealsnow")?.addEventListener("click", async (e) => {
+    e.target.disabled = true; e.target.textContent = "Hole Mahlzeiten …";
+    await syncMeals(true);
+    renderData();
+  });
   $("#notionnow")?.addEventListener("click", async (e) => {
     e.target.disabled = true; e.target.textContent = "Hole Rezepte …";
     await syncRecipes(true);
@@ -89,3 +99,82 @@ function wireNotionSettings() {
 }
 
 if (syncRecipeQuestions()) save();
+
+/* ================= Mahlzeiten aus Notion =================
+   Claude trägt im Projekt-Chat Essen mit geschätzten Nährwerten in die Notion-Datenbank „Mahlzeiten“ ein.
+   Mosaik holt die Einträge über den Dienst (/notion/meals), speichert sie je Tag und bildet Tagessummen
+   als automatische Felder (wie Apple Health) – damit gibt es Analyse, Ziele, Wochenbericht und Excel. */
+const NUTRI = [["nahrung_kcal", "kcal", "Kalorien (Essen)", "kcal"], ["protein", "p", "Protein", "g"], ["kohlenhydrate", "kh", "Kohlenhydrate", "g"],
+  ["zucker", "z", "Zucker", "g"], ["fett", "f", "Fett", "g"], ["ballaststoffe", "bs", "Ballaststoffe", "g"]];
+const NUTRI_KEYS = NUTRI.map((x) => x[0]);
+const isNutriQ = (q) => q && q.source === "health" && NUTRI_KEYS.includes(q.healthKey);
+const mealStore = () => (state.meals && typeof state.meals === "object" ? state.meals : (state.meals = { items: {}, since: "" }));
+const mealsOn = (day) => Object.values(mealStore().items).filter((m) => m.day === day).sort((a, b) => (a.when < b.when ? -1 : 1));
+// Tag der Mahlzeit: Datum aus Notion (ohne Uhrzeit = ganzer Tag; mit Uhrzeit = lokales Datum laut Angabe)
+const mealDay = (when) => String(when).slice(0, 10);
+
+let mealsBusy = false;
+async function syncMeals(manual) {
+  if (mealsBusy) return false;
+  if (!settings.token) { if (manual) toast("Zuerst unter „Verbindung“ den Schlüssel eintragen"); return false; }
+  // automatisch höchstens alle 5 Minuten
+  if (!manual && Date.now() - (settings.notion.mealsAt || 0) < 5 * 60e3) return false;
+  mealsBusy = true;
+  try {
+    const st = mealStore();
+    // erster Abruf: ein Jahr zurück, danach die letzten 14 Tage neu abgleichen (Änderungen und Löschungen in Notion)
+    const since = st.since ? addDays(todayIso(), -14) : addDays(todayIso(), -365);
+    const { meals = [] } = await api(`/notion/meals?since=${since}`);
+    const before = JSON.stringify(Object.values(st.items).filter((m) => m.day >= since));
+    for (const [id, m] of Object.entries(st.items)) if (m.day >= since) delete st.items[id];
+    for (const m of meals) st.items[m.id] = { ...m, day: mealDay(m.when) };
+    st.since = since;
+    settings.notion.mealsAt = Date.now(); settings.notion.mealsErr = ""; saveSettings();
+    const changed = before !== JSON.stringify(Object.values(st.items).filter((m) => m.day >= since));
+    // Tagessummen ab „since“ neu setzen (Tage ohne Eintrag: keine Werte – nichts gegessen heißt hier „nicht erfasst“)
+    if (changed || manual) {
+      const created = [];
+      const any = Object.keys(st.items).length > 0;
+      const qs = any ? NUTRI.map(([key, , text, unit]) => {
+        const q = ensureHealthQuestion(key, created);
+        if (!q.theme) q.theme = "food";
+        q.text = q.text || text; if (!q.unit) q.unit = unit;
+        return q;
+      }) : state.questions.filter(isNutriQ);
+      for (let d = since; d <= todayIso(); d = addDays(d, 1)) {
+        const ms = mealsOn(d);
+        const a = state.answers[d] || (state.answers[d] = {});
+        NUTRI.forEach(([key, f], i) => {
+          const q = qs[i] || qs.find((x) => x.healthKey === key);
+          if (!q) return;
+          const vals = ms.map((m) => m[f]).filter((v) => typeof v === "number");
+          if (vals.length) a[q.id] = Math.round(vals.reduce((x, y) => x + y, 0) * 10) / 10;
+          else delete a[q.id];
+        });
+        if (!Object.keys(a).length) delete state.answers[d];
+      }
+      save();
+    }
+    if (manual) toast(`${meals.length} Mahlzeiten seit ${shortDate(since)} aus Notion`);
+    return changed;
+  } catch (e) {
+    settings.notion.mealsErr = e.message; saveSettings();
+    if (manual) toast(e.message);
+    return false;
+  } finally {
+    mealsBusy = false;
+  }
+}
+
+// Tag-Seite: Karte „Ernährung“ mit den Mahlzeiten des Tages und der Summe
+function mealsDayCard(day) {
+  const ms = mealsOn(day);
+  if (!ms.length) return "";
+  const sum = (f) => Math.round(ms.reduce((t, m) => t + (typeof m[f] === "number" ? m[f] : 0), 0));
+  const hm = (w) => (String(w).length > 10 ? String(w).slice(11, 16) : "");
+  return `<section class="q mealcard">
+    <p class="q-title">Ernährung <span class="muted small">aus Notion</span></p>
+    ${ms.map((m) => `<div class="mrow"><span class="mt">${esc(hm(m.when))}</span><span class="mn">${esc(m.name || m.meal || "Mahlzeit")}${m.note ? `<small>${esc(m.note)}</small>` : ""}</span><span class="mk">${typeof m.kcal === "number" ? `${Math.round(m.kcal)} kcal` : ""}</span></div>`).join("")}
+    <div class="msum"><b>${sum("kcal")} kcal</b><span>Protein ${sum("p")} g</span><span>KH ${sum("kh")} g</span><span>Fett ${sum("f")} g</span><span>Ballaststoffe ${sum("bs")} g</span></div>
+  </section>`;
+}

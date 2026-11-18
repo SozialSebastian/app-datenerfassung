@@ -729,6 +729,29 @@ test("Ruhepuls, HRV, VO₂max, Atemfrequenz: nicht in der Analyse, sondern unter
   await ctx.close();
 });
 
+test("Mahlzeiten aus Notion: Tagessummen als Felder, Karte unter „Tag“, Korrekturen werden übernommen", async () => {
+  const { page, ctx, errors } = await open({ data: { version: 1, lastBackup: null, answers: {}, questions: [] }, settings: { token: "t" } });
+  const today = await page.evaluate(() => todayIso());
+  let meals = [
+    { id: "m1", name: "Haferflocken mit Beeren", when: `${today}T08:10:00.000+01:00`, meal: "Frühstück", kcal: 420, p: 15, kh: 62, z: 14, f: 11, bs: 8, basis: "Foto", note: "" },
+    { id: "m2", name: "Curry mit Reis", when: `${today}T19:30:00.000+01:00`, meal: "Abend", kcal: 720, p: 24, kh: 98, z: 9, f: 24, bs: 8, basis: "Foto + Beschreibung", note: "1 EL Öl angenommen" }
+  ];
+  await page.route(/notion\/meals/, (r) => r.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ meals }) }));
+  await page.evaluate(() => syncMeals(true));
+  const r1 = await page.evaluate((d) => { const q = (k) => state.questions.find((x) => x.healthKey === k); return { kcal: state.answers[d][q("nahrung_kcal").id], p: state.answers[d][q("protein").id], theme: q("protein").theme }; }, today);
+  assert.deepEqual(r1, { kcal: 1140, p: 39, theme: "food" });
+  await page.evaluate(() => { current = todayIso(); tab = "day"; render(); });
+  const card = await page.locator(".mealcard").innerText();
+  assert.match(card, /08:10[\s\S]*Haferflocken[\s\S]*19:30[\s\S]*Curry[\s\S]*1140 kcal/);
+  assert.equal(await page.locator(".healthcard").count(), 0);
+  // in Notion korrigiert (halbe Portion) und Frühstück gelöscht
+  meals = [{ ...meals[1], kcal: 360, p: 12 }];
+  await page.evaluate(() => syncMeals(true));
+  assert.equal(await page.evaluate((d) => state.answers[d][state.questions.find((x) => x.healthKey === "nahrung_kcal").id], today), 360);
+  assert.deepEqual(errors, []);
+  await ctx.close();
+});
+
 test("Schritte nach Stunde: Tagessumme und Stundenverlauf, angeschnittener erster Tag fällt weg", async () => {
   const { listEntries } = await import("../worker/src/index.js");
   const t = (x) => `2026-10-${x}:00+02:00`;

@@ -975,3 +975,13 @@ input.tgl:disabled { opacity: .45; }
 .pmore b { color: var(--ink); font-weight: 700; }
 .hsec { font-size: 20px; margin: 22px 4px 10px; }
 .hsec .small { font-weight: 500; }
+
+/* Ernährung (Mahlzeiten aus Notion) */
+.mealcard .mrow { display: flex; align-items: baseline; gap: 10px; padding: 6px 0; border-top: 1px solid var(--line); font-size: 15px; }
+.mealcard .mrow:first-of-type { border-top: 0; }
+.mealcard .mt { width: 42px; color: var(--ink-2); font-variant-numeric: tabular-nums; font-size: 13px; flex: none; }
+.mealcard .mn { flex: 1; min-width: 0; font-weight: 600; }
+.mealcard .mn small { display: block; font-weight: 400; color: var(--ink-2); font-size: 12.5px; }
+.mealcard .mk { font-variant-numeric: tabular-nums; color: var(--ink-2); white-space: nowrap; }
+.mealcard .msum { display: flex; flex-wrap: wrap; gap: 4px 12px; margin-top: 8px; padding-top: 8px; border-top: 1px solid var(--line); font-size: 13px; color: var(--ink-2); }
+.mealcard .msum b { color: var(--ink); font-size: 14px; }

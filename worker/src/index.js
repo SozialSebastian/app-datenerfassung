@@ -565,6 +565,44 @@ async function handle(request, env) {
     return json({ recipes: out });
   }
 
+  // Notion: Mahlzeiten ab einem Datum (nur lesen)
+  if (path === "/notion/meals" && request.method === "GET") {
+    if (!env.NOTION_TOKEN) return json({ error: "Notion ist im Mosaik-Dienst noch nicht eingerichtet (GitHub-Secret NOTION_TOKEN fehlt)" }, 503);
+    const db = String(env.NOTION_MEALS || "").replace(/-/g, "");
+    if (!/^[0-9a-f]{32}$/i.test(db)) return json({ error: "Mahlzeiten-Datenbank nicht eingestellt" }, 503);
+    const since = /^\d{4}-\d{2}-\d{2}$/.test(url.searchParams.get("since") || "") ? url.searchParams.get("since") : "2000-01-01";
+    const num = (p) => (p && typeof p.number === "number" ? p.number : null);
+    const txt = (p) => (p ? (p.title || p.rich_text || []).map((t) => t.plain_text || "").join("") : "");
+    const out = [];
+    let cursor = null, rounds = 0;
+    do {
+      const r = await fetch(`https://api.notion.com/v1/databases/${db}/query`, {
+        method: "POST",
+        headers: { Authorization: `Bearer ${env.NOTION_TOKEN}`, "Notion-Version": "2022-06-28", "Content-Type": "application/json" },
+        body: JSON.stringify({ page_size: 100, filter: { property: "Datum", date: { on_or_after: since } }, sorts: [{ property: "Datum", direction: "ascending" }], ...(cursor ? { start_cursor: cursor } : {}) })
+      });
+      if (!r.ok) {
+        const msg = r.status === 401 ? "Der Notion-Schlüssel ist ungültig" : r.status === 404 || r.status === 403 ? "Die Datenbank „Mahlzeiten“ ist nicht für die Verbindung „Mosaik“ freigegeben" : `Notion meldet Fehler ${r.status}`;
+        return json({ error: msg }, 502);
+      }
+      const d = await r.json();
+      for (const pg of d.results || []) {
+        const P = pg.properties || {};
+        const when = P.Datum && P.Datum.date ? P.Datum.date.start : null;
+        if (!when) continue;
+        out.push({
+          id: pg.id, name: txt(P.Name), when,
+          meal: P.Mahlzeit && P.Mahlzeit.select ? P.Mahlzeit.select.name : "",
+          kcal: num(P.kcal), p: num(P["Protein (g)"]), kh: num(P["Kohlenhydrate (g)"]), z: num(P["Zucker (g)"]),
+          f: num(P["Fett (g)"]), bs: num(P["Ballaststoffe (g)"]),
+          basis: P.Grundlage && P.Grundlage.select ? P.Grundlage.select.name : "", note: txt(P.Notiz)
+        });
+      }
+      cursor = d.has_more ? d.next_cursor : null;
+    } while (cursor && ++rounds < 30);
+    return json({ meals: out });
+  }
+
   if (path === "/inbox" && request.method === "GET") {
     const { results } = await env.DB.prepare("SELECT id, created, date, key, value FROM inbox ORDER BY id").all();
     return json({ items: results });

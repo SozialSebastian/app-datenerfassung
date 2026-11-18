@@ -10,6 +10,8 @@ crons = ["* * * * *"]
 # Notion-Seite „Rezepte“ (nur die Kennung, der Schlüssel liegt als Secret NOTION_TOKEN)
 [vars]
 NOTION_RECIPES = "28e9d856995e800f93dbc9933a5abece"
+# Notion-Datenbank „Mahlzeiten“ (Claude trägt dort Essen mit Nährwerten ein, Mosaik liest sie)
+NOTION_MEALS = "41c9d856995e81e681d7cedb818043d0"
 
 [[d1_databases]]
 binding = "DB"
