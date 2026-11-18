@@ -514,63 +514,99 @@ function sportPanel(days) {
 }
 
 // Kuchen mit Beschriftung direkt am Stück (Name fett, darunter der Anteil), für alle Fragentypen
-const PIE_MAX = 7; // höchstens so viele Stücke mit eigener Beschriftung, der Rest wird „Weitere“
+// Kuchendiagramm mit Beschriftung außen. Kleine Stücke mit gleicher Anzahl (nebeneinander) teilen sich eine
+// Beschriftung („Dennis, Steffen, Henni · je 3 % (1×)“). Beschriftungen werden auf beide Seiten verteilt:
+// oben und unten am Ring dürfen sie auf die weniger volle Seite wechseln.
 function labeledPie(items, unit, center = null) {
-  let sl = items.filter((x) => x.c > 0);
+  const sl = items.filter((x) => x.c > 0);
   const total = sl.reduce((s, x) => s + x.c, 0);
   if (!total) return "";
-  // viele kleine Stücke: die größten einzeln, den Rest als ein graues Stück „Weitere“ – Namen darunter als Liste
-  let rest = [];
-  if (sl.length > PIE_MAX) {
-    const sorted = [...sl].sort((a, b) => b.c - a.c);
-    const keep = new Set(sorted.slice(0, PIE_MAX - 1));
-    rest = sorted.slice(PIE_MAX - 1);
-    sl = [...sl.filter((x) => keep.has(x)), { label: `Weitere (${rest.length})`, c: rest.reduce((t, x) => t + x.c, 0), color: "var(--ink-2)" }];
-  }
-  const W = 360, R = 60, w = 22, cx = W / 2, LH = 36; // LH: Mindestabstand zweizeiliger Beschriftungen
-  // Höhe nach der Seite mit den meisten Beschriftungen (rechts: Winkel −90°…90°)
-  let acc = 0, nR = 0;
-  for (const x of sl) { const am = -Math.PI / 2 + ((acc + x.c / 2) / total) * 2 * Math.PI; if (Math.cos(am) >= 0) nR++; acc += x.c; }
-  const H = Math.max(210, Math.max(nR, sl.length - nR) * LH + 50), cy = H / 2;
+  const W = 360, R = 60, w = 22, cx = W / 2, LINE = 16;
+  // Winkel je Stück
   let a0 = -Math.PI / 2;
-  const pt = (r, a) => [cx + r * Math.cos(a), cy + r * Math.sin(a)];
-  const arcs = [], labs = [];
-  for (const s of sl) {
-    const a1 = a0 + (s.c / total) * 2 * Math.PI;
-    const gap = sl.length > 1 ? 0.03 : 0;
-    const [x0, y0] = pt(R, a0 + gap), [x1, y1] = pt(R, Math.max(a0 + gap, a1 - gap));
-    const big = a1 - a0 > Math.PI ? 1 : 0;
-    arcs.push(sl.length === 1 ? `<circle cx="${cx}" cy="${cy}" r="${R}" fill="none" stroke="${s.color}" stroke-width="${w}"/>`
-      : `<path d="M${x0.toFixed(1)},${y0.toFixed(1)} A${R},${R} 0 ${big} 1 ${x1.toFixed(1)},${y1.toFixed(1)}" fill="none" stroke="${s.color}" stroke-width="${w}"/>`);
-    const am = (a0 + a1) / 2;
-    const [ex, ey] = pt(R + w / 2 + 3, am), [kx, ky] = pt(R + w / 2 + 14, am);
-    labs.push({ s, right: Math.cos(am) >= 0, ex, ey, kx, ky });
-    a0 = a1;
+  const segs = sl.map((s) => { const a1 = a0 + (s.c / total) * 2 * Math.PI, x = { s, a0, a1 }; a0 = a1; return x; });
+  // Beschriftungsgruppen: gleiche Anzahl, nebeneinander, jeweils unter 10 %
+  const groups = [];
+  for (const g of segs) {
+    const last = groups[groups.length - 1];
+    if (last && last.c === g.s.c && g.s.c / total < 0.1) last.segs.push(g);
+    else groups.push({ c: g.s.c, segs: [g] });
   }
-  // je Seite von oben nach unten sortieren und auseinanderschieben, damit nichts überlappt
-  for (const side of [true, false]) {
-    const xs = labs.filter((l) => l.right === side).sort((a, b) => a.ky - b.ky);
-    xs.forEach((l, i) => { if (i && l.ky - xs[i - 1].ky < LH) l.ky = xs[i - 1].ky + LH; });
-    const over = xs.length ? xs[xs.length - 1].ky - (H - 22) : 0;
-    if (over > 0) xs.forEach((l) => (l.ky -= over));
-    const under = xs.length ? 18 - xs[0].ky : 0;
-    if (under > 0) xs.forEach((l) => (l.ky += under));
-  }
+  // Text je Gruppe: Namen in Zeilen (Seite links ist schmal → ~12 Zeichen je Zeile)
   const short = (t) => (t.length > 15 ? t.slice(0, 14) + "…" : t);
-  // Linie in der Farbe des Stücks vom Ring zur Beschriftung, Punkt an der Beschriftung; darunter „50 % (2×)“
-  const txt = labs.map(({ s, right, ex, ey, kx, ky }) => {
-    const tx = right ? cx + R + w / 2 + 30 : cx - R - w / 2 - 30;
-    const dx = tx + (right ? -7 : 7);
-    const anchor = right ? "start" : "end";
-    return `<polyline points="${ex.toFixed(1)},${ey.toFixed(1)} ${kx.toFixed(1)},${ky.toFixed(1)} ${dx.toFixed(1)},${ky.toFixed(1)}" class="pl" style="stroke:${s.color}"/>
-      <circle cx="${dx.toFixed(1)}" cy="${ky.toFixed(1)}" r="2.6" style="fill:${s.color}"/>
-      <text x="${tx.toFixed(1)}" y="${(ky - 3).toFixed(1)}" text-anchor="${anchor}" class="pk">${esc(short(s.label))}<title>${esc(s.label)}</title></text>
-      <text x="${tx.toFixed(1)}" y="${(ky + 13).toFixed(1)}" text-anchor="${anchor}" class="pv"><tspan class="pp" style="fill:${s.color}">${Math.round((s.c / total) * 100)} %</tspan> (${s.c}×)</text>`;
+  const wrap = (names, max) => {
+    const lines = [];
+    for (const n of names) {
+      const t = short(n), cur = lines[lines.length - 1];
+      if (cur && (cur + ", " + t).length <= max) lines[lines.length - 1] = cur + ", " + t;
+      else lines.push(t);
+    }
+    return lines;
+  };
+  for (const g of groups) {
+    g.am = (g.segs[0].a0 + g.segs[g.segs.length - 1].a1) / 2;
+    g.right = Math.cos(g.am) >= 0;
+    g.names = g.segs.map((x) => x.s.label);
+    g.color = g.segs.length === 1 ? g.segs[0].s.color : "var(--ink-2)";
+  }
+  // Platz sparen: je eine Gruppe nahe oben bzw. unten am Ring darf über/unter den Ring wandern (dort ist die ganze Breite frei),
+  // wenn die vollere Seite dadurch kürzer wird
+  const linesOn = (g) => wrap(g.names, 10).length + 1;
+  const load = (side) => groups.filter((g) => !g.zone && g.right === side).reduce((t, g) => t + linesOn(g), 0);
+  const wideChars = (g) => Math.max(10, Math.floor((W - (cx + R * Math.cos(g.am)) - 16) / 8));
+  for (const zone of ["top", "bot"]) {
+    const from = load(true) >= load(false);
+    const cand = groups.filter((g) => !g.zone && g.right === from && (zone === "top" ? Math.sin(g.am) < -0.7 : Math.sin(g.am) > 0.7))
+      .sort((x, y) => Math.abs(Math.sin(y.am)) - Math.abs(Math.sin(x.am)))[0];
+    if (!cand) continue;
+    const before = Math.max(load(true), load(false));
+    if (before <= 10) break; // passt ohnehin gut nebeneinander
+    cand.zone = zone;
+    if (Math.max(load(true), load(false)) >= before) cand.zone = undefined;
+  }
+  for (const g of groups) g.lines = wrap(g.names, g.zone ? wideChars(g) : 10);
+  const hOf = (g) => g.lines.length * LINE + 22, ringOut = R + w / 2 + 12;
+  const topH = Math.max(0, ...groups.filter((g) => g.zone === "top").map(hOf));
+  const botH = Math.max(0, ...groups.filter((g) => g.zone === "bot").map(hOf));
+  const side = Math.max(210, Math.max(load(true), load(false)) * LINE + 30 + groups.length * 4);
+  const H = Math.max(side, ringOut * 2 + topH + botH + 12);
+  const cy = topH ? Math.max(H / 2, topH + ringOut + 6) : H / 2;
+  const pt = (r, a) => [cx + r * Math.cos(a), cy + r * Math.sin(a)];
+  // Ring
+  const arcs = segs.map(({ s, a0, a1 }) => {
+    const gap = segs.length > 1 ? 0.03 : 0;
+    const [x0, y0] = pt(R, a0 + gap), [x1, y1] = pt(R, Math.max(a0 + gap, a1 - gap));
+    return segs.length === 1 ? `<circle cx="${cx}" cy="${cy}" r="${R}" fill="none" stroke="${s.color}" stroke-width="${w}"/>`
+      : `<path d="M${x0.toFixed(1)},${y0.toFixed(1)} A${R},${R} 0 ${a1 - a0 > Math.PI ? 1 : 0} 1 ${x1.toFixed(1)},${y1.toFixed(1)}" fill="none" stroke="${s.color}" stroke-width="${w}"/>`;
+  });
+  // Beschriftungen: Knick außen am Ring, dann waagerecht zur Seite; je Seite von oben nach unten ohne Überlappung
+  for (const g of groups) {
+    [g.ex, g.ey] = pt(R + w / 2 + 3, g.am); [g.kx, g.ky] = pt(R + w / 2 + 14, g.am); g.h = hOf(g);
+    if (g.zone) g.ky = g.zone === "top" ? cy - ringOut - (g.h - 16) : cy + ringOut + 12; // erste Zeile so, dass alles außerhalb des Rings liegt
+  }
+  for (const side of [true, false]) {
+    const xs = groups.filter((g) => !g.zone && g.right === side).sort((a, b) => a.ky - b.ky);
+    // ky = Höhe der ersten Zeile; Platz nach unten = g.h
+    xs.forEach((g, i) => { if (i && g.ky < xs[i - 1].ky + xs[i - 1].h) g.ky = xs[i - 1].ky + xs[i - 1].h; });
+    const over = xs.length ? xs[xs.length - 1].ky + xs[xs.length - 1].h - 18 - (H - 6) : 0;
+    if (over > 0) xs.forEach((g) => (g.ky -= over));
+    const under = xs.length ? 18 - xs[0].ky : 0;
+    if (under > 0) xs.forEach((g) => (g.ky += under));
+  }
+  const txt = groups.map((g) => {
+    // über/unter dem Ring: Linie senkrecht vom Stück nach oben/unten, Text rechts daneben über die freie Breite
+    const tx = g.zone ? g.ex + 9 : g.right ? cx + R + w / 2 + 30 : cx - R - w / 2 - 30;
+    const dx = g.zone ? g.ex : tx + (g.right ? -7 : 7), anchor = g.zone || g.right ? "start" : "end";
+    const kx = g.zone ? g.ex : g.kx;
+    const pct = Math.round((g.c / total) * 100);
+    const name = g.lines.map((l, i) => `<text x="${tx.toFixed(1)}" y="${(g.ky - 3 + i * LINE).toFixed(1)}" text-anchor="${anchor}" class="pk">${esc(l)}</text>`).join("");
+    return `<polyline points="${g.ex.toFixed(1)},${g.ey.toFixed(1)} ${kx.toFixed(1)},${g.ky.toFixed(1)} ${dx.toFixed(1)},${g.ky.toFixed(1)}" class="pl" style="stroke:${g.color}"/>
+      <circle cx="${dx.toFixed(1)}" cy="${g.ky.toFixed(1)}" r="2.6" style="fill:${g.color}"/>
+      ${name}<title>${esc(g.names.join(", "))}</title>
+      <text x="${tx.toFixed(1)}" y="${(g.ky + 13 + (g.lines.length - 1) * LINE).toFixed(1)}" text-anchor="${anchor}" class="pv"><tspan class="pp" style="fill:${g.color}">${g.segs.length > 1 ? "je " : ""}${pct} %</tspan> (${g.c}×)</text>`;
   }).join("");
-  // in der Mitte: Ø (Skala) bzw. Gesamtzahl
   const mid = center ? `<text x="${cx}" y="${cy + (center.sub ? 4 : 9)}" text-anchor="middle" class="pc">${esc(center.big)}</text>${center.sub ? `<text x="${cx}" y="${cy + 21}" text-anchor="middle" class="ps">${esc(center.sub)}</text>` : ""}` : "";
-  const more = rest.length ? `<p class="pmore">${rest.map((x) => `${esc(x.label)} <b>${x.c}×</b>`).join(" · ")}</p>` : "";
-  return `<svg class="spie" viewBox="0 0 ${W} ${H}" role="img" aria-label="Kuchendiagramm">${arcs.join("")}${txt}${mid}</svg>${more}`;
+  return `<svg class="spie" viewBox="0 0 ${W} ${H}" role="img" aria-label="Kuchendiagramm">${arcs.join("")}${txt}${mid}</svg>`;
 }
 
 // Säulen über die Zeit: wie oft die gewählte Antwort vorkam (pro Tag, Woche oder Monat)
