@@ -627,6 +627,7 @@ test("Profil: Geburtsjahr, Geschlecht, Schlafbedarf und Arbeitsvertrag unter Ein
   await page.fill('[data-ch="w"]', "20"); await page.locator('[data-ch="w"]').dispatchEvent("change");
   await page.click('[data-cper="w:month"]');
   await page.fill('[data-cw="w"]', "15,50"); await page.locator('[data-cw="w"]').dispatchEvent("change");
+  await page.waitForFunction(() => state.profile && state.profile.sleepNeed === 7.5 && state.profile.sex === "m" && qById("w").contract && qById("w").contract.wage === 15.5, null, { timeout: 3000 }).catch(() => {});
   const r = await page.evaluate(() => ({ p: state.profile, c: qById("w").contract }));
   assert.deepEqual(r.p, { born: 1998, sex: "m", sleepNeed: 7.5 });
   assert.deepEqual(r.c, { h: 20, wage: 15.5, per: "month" });
