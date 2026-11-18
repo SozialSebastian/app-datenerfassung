@@ -135,7 +135,8 @@ function condMet(q, a, guard = 0) {
 
 const visibleQuestions = (date) => {
   const a = state.answers[date] || {};
-  return ordered().map((o) => o.q).filter((q) => !q.archived && condMet(q, a));
+  const wd = ((new Date(date + "T12:00:00").getDay() + 6) % 7) + 1; // 1 = Mo … 7 = So
+  return ordered().map((o) => o.q).filter((q) => !q.archived && (!q.days || q.days.includes(wd)) && condMet(q, a));
 };
 
 // Health- und Schach-Felder werden automatisch gefüllt und nicht abgefragt (vollständig ist erst der Vortag)

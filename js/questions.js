@@ -298,18 +298,27 @@ function openEditor(id) {
     }
 
     const I = draft._inl;
-    const inlBlock = draft.type === "choice" && !draft.inline ? `<details class="adv" ${I.on ? "open" : ""}>
-        <summary>Folgeangabe (in derselben Frage)</summary>
-        <label class="check" style="margin-top:8px"><input type="checkbox" id="inlon" ${I.on ? "checked" : ""}> Bei einer Antwort zusätzlich etwas eintragen, z. B. die Dauer</label>
-        ${I.on ? `<div class="field" style="font-weight:600;font-size:15px;margin:6px 0">Bei Antwort</div>
-          <div class="chips" style="margin-bottom:12px">${draft.options.filter((o) => o.trim()).map((v) => `<button type="button" class="chip" data-ival="${esc(v)}" aria-pressed="${I.values.includes(v)}">${esc(v)}</button>`).join("")}</div>
+    // Folgeangabe: Inhalt, der unter dem Schalter aufklappt
+    const inlSub = I.on ? `<div class="osub">
+          <div class="olab">Bei Antwort</div>
+          <div class="chips">${draft.options.filter((o) => o.trim()).map((v) => `<button type="button" class="chip" data-ival="${esc(v)}" aria-pressed="${I.values.includes(v)}">${esc(v)}</button>`).join("")}</div>
           <div class="seg" role="group" aria-label="Art der Angabe">${[["duration", "Dauer"], ["clock", "Uhrzeit"], ["", "Zahl"]].map(([v, l]) => `<button type="button" data-ifmt="${v}" aria-pressed="${I.format === v}">${l}</button>`).join("")}</div>
           <div class="row2">
             <label class="field">Bezeichnung<input id="inltext" value="${esc(I.text)}" placeholder="z. B. Dauer" autocomplete="off"></label>
             ${I.format ? "" : `<label class="field">Einheit<input id="inlunit" value="${esc(I.unit)}" placeholder="z. B. km" autocomplete="off"></label>`}
           </div>
-          <p class="muted small" style="margin-top:-8px">Erscheint direkt unter den Antworten, auch in der Abfrage, und ist mit dem Wert vom letzten Mal vorausgefüllt.</p>` : ""}
-      </details>` : "";
+        </div>` : "";
+    // Nur an bestimmten Tagen (1 = Mo … 7 = So)
+    const WD = ["Mo", "Di", "Mi", "Do", "Fr", "Sa", "So"];
+    const dset = draft.days || [];
+    const same = (xs) => xs.length === dset.length && xs.every((x) => dset.includes(x));
+    const daysSub = draft.days ? `<div class="osub">
+          <div class="chips">
+            <button type="button" class="chip" data-wdp="1,2,3,4,5" aria-pressed="${same([1, 2, 3, 4, 5])}">Wochentags</button>
+            <button type="button" class="chip" data-wdp="6,7" aria-pressed="${same([6, 7])}">Wochenende</button>
+          </div>
+          <div class="wdays">${WD.map((l, i) => `<button type="button" class="chip" data-wd="${i + 1}" aria-pressed="${dset.includes(i + 1)}">${l}</button>`).join("")}</div>
+        </div>` : "";
 
     const condBlock = `<details class="adv" ${draft.cond ? "open" : ""}>
         <summary>Nur fragen, wenn … (Folgefrage)</summary>
@@ -344,14 +353,17 @@ function openEditor(id) {
         const tg = (id, on, label, dis) => `<label class="orow"><span>${label}</span><input type="checkbox" class="tgl" id="${id}" ${on ? "checked" : ""} ${dis ? "disabled" : ""}></label>`;
         const rows = [];
         if (draft.type === "choice" && !draft.notion && !isGradeQ(draft)) rows.push(tg("fsync", draft.friends, "Namen aus der Freundesliste"));
-        if (draft.type === "choice") rows.push(tg("multi", draft.multi, isGradeQ(draft) ? "Mehrere Grade erlauben" : "Mehrere Antworten erlauben", typeLocked));
+        // Mehrfachauswahl nur, wenn sie geht: nicht bei Ja/Nein und nicht, wenn der Typ schon fest ist
+        const yn = draft.options.length === 2 && draft.options.includes("Ja") && draft.options.includes("Nein");
+        if (draft.type === "choice" && !typeLocked && !yn) rows.push(tg("multi", draft.multi, isGradeQ(draft) ? "Mehrere Grade erlauben" : "Mehrere Antworten erlauben"));
         if (draft.type === "choice" && !isGradeQ(draft)) rows.push(tg("noneok", draft.noneOk, "„Nichts davon“ als Antwort"));
+        if (draft.type === "choice" && !draft.inline) rows.push(tg("inlon", I.on, "Folgeangabe, z. B. Dauer") + inlSub);
+        if (!draft.cond) rows.push(tg("qdays", !!draft.days, "Nur an bestimmten Tagen") + daysSub);
         if (!draft.cond) rows.push(tg("qmorning", draft.morning, "Morgens abfragen"));
         if (!draft.cond && (draft.theme || guessTheme(draft)) === "sport" && draft.type === "choice" && !draft.multi && draft.options.includes("Ja")) rows.push(tg("qsport", draft.sport, "Zählt als Sport"));
         return rows.length ? `<div class="esec">Optionen</div><div class="ogrp">${rows.join("")}</div>` : "";
       })()}
-      ${inlBlock || !draft.inline ? `<div class="esec">Erweitert</div>` : ""}
-      ${inlBlock}
+      ${!draft.inline ? `<div class="esec">Erweitert</div>` : ""}
       ${draft.inline ? "" : condBlock}
       ${existing && existing.healthKey ? `<details class="adv">
         <summary>Apple Health</summary>
@@ -406,6 +418,9 @@ function openEditor(id) {
 
     gradeEditorWire(draft, dlg, sync, draw);
     $("#inlon", dlg)?.addEventListener("change", (e) => { sync(); draft._inl.on = e.target.checked; draw(); });
+    $("#qdays", dlg)?.addEventListener("change", (e) => { sync(); draft.days = e.target.checked ? [1, 2, 3, 4, 5] : undefined; draw(); });
+    dlg.querySelectorAll("[data-wdp]").forEach((b) => b.addEventListener("click", () => { sync(); draft.days = b.dataset.wdp.split(",").map(Number); draw(); }));
+    dlg.querySelectorAll("[data-wd]").forEach((b) => b.addEventListener("click", () => { sync(); const d = +b.dataset.wd, xs = draft.days || []; draft.days = (xs.includes(d) ? xs.filter((x) => x !== d) : [...xs, d]).sort(); draw(); }));
     dlg.querySelectorAll("[data-ival]").forEach((b) => b.addEventListener("click", () => { sync(); const v = b.dataset.ival, xs = draft._inl.values; draft._inl.values = xs.includes(v) ? xs.filter((x) => x !== v) : [...xs, v]; draw(); }));
     dlg.querySelectorAll("[data-ifmt]").forEach((b) => b.addEventListener("click", () => { sync(); const f = b.dataset.ifmt; const I = draft._inl; if (I.text === ({ duration: "Dauer", clock: "Uhrzeit" }[I.format] || "")) I.text = { duration: "Dauer", clock: "Uhrzeit" }[f] || ""; I.format = f; draw(); }));
     dlg.querySelectorAll("[data-type]").forEach((b) => b.addEventListener("click", () => { sync(); draft.type = b.dataset.type; draw(); }));
@@ -506,13 +521,16 @@ function openEditor(id) {
       delete draft._cper;
       if (draft.contract && !(draft.contract.h > 0 && draft.contract.wage > 0)) return toast("Vertrag: bitte Stunden und Stundenlohn eintragen (oder beide leeren)");
       gradeEditorClean(draft);
+      if (draft.days && !draft.days.length) return toast("Bitte mindestens einen Tag wählen");
+      if (draft.days && (draft.days.length === 7 || draft.cond)) delete draft.days;
+      if (!draft.days) delete draft.days;
       const I = draft._inl; delete draft._inl;
       if (I.on && draft.type === "choice") {
         I.values = I.values.filter((v) => draft.options.includes(v));
         if (!I.values.length) { draft._inl = I; return toast("Folgeangabe: bitte die Antwort wählen, bei der sie erscheint"); }
         if (!I.text.trim()) I.text = { duration: "Dauer", clock: "Uhrzeit" }[I.format] || "Wert";
       }
-      if (existing) Object.assign(existing, draft);
+      if (existing) { Object.assign(existing, draft); if (!draft.days) delete existing.days; }
       else state.questions.push(draft);
       // Folgeangabe als Folgefrage mit „inline“ anlegen, ändern oder entfernen
       let kid = I.id ? qById(I.id) : null;

@@ -940,7 +940,14 @@ svg.wrs text { font-size: 10px; fill: var(--ink-2); }
 .esec { font-size: 12.5px; font-weight: 700; letter-spacing: .05em; text-transform: uppercase; color: var(--ink-2); margin: 22px 0 8px; }
 .ogrp { background: var(--surface); border: 1px solid var(--line); border-radius: 14px; overflow: hidden; margin-bottom: 6px; }
 .orow { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 12px 14px; font-size: 15.5px; font-weight: 600; }
-.orow + .orow { border-top: 1px solid var(--line); }
+.ogrp > .orow:not(:first-child) { border-top: 1px solid var(--line); }
+.osub { padding: 0 14px 14px; }
+.osub .chips { margin-bottom: 10px; }
+.osub .seg { margin-bottom: 12px; }
+.osub .field:last-child, .osub .row2 { margin-bottom: 0; }
+.olab { font-size: 13px; font-weight: 600; color: var(--ink-2); margin: 0 0 6px; }
+.wdays { display: grid; grid-template-columns: repeat(7, 1fr); gap: 5px; }
+.wdays .chip { padding: 8px 0; justify-content: center; text-align: center; min-width: 0; }
 input.tgl { appearance: none; -webkit-appearance: none; flex: none; width: 48px; height: 29px; border-radius: 999px; background: var(--line); position: relative; cursor: pointer; transition: background .15s; margin: 0; }
 input.tgl::before { content: ""; position: absolute; top: 3px; left: 3px; width: 23px; height: 23px; border-radius: 50%; background: #fff; box-shadow: 0 1px 3px rgba(0,0,0,.25); transition: transform .15s; }
 input.tgl:checked { background: var(--hold); }

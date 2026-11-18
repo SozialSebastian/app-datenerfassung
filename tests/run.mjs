@@ -347,7 +347,6 @@ test("Folgeangabe in derselben Frage: Dauer nach „Ja“, vorausgefüllt mit de
   const data = { version: 1, lastBackup: null, answers: {}, questions: [yesNo("b", "Warst du bouldern?"), yesNo("k", "Kaffee?")] };
   const { page, ctx, errors } = await open({ data });
   await page.evaluate(() => openEditor("b"));
-  await page.click("details.adv summary >> text=Folgeangabe");
   await page.check("#inlon");
   await page.click("#savebtn");
   const kid = await page.evaluate(() => state.questions.find((q) => q.inline));
@@ -583,6 +582,34 @@ test("Morgenfragen: eigene Abfrage (mit Folgefragen), Link aus der Morgen-Erinne
   assert.equal(r.part, "morning");
   assert.match(r.first, /Frage 1 von 1[\s\S]*Wie hast du geschlafen/);
   assert.deepEqual(r.all.sort(), ["bo", "sl"]);
+  assert.deepEqual(errors, []);
+  await ctx.close();
+});
+
+test("Fragen-Editor: Folgeangabe und „Nur an bestimmten Tagen“ als Schalter; Frage kommt nur an diesen Tagen", async () => {
+  const data = { version: 1, lastBackup: null, answers: {}, questions: [{ id: "b", text: "Warst du bouldern?", type: "choice", options: ["Ja", "Nein"], multi: false, archived: false, cond: null }] };
+  const { page, ctx, errors } = await open({ data });
+  await page.evaluate(() => openEditor("b"));
+  await page.click("#qdays");
+  await page.click('[data-wdp="6,7"]');
+  await page.click('[data-wd="3"]');
+  await page.click("#inlon");
+  assert.equal(await page.locator('[data-ival="Ja"]').getAttribute("aria-pressed"), "true");
+  await page.click("#savebtn");
+  const r = await page.evaluate(() => {
+    const q = qById("b");
+    const vis = (d) => visibleQuestions(d).some((x) => x.id === "b");
+    return { days: q.days, kid: state.questions.some((k) => k.inline && k.cond && k.cond.qid === "b"),
+      mi: vis("2026-11-18"), mo: vis("2026-11-16"), sa: vis("2026-11-21"), so: vis("2026-11-22") };
+  });
+  assert.deepEqual(r.days, [3, 6, 7]);
+  assert.equal(r.kid, true);
+  assert.deepEqual([r.mi, r.mo, r.sa, r.so], [true, false, true, true]);
+  // ausschalten entfernt die Tage wieder
+  await page.evaluate(() => openEditor("b"));
+  await page.click("#qdays");
+  await page.click("#savebtn");
+  assert.equal(await page.evaluate(() => "days" in qById("b")), false);
   assert.deepEqual(errors, []);
   await ctx.close();
 });
