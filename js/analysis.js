@@ -723,13 +723,13 @@ function lineChart(q, days, vals, avg) {
   });
 }
 /* ===== Auffälligkeiten im Verlauf (nur wenn wirklich etwas auffällt) =====
-   A Knick: ab einem Zeitpunkt stetig steigend/fallend (Mann-Kendall, p < 0,002, mind. 3 Wochen, Veränderung ≥ 0,8 Streuung)
-   B Sprung: Niveau verschiebt sich (Welch-t am besten Trennpunkt, Block-Permutation p < 0,005, mind. 0,8 Streuung)
-   C Phase: mind. 5 Tage am Stück deutlich außerhalb des üblichen Bereichs (Ø ≥ 1,5 Streuung daneben)
-   Alle Tests berücksichtigen, dass aufeinanderfolgende Tage zusammenhängen (Autokorrelation ρ).
+   Empfindlich eingestellt (zeigt auch kleine Trends):
+   A Knick: ab einem Zeitpunkt stetig steigend/fallend (Mann-Kendall, p < 0,05, mind. 2 Wochen, Veränderung ≥ 0,35 Streuung)
+   B Sprung: Niveau verschiebt sich (Welch-t am besten Trennpunkt, Block-Permutation p < 0,05, mind. 0,35 Streuung)
+   C Phase: mind. 4 Tage am Stück außerhalb des üblichen Bereichs (Ø ≥ 1 Streuung daneben)
    Ab 30 Tagen Zeitraum und 20 Werten; gezeigt wird höchstens die stärkste Auffälligkeit. */
 function findPattern(pts0, days) {
-  if (days.length < 30 || pts0.length < 20) return null;
+  if (days.length < 21 || pts0.length < 14) return null;
   const di = new Map(days.map((d, i) => [d, i]));
   let P = pts0.map((p) => ({ d: p.d, t: di.get(p.d), v: p.v })).filter((p) => p.t !== undefined);
   // sehr lange Reihen: für die Suche auf Wochenmittel verdichten (Rechenzeit), Ergebnis gilt dann wochengenau
@@ -746,7 +746,7 @@ function findPattern(pts0, days) {
   const sdv = Math.sqrt(vs.reduce((t, v) => t + (v - vs.reduce((a, b) => a + b, 0) / n) ** 2, 0) / (n - 1));
   const scale = mad > 1e-9 ? mad : sdv;
   if (!(scale > 1e-9)) return null;
-  const minSeg = coarse ? 4 : 12;
+  const minSeg = coarse ? 3 : 7;
   // Werte hängen von Tag zu Tag zusammen (Stimmung, Schlaf …) → weniger unabhängige Information als Tage.
   // ρ (Autokorrelation 1. Ordnung) aus den Differenzen geschätzt, damit Sprünge/Trends selbst ρ nicht verfälschen:
   // für AR(1) gilt corr(Δyₜ, Δyₜ₋₁) = −(1 − ρ)/2  ⇒  ρ = 1 + 2·r_Δ
@@ -757,7 +757,7 @@ function findPattern(pts0, days) {
   let c0 = 0, c1 = 0;
   dif.forEach((x, i) => { c0 += (x - dm) ** 2; if (i) c1 += (x - dm) * (dif[i - 1] - dm); });
   const rho = c0 > 0 ? Math.min(0.8, Math.max(0, 1 + 2 * (c1 / c0))) : 0;
-  const shrink = Math.sqrt((1 - rho) / (1 + rho)); // effektive Stichprobe: n·(1−ρ)/(1+ρ)
+  const shrink = 1; // empfindlich eingestellt: Zusammenhang der Tage wird nicht abgezogen (ρ nur für Phasen genutzt)
   const found = [];
   // B Sprung
   {
@@ -776,7 +776,7 @@ function findPattern(pts0, days) {
       return best;
     };
     const b = bestT(vs);
-    if (b.k > 0 && Math.abs(b.m2 - b.m1) >= 0.8 * scale) {
+    if (b.k > 0 && Math.abs(b.m2 - b.m1) >= 0.35 * scale) {
       // Permutationstest in Blöcken von 7 Werten (erhält den Zusammenhang benachbarter Tage)
       let seed = 12345, ge = 0;
       const rnd = () => (seed = (seed * 16807) % 2147483647) / 2147483647;
@@ -787,7 +787,7 @@ function findPattern(pts0, days) {
         if (Math.abs(bestT(blocks.flat()).t) >= Math.abs(b.t)) ge++;
       }
       const pv = (ge + 1) / 301;
-      if (pv < 0.005) found.push({ kind: "jump", a: b.k, b: n - 1, from: b.m1, to: b.m2, score: Math.abs(b.t) * shrink });
+      if (pv < 0.05) found.push({ kind: "jump", a: b.k, b: n - 1, from: b.m1, to: b.m2, score: Math.abs(b.t) * shrink });
     }
   }
   // A Knick: Abschnitt bis heute mit stetigem Trend (Mann-Kendall); der Start mit dem stärksten |z|
@@ -802,9 +802,9 @@ function findPattern(pts0, days) {
     const stepK = Math.max(1, Math.floor(n / 40));
     let best = null;
     for (let a = 0; a <= n - minSeg; a += stepK) {
-      if (P[n - 1].t - P[a].t < 21) break;
+      if (P[n - 1].t - P[a].t < 14) break;
       const z = mk(a);
-      if (Math.abs(z) > 3.09 && (!best || Math.abs(z) > Math.abs(best.z))) best = { a, z }; // p < 0,002
+      if (Math.abs(z) > 1.96 && (!best || Math.abs(z) > Math.abs(best.z))) best = { a, z }; // p < 0,05
     }
     if (best) {
       const seg = P.slice(best.a), sl = [];
@@ -814,7 +814,7 @@ function findPattern(pts0, days) {
       // Knick heißt: die Gerade startet dort, wo die Werte vorher lagen (sonst ist es ein Ausreißer/eine Phase, kein Trend)
       const before = vs.slice(Math.max(0, best.a - 10), best.a);
       const startOk = !before.length || Math.abs(icpt + slope * seg[0].t - med(before)) <= 0.6 * scale;
-      if (startOk && Math.abs(slope * (seg[seg.length - 1].t - seg[0].t)) >= 0.8 * scale && Math.sign(slope) === Math.sign(best.z))
+      if (startOk && Math.abs(slope * (seg[seg.length - 1].t - seg[0].t)) >= 0.35 * scale && Math.sign(slope) === Math.sign(best.z))
         found.push({ kind: "trend", a: best.a, b: n - 1, slope, icpt, score: Math.abs(best.z) });
     }
   }
@@ -833,7 +833,7 @@ function findPattern(pts0, days) {
         // Zufall? q = Anteil aller Werte jenseits der Schwelle; ein Lauf der Länge len irgendwo: ≈ 2·n·q^len
         const q = Math.max(0.02, (vs.filter((v) => sign * (v - m0) > 0.75 * sc).length - len) / (n - len)); // ohne den Lauf selbst
         const lEff = len * (1 - rho) / (1 + rho); // zusammenhängende Tage zählen weniger
-        if (len >= 5 && j < n - 1 && sign * (mean - m0) >= 1.5 * sc && 2 * n * q ** lEff < 0.005) { // reicht bis heute → eher Sprung/Knick
+        if (len >= 4 && j < n - 1 && sign * (mean - m0) >= 1.0 * sc && 2 * n * q ** len < 0.05) { // reicht bis heute → eher Sprung/Knick
           const score = (Math.abs(mean - m0) / sc) * Math.sqrt(len);
           if (!best || score > best.score) best = { kind: "phase", a: i, b: j, mean, base: m0, sign, score };
         }
@@ -935,7 +935,7 @@ function curveChart(pts0, days, { avg, dir = null, id = "", label = "", range = 
     patTxt = `<p class="ptrend"><b style="color:${col}">${esc(patTxt[0])}</b><span>${esc(patTxt[1])}</span></p>`;
   } else if (pattern) {
     // nichts gefunden: kurzer Hinweis (geprüft wird erst ab 30 Tagen und 20 Werten)
-    patTxt = `<p class="ptrend"><span>Hinweis: ${days.length >= 30 && pts0.length >= 20 ? "kein Trend erkannt" : "Trends werden ab 30 Tagen und 20 Werten erkannt"}</span></p>`;
+    patTxt = `<p class="ptrend"><span>Hinweis: ${days.length >= 21 && pts0.length >= 14 ? "kein Trend erkannt" : "Trends werden ab 3 Wochen und 14 Werten erkannt"}</span></p>`;
   }
   return `<div class="lchart${pat ? " haspat" : ""}">
     <svg class="line" viewBox="0 0 ${W} ${H}" data-pts='${esc(JSON.stringify(tips))}' role="img" aria-label="${esc(label)}">
