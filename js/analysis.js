@@ -610,7 +610,12 @@ function labeledPie(items, unit, center = null, opt = {}) {
   const txt = groups.map((g) => {
     const pct = Math.round((g.c / total) * 100), je = g.segs.length > 1 ? "je " : "";
     const val = `<tspan class="pp" style="fill:${g.color}">${je}${pct} %</tspan> (${g.c}×)`;
-    const wkl = wk ? `${je}Ø ${fw(g.c / wk)}/Wo.` : "";
+    // Ø pro Woche; unter 0,5 → pro Monat, darunter → pro Jahr
+    const rate = (() => {
+      const pw = g.c / wk, pm = pw * (365.25 / 12 / 7), py = pw * (365.25 / 7);
+      return pw >= 0.5 ? `${fw(pw)}/Wo.` : pm >= 0.5 ? `${fw(pm)}/Mon.` : `${fw(py)}/Jahr`;
+    })();
+    const wkl = wk ? `${je}Ø ${rate}` : "";
     if (g.zone) {
       // über/unter dem Ring: Text mittig über der Linie, Linie senkrecht vom Stück
       const longest = Math.max(...g.lines.map((l) => l.length), 12) * 7.6;
@@ -862,7 +867,7 @@ function openAnalysisSettings(onlyQid) {
             ? `<div class="sq-row"><span>Zählt</span><select data-q="${q.id}" data-f="countKey">${q.options.map((o) => `<option ${o === (q.options.includes(s.countKey) ? s.countKey : q.options[0]) ? "selected" : ""}>${esc(o)}</option>`).join("")}</select></div>
                <p class="muted small" style="margin:6px 0 0">Zeigt nur: an wie vielen Tagen im Zeitraum diese Antwort kam.</p>`
             : q.type === "scale" && s.chart === "count" ? `<p class="muted small" style="margin:6px 0 0">Zeigt nur den Durchschnitt.</p>` : s.chart === "pie" ? "" : `<div class="sq-row"><span>Werte</span>${seg(q, "unit", [["pct", "%"], ["abs", "Anzahl"]], s.unit)}</div>`}` : ""}
-          ${s.chart === "pie" && q.type === "choice" ? `<label class="switch row"><input type="checkbox" data-q="${q.id}" data-f="pieWeek" ${s.pieWeek ? "checked" : ""}><span>Ø pro Woche anzeigen</span></label>` : ""}
+          ${s.chart === "pie" && q.type === "choice" ? `<label class="switch row"><input type="checkbox" data-q="${q.id}" data-f="pieWeek" ${s.pieWeek ? "checked" : ""}><span>Ø pro Woche anzeigen (selten: pro Monat/Jahr)</span></label>` : ""}
           <label class="switch row"><input type="checkbox" data-q="${q.id}" data-f="trend" ${s.trend ? "checked" : ""}><span>Verlauf über die Zeit</span></label>
           <label class="switch row"><input type="checkbox" data-q="${q.id}" data-f="hideZeroQ" ${s.hideZero ? "checked" : ""}><span>Ausblenden, solange der Wert 0 ist</span></label>
           ${(() => {
