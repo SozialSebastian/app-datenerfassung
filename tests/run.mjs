@@ -1114,7 +1114,7 @@ for (const cors of [true, false]) test(`chess.com: Einschalten lädt alles, Wert
   await page.click('[data-tab="analysis"]');
   await page.click('[data-range="30"]');
   const txt = await page.locator(".chess").innerText();
-  assert.match(txt, /^Schach\s*4\s*Partien an 3 von 30 Tagen/m);
+  assert.match(txt, /^Schach\s*4\s*Partien an 3 von 11 Tagen/m);
   assert.match(txt, /2 Siege \(50 %\) · 1 Remis \(25 %\) · 1 Niederlage \(25 %\) · Punktequote 62,5 %/);
   assert.match(txt, /Rapid\s*1220\s*\+20\s*Bestwert 1250/);
   assert.doesNotMatch(txt, /Eröffnung/);

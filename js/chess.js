@@ -277,6 +277,8 @@ function chessPanel(days) {
   if (!ds.length) {
     return `<section class="panel acard chess"><h2 class="atitle">Schach${mode !== "all" ? ` · ${esc(chessClsName(mode))}` : ""}</h2><p class="muted small" style="margin:0">${settings.chess.on ? `Im gewählten Zeitraum keine ${mode !== "all" ? esc(chessClsName(mode)) + "-" : ""}Partien auf chess.com.` : "Einschalten unter Einstellungen → Schnittstelle chess.com."}</p></section>`;
   }
+  // Zeitraum beginnt mit der ersten Partie (wie bei den anderen Kacheln kein leerer Vorlauf)
+  if (days[0] < ds[0]) days = days.slice(days.indexOf(ds[0]));
   const from = days[0], to = days[days.length - 1];
   const games = chessGames(mode).filter((g) => { const d = chessDate(g); return d >= from && d <= to; });
   const sum = { n: 0, w: 0, l: 0, dr: 0, s: 0, a: 0, an: 0 }, how = {}, first = {}, last = {};
