@@ -664,6 +664,22 @@ test("Antworten bearbeiten: Anzahl je Antwort, alte Texte, verwaiste Antworten l
   await ctx.close();
 });
 
+test("Analyse „Alles“: jede Kachel beginnt mit der ersten eigenen Antwort", async () => {
+  const t0 = new Date(); const ds = (i) => { const d = new Date(t0); d.setDate(d.getDate() - i); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`; };
+  const answers = {};
+  for (let i = 0; i < 200; i++) answers[ds(i)] = { a: i % 2 ? "Ja" : "Nein", ...(i < 20 ? { b: "Ja" } : {}) };
+  const data = { version: 1, lastBackup: null, answers, questions: [
+    { id: "a", text: "Alte Frage?", type: "choice", options: ["Ja", "Nein"], multi: false, archived: false, cond: null },
+    { id: "b", text: "Neue Frage?", type: "choice", options: ["Ja", "Nein"], multi: false, archived: false, cond: null }] };
+  const { page, ctx, errors } = await open({ data });
+  const r = await page.evaluate(() => { const days = rangeDays("all"); return { n: days.length, a: trimToData(qById("a"), days).length, b: trimToData(qById("b"), days).length, d7: trimToData(qById("b"), rangeDays("7")).length }; });
+  assert.equal(r.a, r.n);
+  assert.equal(r.b, 20);
+  assert.equal(r.d7, 7);
+  assert.deepEqual(errors, []);
+  await ctx.close();
+});
+
 test("Schritte nach Stunde: Tagessumme und Stundenverlauf, angeschnittener erster Tag fällt weg", async () => {
   const { listEntries } = await import("../worker/src/index.js");
   const t = (x) => `2026-10-${x}:00+02:00`;

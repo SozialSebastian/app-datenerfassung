@@ -266,7 +266,16 @@ function kidLine(c, days, skipStack) {
   return `<div class="kid">${head}<div class="kstats"><b>Ø ${f(avg)}</b>${extra}</div>${curve}${contractBlock(c, days)}</div>`;
 }
 
+// Reicht der Zeitraum bis zum Anfang aller Daten (z. B. „Alles“), beginnt jede Kachel erst mit der ersten Antwort auf ihre Frage
+function trimToData(q, days) {
+  if (days.length < 2) return days;
+  const firstAll = Object.keys(state.answers).sort()[0];
+  if (!firstAll || days[0] > firstAll) return days;
+  const first = days.find((d) => isAnswered((state.answers[d] || {})[q.id]));
+  return first ? days.slice(days.indexOf(first)) : days;
+}
 function analysisCard(q, days) {
+  days = trimToData(q, days);
   const set = qset(q);
   const kids = mergedKids(q, days);
   const vals = days.map((d) => ({ d, v: (state.answers[d] || {})[q.id] })).filter((x) => hasData(x.v));
