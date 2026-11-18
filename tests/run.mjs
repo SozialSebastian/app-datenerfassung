@@ -692,7 +692,7 @@ test("Auffälligkeiten im Verlauf: Sprung, Phase, Knick erkannt – Rauschen ble
     return {
       flat: k(findPattern(mk(() => 7 + noise(0.6)), days)),
       jump: k(findPattern(mk((i) => (i < 60 ? 7.2 : 6.2) + noise(0.5)), days)),
-      phase: k(findPattern(mk((i) => 3 + (i >= 40 && i < 48 ? 2 : 0) + noise(0.4)), days)),
+      phase: k(findPattern(mk((i) => 3 + (i >= 40 && i < 50 ? 2 : 0) + noise(0.4)), days)),
       trend: k(findPattern(mk((i) => 7 + (i > 40 ? (i - 40) * 0.04 : 0) + noise(0.4)), days)),
       short: k(findPattern(mk((i) => (i < 60 ? 7.2 : 6.2)).slice(0, 25), days.slice(0, 25)))
     };
