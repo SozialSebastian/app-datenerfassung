@@ -886,8 +886,8 @@ const findPattern = (pts, days) => findPatterns(pts, days)?.[0] || null;
 
 // Verlauf über die Zeit: monotone Kurve, Fläche zum Durchschnitt (darüber/darunter eingefärbt), Höchst- und Tiefstwert am Punkt,
 // Antippen zeigt eine Sprechblase (wireCurves). pts: [{ d, v }]
-// connect: Lücken überbrücken (z. B. Elo bleibt an Tagen ohne Partie gleich)
-function curveChart(pts0, days, { avg, dir = null, id = "", label = "", range = null, fmt = fmtBig, tipFmt = null, dev = null, connect = false, delta = null, pattern = true }) {
+// connect: Lücken überbrücken (Standard: ja – Tage ohne Wert werden einfach übersprungen, die Kurve läuft durch)
+function curveChart(pts0, days, { avg, dir = null, id = "", label = "", range = null, fmt = fmtBig, tipFmt = null, dev = null, connect = true, delta = null, pattern = true }) {
   if (!pts0.length) return "";
   const W = 340, H = 172, PL = 12, PR = 12, PT = 24, PB = 34;
   const nums = pts0.map((x) => x.v);
@@ -900,7 +900,7 @@ function curveChart(pts0, days, { avg, dir = null, id = "", label = "", range = 
   const yi = (v) => PT + (1 - (v - lo) / (hi - lo)) * (H - PT - PB);
   const r1 = (n) => Math.round(n * 10) / 10;
   const pts = pts0.map((x) => ({ d: x.d, v: x.v, x: r1(xi(x.d)), y: r1(yi(x.v)) }));
-  // Abschnitte ohne Lücke (fehlende Tage unterbrechen die Kurve)
+  // Abschnitte: mit connect eine durchgehende Kurve, sonst Unterbrechung bei fehlenden Tagen
   const segs = [];
   pts.forEach((p, i) => { if (!i || (!connect && days.indexOf(p.d) - days.indexOf(pts[i - 1].d) > 1)) segs.push([]); segs[segs.length - 1].push(p); });
   // monotone Kurve (Fritsch–Carlson): geht genau durch jeden Punkt und schießt nie über Höchst-/Tiefstwerte hinaus
@@ -963,12 +963,13 @@ function curveChart(pts0, days, { avg, dir = null, id = "", label = "", range = 
     const ty = (t) => r1(yi(pat.icpt + pat.slope * t));
     let tx;
     if (pat.kind === "trend") {
-      patSvg += `<line x1="${pts[i0].x}" y1="${ty(t0)}" x2="${r1(xi(days[tEnd]))}" y2="${ty(tEnd)}" class="trendln" style="stroke:${col}"/>`;
+      const tL = days.indexOf(pts[pts.length - 1].d); // nur so weit, wie Werte vorliegen
+      patSvg += `<line x1="${pts[i0].x}" y1="${ty(t0)}" x2="${pts[pts.length - 1].x}" y2="${ty(tL)}" class="trendln" clip-path="url(#${gid}pa)" style="stroke:${col}"/>`;
       const perM = pat.slope * 30.44;
       tx = [`${up ? "▲" : "▼"} ${i0 === 0 ? "im ganzen Zeitraum" : `seit ${dmy(pts[i0].d)}`} ${up ? "+" : "−"}${dl(perM)} pro Monat`, i0 === 0 ? "stetiger Trend" : "vorher gleichbleibend"];
     } else if (pat.kind === "jump") {
       const yl = r1(yi(pat.to));
-      patSvg += `<line x1="${pts[i0].x}" y1="${yl}" x2="${r1(xi(days[tEnd]))}" y2="${yl}" class="trendln" style="stroke:${col}"/>`;
+      patSvg += `<line x1="${pts[i0].x}" y1="${yl}" x2="${pts[pts.length - 1].x}" y2="${yl}" class="trendln" style="stroke:${col}"/>`;
       tx = [`${up ? "▲" : "▼"} seit ${dmy(pts[i0].d)} ${dl(pat.to - pat.from)} ${up ? "mehr" : "weniger"}`, `Ø vorher ${f(pat.from)}, seitdem ${f(pat.to)}`];
     } else if (pat.kind === "spread") {
       tx = [`${up ? "▲" : "▼"} seit ${dmy(pts[i0].d)} ${up ? "unruhiger" : "ruhiger"}`, `Schwankung ± ${dl(pat.sd1)} → ± ${dl(pat.sd2)}`];
@@ -990,6 +991,7 @@ function curveChart(pts0, days, { avg, dir = null, id = "", label = "", range = 
         <linearGradient id="${gid}d" x1="0" y1="${ya}" x2="0" y2="${H - PB}" gradientUnits="userSpaceOnUse"><stop offset="0" style="stop-color:${cDn};stop-opacity:.05"/><stop offset="1" style="stop-color:${cDn};stop-opacity:.4"/></linearGradient>
         <clipPath id="${gid}cu"><rect x="0" y="0" width="${W}" height="${ya}"/></clipPath>
         <clipPath id="${gid}cd"><rect x="0" y="${ya}" width="${W}" height="${H - ya}"/></clipPath>
+        <clipPath id="${gid}pa"><rect x="${PL}" y="${PT - 6}" width="${W - PL - PR}" height="${H - PT - PB + 6}"/></clipPath>
       </defs>
       ${areas.map((a) => `<path d="${a}" fill="url(#${gid}u)" clip-path="url(#${gid}cu)"/><path d="${a}" fill="url(#${gid}d)" clip-path="url(#${gid}cd)"/>`).join("")}
       <line x1="${PL}" x2="${W - PR}" y1="${ya}" y2="${ya}" class="avg"/>
