@@ -918,6 +918,9 @@ function curveChart(pts0, days, { avg, dir = null, id = "", label = "", range = 
       patTxt = [`${up ? "▲" : "▼"} ${dmy(pts[i0].d)}–${dmy(pts[i1].d)} deutlich ${up ? "höher" : "niedriger"}`, `Ø ${f(pat.mean)} statt sonst ${f(pat.base)}`];
     }
     patTxt = `<p class="ptrend"><b style="color:${col}">${esc(patTxt[0])}</b><span>${esc(patTxt[1])}</span></p>`;
+  } else if (pattern) {
+    // nichts gefunden: kurzer Hinweis (geprüft wird erst ab 30 Tagen und 20 Werten)
+    patTxt = `<p class="ptrend"><span>Hinweis: ${days.length >= 30 && pts0.length >= 20 ? "kein Trend erkannt" : "Trends werden ab 30 Tagen und 20 Werten erkannt"}</span></p>`;
   }
   return `<div class="lchart${pat ? " haspat" : ""}">
     <svg class="line" viewBox="0 0 ${W} ${H}" data-pts='${esc(JSON.stringify(tips))}' role="img" aria-label="${esc(label)}">
