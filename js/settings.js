@@ -380,7 +380,7 @@ function answersPanel() {
   const tally = q ? answerTally(q) : [];
   const orph = Object.values(orphanIds()).reduce((t, n) => t + n, 0);
   const old = qs.flatMap((x) => answerTally(x).filter(([k]) => isOldText(x, k)).map(([k, n]) => ({ q: x, k, n })));
-  const row = (qq, k, n, sub) => `<div class="ansrow"><span class="atxt${isOldText(qq, k) ? " aold" : ""}">${esc(k)}${sub ? `<small>${esc(sub)}</small>` : ""}</span><span class="pill">${n}×</span><button type="button" class="iconbtn" data-adel="${qq.id}" data-aval="${esc(k)}" aria-label="Antworten „${esc(k)}“ löschen">✕</button></div>`;
+  const row = (qq, k, n, sub) => `<div class="ansrow"><button type="button" class="atxt${isOldText(qq, k) ? " aold" : ""}" data-aren="${qq.id}" data-aval="${esc(k)}">${esc(k)}${sub ? `<small>${esc(sub)}</small>` : ""}</button><span class="pill">${n}×</span><button type="button" class="iconbtn" data-adel="${qq.id}" data-aval="${esc(k)}" aria-label="Antworten „${esc(k)}“ löschen">✕</button></div>`;
   return `<section class="panel" id="antworten">
       <h2>Antworten bearbeiten</h2>
       ${qs.length ? `<label class="field" style="margin-bottom:6px"><select id="ansq">${qs.map((x) => `<option value="${x.id}" ${x === q ? "selected" : ""}>${esc(x.text)}${x.archived ? " (ausgeblendet)" : ""}</option>`).join("")}</select></label>
@@ -408,7 +408,36 @@ function deleteAnswerValue(q, k) {
   }
   save();
 }
+// Antworttext umbenennen: alle gespeicherten Antworten, die Antwortmöglichkeit und Bedingungen von Folgefragen
+function renameAnswerValue(q, k, nk) {
+  for (const a of Object.values(state.answers)) {
+    const v = a[q.id];
+    if (Array.isArray(v)) { if (v.includes(k)) a[q.id] = [...new Set(v.map((x) => (x === k ? nk : x)))]; }
+    else if (v === k) a[q.id] = nk;
+  }
+  const i = q.options.indexOf(k);
+  if (i >= 0) { if (q.options.includes(nk)) q.options.splice(i, 1); else q.options[i] = nk; }
+  for (const c of state.questions) if (c.cond && c.cond.qid === q.id && c.cond.values.includes(k)) c.cond.values = [...new Set(c.cond.values.map((x) => (x === k ? nk : x)))];
+  save();
+}
 function wireAnswers() {
+  document.querySelectorAll("[data-aren]").forEach((b) => b.addEventListener("click", () => {
+    const q = qById(b.dataset.aren), k = b.dataset.aval, row = b.closest(".ansrow");
+    row.innerHTML = `<input class="aren" value="${esc(k)}" autocomplete="off" aria-label="Neuer Text"><button type="button" class="btn small" data-aok>Ändern</button><button type="button" class="iconbtn" data-acancel aria-label="Abbrechen">✕</button>`;
+    const inp = row.querySelector("input"); inp.focus(); inp.select();
+    const back = () => { const y = scrollY; renderData(); scrollTo(0, y); };
+    const ok = () => {
+      const nk = inp.value.trim();
+      if (!nk || nk === k) return back();
+      const merge = q.options.includes(nk) || answerTally(q).some(([x]) => x === nk);
+      const n = (answerTally(q).find(([x]) => x === k) || [, 0])[1];
+      if (merge && !confirm(`„${nk}“ gibt es schon. ${n} Antwort${n === 1 ? "" : "en"} „${k}“ damit zusammenlegen?`)) return;
+      renameAnswerValue(q, k, nk); back(); toast(`${n} Antwort${n === 1 ? "" : "en"} geändert`);
+    };
+    row.querySelector("[data-aok]").addEventListener("click", ok);
+    row.querySelector("[data-acancel]").addEventListener("click", back);
+    inp.addEventListener("keydown", (e) => { if (e.key === "Enter") ok(); if (e.key === "Escape") back(); });
+  }));
   $("#ansq")?.addEventListener("change", (e) => { ansQ = e.target.value; const y = scrollY; renderData(); scrollTo(0, y); });
   document.querySelectorAll("[data-adel]").forEach((b) => b.addEventListener("click", () => {
     const q = qById(b.dataset.adel), k = b.dataset.aval;

@@ -647,13 +647,19 @@ test("Antworten bearbeiten: Anzahl je Antwort, alte Texte, verwaiste Antworten l
   const txt = await page.locator("#antworten").innerText();
   assert.match(txt, /Practica\s*2×[\s\S]*Kurs\s*1×/);
   assert.match(txt, /Verwaiste Antworten[\s\S]*2/);
-  await page.click('#antworten .alist:first-of-type [data-aval="Practica"]');
+  await page.click('#antworten .alist:first-of-type [data-adel][data-aval="Practica"]');
   const r = await page.evaluate(() => ({ a2: state.answers["2026-11-02"], a3: state.answers["2026-11-03"] }));
   assert.equal(r.a2, undefined); // Frage und Dauer weg, leerer Tag entfernt
   assert.equal(r.a3, undefined);
+  // umbenennen: Antworten, Antwortmöglichkeit und Bedingung der Folgefrage ziehen mit
+  await page.click('#antworten .alist:first-of-type [data-aren="t"][data-aval="Milonga"]');
+  await page.fill("#antworten .aren", "Milonga-Abend");
+  await page.click("#antworten [data-aok]");
+  assert.equal(await page.evaluate(() => state.answers["2026-11-04"].t), "Milonga-Abend");
+  assert.ok(await page.evaluate(() => qById("t").options.includes("Milonga-Abend") && !qById("t").options.includes("Milonga")));
   await page.click("#orphdel");
   assert.equal(await page.evaluate(() => Object.values(state.answers).some((a) => "x9" in a)), false);
-  assert.equal(await page.evaluate(() => state.answers["2026-11-04"].t), "Milonga");
+  assert.equal(await page.evaluate(() => state.answers["2026-11-04"].t), "Milonga-Abend");
   assert.deepEqual(errors, []);
   await ctx.close();
 });
