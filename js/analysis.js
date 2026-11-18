@@ -724,12 +724,12 @@ function lineChart(q, days, vals, avg) {
 }
 /* ===== Auffälligkeiten im Verlauf (nur wenn wirklich etwas auffällt) =====
    Empfindlich eingestellt (zeigt auch kleine Trends):
-   A Knick: ab einem Zeitpunkt stetig steigend/fallend (Mann-Kendall, p < 0,05, mind. 2 Wochen, Veränderung ≥ 0,35 Streuung)
-   B Sprung: Niveau verschiebt sich (Welch-t am besten Trennpunkt, Block-Permutation p < 0,05, mind. 0,35 Streuung)
-   C Phase: mind. 4 Tage am Stück außerhalb des üblichen Bereichs (Ø ≥ 1 Streuung daneben)
-   Ab 30 Tagen Zeitraum und 20 Werten; gezeigt wird höchstens die stärkste Auffälligkeit. */
+   A Knick: ab einem Zeitpunkt stetig steigend/fallend (Mann-Kendall, p < 0,05, mind. 10 Tage/5 Werte, Veränderung ≥ 0,35 Streuung)
+   B Sprung: Niveau verschiebt sich (Welch-t am besten Trennpunkt, Block-Permutation p < 0,05, mind. 0,35 Streuung, je Seite 5 Werte)
+   C Phase: mind. 3 Tage am Stück außerhalb des üblichen Bereichs (Ø ≥ 1 Streuung daneben)
+   Ab 2 Wochen Zeitraum und 10 Werten; bis zu 3 Auffälligkeiten je Grafik. */
 function findPatterns(pts0, days) {
-  if (days.length < 21 || pts0.length < 14) return [];
+  if (days.length < 14 || pts0.length < 10) return [];
   const di = new Map(days.map((d, i) => [d, i]));
   let P = pts0.map((p) => ({ d: p.d, t: di.get(p.d), v: p.v })).filter((p) => p.t !== undefined);
   // sehr lange Reihen: für die Suche auf Wochenmittel verdichten (Rechenzeit), Ergebnis gilt dann wochengenau
@@ -746,7 +746,7 @@ function findPatterns(pts0, days) {
   const sdv = Math.sqrt(vs.reduce((t, v) => t + (v - vs.reduce((a, b) => a + b, 0) / n) ** 2, 0) / (n - 1));
   const scale = mad > 1e-9 ? mad : sdv;
   if (!(scale > 1e-9)) return [];
-  const minSeg = coarse ? 3 : 7;
+  const minSeg = coarse ? 3 : 5;
   // Werte hängen von Tag zu Tag zusammen (Stimmung, Schlaf …) → weniger unabhängige Information als Tage.
   // ρ (Autokorrelation 1. Ordnung) aus den Differenzen geschätzt, damit Sprünge/Trends selbst ρ nicht verfälschen:
   // für AR(1) gilt corr(Δyₜ, Δyₜ₋₁) = −(1 − ρ)/2  ⇒  ρ = 1 + 2·r_Δ
@@ -759,65 +759,6 @@ function findPatterns(pts0, days) {
   const rho = c0 > 0 ? Math.min(0.8, Math.max(0, 1 + 2 * (c1 / c0))) : 0;
   const shrink = 1; // empfindlich eingestellt: Zusammenhang der Tage wird nicht abgezogen (ρ nur für Phasen genutzt)
   const found = [];
-  // B Sprung
-  {
-    const pre = [0], pre2 = [0];
-    vs.forEach((v, i) => { pre.push(pre[i] + v); pre2.push(pre2[i] + v * v); });
-    const bestT = (arr) => {
-      const c = [0], c2 = [0];
-      arr.forEach((v, i) => { c.push(c[i] + v); c2.push(c2[i] + v * v); });
-      let best = { t: 0, k: -1 };
-      for (let k = minSeg; k <= n - minSeg; k++) {
-        const n1 = k, n2 = n - k, m1 = c[k] / n1, m2 = (c[n] - c[k]) / n2;
-        const v1 = Math.max((c2[k] - n1 * m1 * m1) / (n1 - 1), 1e-9), v2 = Math.max((c2[n] - c2[k] - n2 * m2 * m2) / (n2 - 1), 1e-9);
-        const t = (m2 - m1) / Math.sqrt(v1 / n1 + v2 / n2);
-        if (Math.abs(t) > Math.abs(best.t)) best = { t, k, m1, m2 };
-      }
-      return best;
-    };
-    const b = bestT(vs);
-    if (b.k > 0 && Math.abs(b.m2 - b.m1) >= 0.35 * scale) {
-      // Permutationstest in Blöcken von 7 Werten (erhält den Zusammenhang benachbarter Tage)
-      let seed = 12345, ge = 0;
-      const rnd = () => (seed = (seed * 16807) % 2147483647) / 2147483647;
-      const blocks = [];
-      for (let i = 0; i < n; i += 7) blocks.push(vs.slice(i, i + 7));
-      for (let r = 0; r < 300; r++) {
-        for (let i = blocks.length - 1; i > 0; i--) { const j = Math.floor(rnd() * (i + 1)); [blocks[i], blocks[j]] = [blocks[j], blocks[i]]; }
-        if (Math.abs(bestT(blocks.flat()).t) >= Math.abs(b.t)) ge++;
-      }
-      const pv = (ge + 1) / 301;
-      if (pv < 0.05) found.push({ kind: "jump", a: b.k, b: n - 1, from: b.m1, to: b.m2, score: Math.abs(b.t) * shrink });
-    }
-  }
-  // A Knick: Abschnitt bis heute mit stetigem Trend (Mann-Kendall); der Start mit dem stärksten |z|
-  {
-    const mk = (a) => {
-      const m = n - a;
-      let S = 0;
-      for (let i = a; i < n; i++) for (let j = i + 1; j < n; j++) S += Math.sign(vs[j] - vs[i]);
-      const varS = (m * (m - 1) * (2 * m + 5)) / 18;
-      return S === 0 ? 0 : ((S - Math.sign(S)) / Math.sqrt(varS)) * shrink; // Varianz um (1+ρ)/(1−ρ) vergrößert
-    };
-    const stepK = Math.max(1, Math.floor(n / 40));
-    let best = null;
-    for (let a = 0; a <= n - minSeg; a += stepK) {
-      if (P[n - 1].t - P[a].t < 14) break;
-      const z = mk(a);
-      if (Math.abs(z) > 1.96 && (!best || Math.abs(z) > Math.abs(best.z))) best = { a, z }; // p < 0,05
-    }
-    if (best) {
-      const seg = P.slice(best.a), sl = [];
-      for (let i = 0; i < seg.length; i++) for (let j = i + 1; j < seg.length; j++) if (seg[j].t !== seg[i].t) sl.push((seg[j].v - seg[i].v) / (seg[j].t - seg[i].t));
-      const slope = med(sl), icpt = med(seg.map((p) => p.v - slope * p.t));
-      // sichtbar genug: über den Abschnitt mind. 0,5 Streuung Veränderung
-      // Knick heißt: die Gerade startet dort, wo die Werte vorher lagen (sonst ist es ein Ausreißer/eine Phase, kein Trend)
-      const before = vs.slice(Math.max(0, best.a - 10), best.a);
-      const startOk = !before.length || Math.abs(icpt + slope * seg[0].t - med(before)) <= 0.6 * scale;
-      if (startOk && Math.abs(slope * (seg[seg.length - 1].t - seg[0].t)) >= 0.35 * scale && Math.sign(slope) === Math.sign(best.z))
-        found.push({ kind: "trend", a: best.a, b: n - 1, slope, icpt, score: Math.abs(best.z) });
-    }
-  }
   // C Phase: Lauf von mind. 5 aufeinanderfolgenden Tagen außerhalb Median ± Streuung (nicht bei Wochenmitteln)
   if (!coarse) {
     let best = null;
@@ -833,12 +774,77 @@ function findPatterns(pts0, days) {
         // Zufall? q = Anteil aller Werte jenseits der Schwelle; ein Lauf der Länge len irgendwo: ≈ 2·n·q^len
         const q = Math.max(0.02, (vs.filter((v) => sign * (v - m0) > 0.75 * sc).length - len) / (n - len)); // ohne den Lauf selbst
         const lEff = len * (1 - rho) / (1 + rho); // zusammenhängende Tage zählen weniger
-        if (len >= 4 && j < n - 1 && sign * (mean - m0) >= 1.0 * sc && 2 * n * q ** len < 0.05) { // reicht bis heute → eher Sprung/Knick
+        // danach wirklich wieder normal (die nächsten bis zu 7 Werte im Mittel nah am Üblichen) – sonst ist es ein Sprung
+        const after = vs.slice(j + 1, j + 8), aMean = after.reduce((a, b) => a + b, 0) / (after.length || 1);
+        const back = after.length >= 2 && sign * (aMean - m0) < 0.5 * sc;
+        if (len >= 3 && back && sign * (mean - m0) >= 1.0 * sc && 2 * n * q ** len < 0.05) { // reicht bis heute → eher Sprung/Knick
           const score = (Math.abs(mean - m0) / sc) * Math.sqrt(len);
           found.push({ kind: "phase", a: i, b: j, mean, base: m0, sign, score }); // jede auffällige Phase ist Kandidat
         }
         i = j + 1;
       }
+    }
+  }
+  // Phasen herausrechnen (auf den Median setzen), damit sie Sprung und Knick nicht überdecken
+  const vj = [...vs];
+  for (const f of found) if (f.kind === "phase") for (let i = f.a; i <= f.b; i++) vj[i] = m0;
+  // B Sprung
+  {
+    const pre = [0], pre2 = [0];
+    vj.forEach((v, i) => { pre.push(pre[i] + v); pre2.push(pre2[i] + v * v); });
+    const bestT = (arr) => {
+      const c = [0], c2 = [0];
+      arr.forEach((v, i) => { c.push(c[i] + v); c2.push(c2[i] + v * v); });
+      let best = { t: 0, k: -1 };
+      for (let k = minSeg; k <= n - minSeg; k++) {
+        const n1 = k, n2 = n - k, m1 = c[k] / n1, m2 = (c[n] - c[k]) / n2;
+        const v1 = Math.max((c2[k] - n1 * m1 * m1) / (n1 - 1), 1e-9), v2 = Math.max((c2[n] - c2[k] - n2 * m2 * m2) / (n2 - 1), 1e-9);
+        const t = (m2 - m1) / Math.sqrt(v1 / n1 + v2 / n2);
+        if (Math.abs(t) > Math.abs(best.t)) best = { t, k, m1, m2 };
+      }
+      return best;
+    };
+    const b = bestT(vj);
+    if (b.k > 0 && Math.abs(b.m2 - b.m1) >= 0.35 * scale) {
+      // Permutationstest in Blöcken von 7 Werten (erhält den Zusammenhang benachbarter Tage)
+      let seed = 12345, ge = 0;
+      const rnd = () => (seed = (seed * 16807) % 2147483647) / 2147483647;
+      const blocks = [];
+      for (let i = 0; i < n; i += 7) blocks.push(vj.slice(i, i + 7));
+      for (let r = 0; r < 300; r++) {
+        for (let i = blocks.length - 1; i > 0; i--) { const j = Math.floor(rnd() * (i + 1)); [blocks[i], blocks[j]] = [blocks[j], blocks[i]]; }
+        if (Math.abs(bestT(blocks.flat()).t) >= Math.abs(b.t)) ge++;
+      }
+      const pv = (ge + 1) / 301;
+      if (pv < 0.05) found.push({ kind: "jump", a: b.k, b: n - 1, from: b.m1, to: b.m2, score: Math.abs(b.t) * shrink });
+    }
+  }
+  // A Knick: Abschnitt bis heute mit stetigem Trend (Mann-Kendall); der Start mit dem stärksten |z|
+  {
+    const mk = (a) => {
+      const m = n - a;
+      let S = 0;
+      for (let i = a; i < n; i++) for (let j = i + 1; j < n; j++) S += Math.sign(vj[j] - vj[i]);
+      const varS = (m * (m - 1) * (2 * m + 5)) / 18;
+      return S === 0 ? 0 : ((S - Math.sign(S)) / Math.sqrt(varS)) * shrink; // Varianz um (1+ρ)/(1−ρ) vergrößert
+    };
+    const stepK = Math.max(1, Math.floor(n / 40));
+    let best = null;
+    for (let a = 0; a <= n - minSeg; a += stepK) {
+      if (P[n - 1].t - P[a].t < 10) break;
+      const z = mk(a);
+      if (Math.abs(z) > 1.96 && (!best || Math.abs(z) > Math.abs(best.z))) best = { a, z }; // p < 0,05
+    }
+    if (best) {
+      const seg = P.slice(best.a).map((p, i) => ({ ...p, v: vj[best.a + i] })), sl = [];
+      for (let i = 0; i < seg.length; i++) for (let j = i + 1; j < seg.length; j++) if (seg[j].t !== seg[i].t) sl.push((seg[j].v - seg[i].v) / (seg[j].t - seg[i].t));
+      const slope = med(sl), icpt = med(seg.map((p) => p.v - slope * p.t));
+      // sichtbar genug: über den Abschnitt mind. 0,5 Streuung Veränderung
+      // Knick heißt: die Gerade startet dort, wo die Werte vorher lagen (sonst ist es ein Ausreißer/eine Phase, kein Trend)
+      const before = vj.slice(Math.max(0, best.a - 10), best.a);
+      const startOk = !before.length || Math.abs(icpt + slope * seg[0].t - med(before)) <= 0.6 * scale;
+      if (startOk && Math.abs(slope * (seg[seg.length - 1].t - seg[0].t)) >= 0.35 * scale && Math.sign(slope) === Math.sign(best.z))
+        found.push({ kind: "trend", a: best.a, b: n - 1, slope, icpt, score: Math.abs(best.z) });
     }
   }
   // D Schwankung: ab einem Zeitpunkt deutlich ruhiger oder unruhiger (Niveau herausgerechnet über gleitenden Median)
@@ -971,8 +977,8 @@ function curveChart(pts0, days, { avg, dir = null, id = "", label = "", range = 
   if (pat) {
     patTxt = lines2.join("");
   } else if (pattern) {
-    // nichts gefunden: kurzer Hinweis (geprüft wird erst ab 3 Wochen und 14 Werten)
-    patTxt = `<p class="ptrend"><span>Hinweis: ${days.length >= 21 && pts0.length >= 14 ? "kein Trend erkannt" : "Trends werden ab 3 Wochen und 14 Werten erkannt"}</span></p>`;
+    // nichts gefunden: kurzer Hinweis (geprüft wird erst ab 2 Wochen und 10 Werten)
+    patTxt = `<p class="ptrend"><span>Hinweis: ${days.length >= 14 && pts0.length >= 10 ? "kein Trend erkannt" : "Trends werden ab 2 Wochen und 10 Werten erkannt"}</span></p>`;
   }
   return `<div class="lchart${pat ? " haspat" : ""}">
     <svg class="line" viewBox="0 0 ${W} ${H}" data-pts='${esc(JSON.stringify(tips))}' role="img" aria-label="${esc(label)}">

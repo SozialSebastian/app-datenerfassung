@@ -689,20 +689,21 @@ test("Auffälligkeiten im Verlauf: Sprung, Phase, Knick erkannt – Rauschen ble
     const days = []; for (let i = 0; i < 90; i++) days.push(addDays("2026-08-01", i));
     const mk = (f) => days.map((d, i) => ({ d, v: f(i) }));
     const k = (p) => (p ? p.kind : null);
+    const ks = (pts, ds) => findPatterns(pts, ds).map((p) => p.kind);
     return {
       flat: k(findPattern(mk(() => 7 + noise(0.6)), days)),
-      jump: k(findPattern(mk((i) => (i < 60 ? 7.2 : 6.2) + noise(0.5)), days)),
+      jump: ks(mk((i) => (i < 60 ? 7.2 : 6.2) + noise(0.5)), days),
       phase: k(findPattern(mk((i) => 3 + (i >= 40 && i < 50 ? 2 : 0) + noise(0.4)), days)),
-      trend: k(findPattern(mk((i) => 7 + (i > 40 ? (i - 40) * 0.04 : 0) + noise(0.4)), days)),
+      trend: ks(mk((i) => 7 + (i > 40 ? (i - 40) * 0.04 : 0) + noise(0.4)), days),
       short: k(findPattern(mk((i) => (i < 60 ? 7.2 : 6.2)).slice(0, 10), days.slice(0, 10))),
       spread: findPatterns(mk((i) => 7 + noise(i < 50 ? 1.6 : 0.4)), days).map((p) => p.kind),
       multi: findPatterns(mk((i) => 7 + (i >= 20 && i < 27 ? -1.5 : 0) + (i >= 60 ? 0.8 : 0) + noise(0.3)), days).map((p) => p.kind).sort()
     };
   });
   assert.equal(r.flat, null);
-  assert.equal(r.jump, "jump");
+  assert.ok(r.jump.includes("jump"), r.jump.join(","));
   assert.equal(r.phase, "phase");
-  assert.ok(r.trend === "trend" || r.trend === "jump", r.trend);
+  assert.ok(r.trend.includes("trend") || r.trend.includes("jump"), r.trend.join(","));
   assert.equal(r.short, null);
   assert.ok(r.spread.includes("spread"), r.spread.join(","));
   assert.ok(r.multi.length >= 2 && r.multi.length <= 3 && r.multi.includes("phase"), r.multi.join(","));
