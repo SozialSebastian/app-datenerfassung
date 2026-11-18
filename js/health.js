@@ -222,7 +222,9 @@ function healthDay(d) {
 /* ================= Erholung (wie Whoop Recovery / Oura Readiness, 0–100 %) =================
    HRV (ln, 55 %), Ruhepuls (25 %) und Schlaf im Verhältnis zum Bedarf (20 %), jeweils als Abweichung vom
    eigenen 30-Tage-Normal; Summe s → Erholung = 100 / (1 + e^(−1,2·(s + 0,25))). */
-const SLEEP_NEED = 8;
+// Schlafbedarf aus dem Profil (Einstellungen → Profil), sonst 8 h
+let SLEEP_NEED = 8;
+const syncSleepNeed = () => (SLEEP_NEED = (state.profile && state.profile.sleepNeed) || 8);
 function recoveryDay(d) {
   const parts = [];
   const h = hv("hrv", d), hb = hvals("hrv", 30, addDays(d, -1));
@@ -277,6 +279,7 @@ const hmiss = (txt) => `<p class="muted small hmiss">${txt} <button type="button
 
 function renderHealth() {
   cleanHealthZeros();
+  syncSleepNeed();
   const view = $("#view");
   const p = PROFILE();
   const t = todayIso(), y = addDays(t, -1);
@@ -285,10 +288,8 @@ function renderHealth() {
   // Profil (für Alter, Maximalpuls und VO₂max-Normen)
   const profile = !p.born || !p.sex ? `<section class="panel hprofile">
       <h2 class="atitle">Kurz zu dir</h2>
-      <p class="muted small" style="margin:0 0 10px">Für das Mosaik-Alter, die Pulszonen und die VO₂max-Normwerte. Bleibt nur auf diesem iPhone.</p>
-      <div class="row2"><label class="field">Geburtsjahr<input id="hborn" type="number" inputmode="numeric" placeholder="z. B. 1998" value="${p.born || ""}"></label>
-      <label class="field">Geschlecht<select id="hsex"><option value="">–</option><option value="m" ${p.sex === "m" ? "selected" : ""}>männlich</option><option value="w" ${p.sex === "w" ? "selected" : ""}>weiblich</option></select></label></div>
-      <button type="button" class="btn block" id="hprofsave">Übernehmen</button>
+      <p class="muted small" style="margin:0 0 10px">Für Mosaik-Alter, Pulszonen und VO₂max-Normwerte brauche ich Geburtsjahr und Geschlecht.</p>
+      <button type="button" class="btn block" id="hprofile">Im Profil eintragen</button>
     </section>` : "";
 
   // Mosaik-Alter
@@ -364,11 +365,9 @@ function renderHealth() {
     ${hcard("fit", "Fitness", fitBody)}
     <p class="muted small" style="margin:4px 4px 0">Schätzungen aus deinen Apple-Health-Werten, angelehnt an Studien – keine Diagnose.</p>`;
 
-  $("#hprofsave")?.addEventListener("click", () => {
-    const b = parseInt($("#hborn").value, 10), s = $("#hsex").value;
-    if (!(b > 1900 && b <= new Date().getFullYear() - 10)) return toast("Bitte ein gültiges Geburtsjahr");
-    if (!s) return toast("Bitte Geschlecht wählen");
-    state.profile = { born: b, sex: s }; save(); renderHealth();
+  $("#hprofile")?.addEventListener("click", () => {
+    settingsSec = "profil"; tab = "data"; render();
+    setTimeout(() => { $("#profil")?.scrollIntoView({ block: "start" }); $("#pborn")?.focus(); }, 50);
   });
   view.querySelectorAll("[data-hinfo]").forEach((b) => b.addEventListener("click", () => openHealthInfo(b.dataset.hinfo)));
   view.querySelectorAll("[data-hsetup], #hsetup").forEach((b) => b.addEventListener("click", openHealthSetup));

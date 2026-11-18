@@ -614,6 +614,29 @@ test("Fragen-Editor: Folgeangabe und „Nur an bestimmten Tagen“ als Schalter;
   await ctx.close();
 });
 
+test("Profil: Geburtsjahr, Geschlecht, Schlafbedarf und Arbeitsvertrag unter Einstellungen", async () => {
+  const data = { version: 1, lastBackup: null, answers: {}, questions: [
+    { id: "w", text: "Hast du gearbeitet?", type: "choice", options: ["Ja", "Nein"], multi: false, archived: false, cond: null, template: "work" },
+    { id: "wh", text: "Stunden", type: "number", format: "duration", options: [], archived: false, cond: { qid: "w", values: ["Ja"] } }] };
+  const { page, ctx, errors } = await open({ data });
+  await page.click('[data-tab="health"]');
+  await page.click("#hprofile");
+  await page.fill("#pborn", "1998"); await page.locator("#pborn").dispatchEvent("change");
+  await page.selectOption("#psex", "m");
+  await page.fill("#psleep", "7,5"); await page.locator("#psleep").dispatchEvent("change");
+  await page.fill('[data-ch="w"]', "20"); await page.locator('[data-ch="w"]').dispatchEvent("change");
+  await page.click('[data-cper="w:month"]');
+  await page.fill('[data-cw="w"]', "15,50"); await page.locator('[data-cw="w"]').dispatchEvent("change");
+  const r = await page.evaluate(() => ({ p: state.profile, c: qById("w").contract }));
+  assert.deepEqual(r.p, { born: 1998, sex: "m", sleepNeed: 7.5 });
+  assert.deepEqual(r.c, { h: 20, wage: 15.5, per: "month" });
+  // im Fragen-Editor kein Vertrag mehr
+  await page.evaluate(() => openEditor("w"));
+  assert.equal(await page.locator("#ch").count(), 0);
+  assert.deepEqual(errors, []);
+  await ctx.close();
+});
+
 test("Schritte nach Stunde: Tagessumme und Stundenverlauf, angeschnittener erster Tag fällt weg", async () => {
   const { listEntries } = await import("../worker/src/index.js");
   const t = (x) => `2026-10-${x}:00+02:00`;
@@ -885,11 +908,14 @@ test("Neue Frage aus Vorlage „Arbeit“ mit Vertrag und effektivem Stundenlohn
   await page.click("#firstq");
   await page.waitForSelector('[data-tpl="work"]');
   await page.click('[data-tpl="work"]');
-  // Editor der Arbeitsfrage ist offen, Vertrag eintragen
-  await page.waitForSelector("#ch");
-  await page.fill("#ch", "20"); await page.fill("#cw", "15");
-  await page.click('[data-cper="week"]');
+  // Editor der Arbeitsfrage ist offen → sichern, Vertrag im Profil eintragen
+  await page.waitForSelector("#savebtn");
   await page.click("#savebtn");
+  await page.click('[data-tab="data"]');
+  const wid = await page.evaluate(() => state.questions[0].id);
+  await page.fill(`[data-ch="${wid}"]`, "20"); await page.locator(`[data-ch="${wid}"]`).dispatchEvent("change");
+  await page.fill(`[data-cw="${wid}"]`, "15"); await page.locator(`[data-cw="${wid}"]`).dispatchEvent("change");
+  await page.click(`[data-cper="${wid}:week"]`);
   const qs = await page.evaluate(() => state.questions.map((q) => ({ t: q.text, type: q.type, f: q.format, c: q.cond, k: q.contract, th: q.theme })));
   assert.equal(qs.length, 4);
   assert.equal(qs[0].t, "Hast du heute gearbeitet?");

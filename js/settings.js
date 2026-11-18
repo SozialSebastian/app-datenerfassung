@@ -46,6 +46,8 @@ function renderData() {
   view.innerHTML = `
     <div class="dayhead"><h1>Einstellungen</h1></div>
 
+    ${profilePanel()}
+
     ${questionsPanel()}
 
     <section class="panel">
@@ -161,6 +163,7 @@ function renderData() {
     <p class="muted small">Adresse dieser App: <code>${esc(base)}</code></p>`;
 
   wireQuestions($("#qpanel"));
+  wireProfile();
   $("#xlsx").addEventListener("click", exportExcel);
   $("#backup").addEventListener("click", exportBackup);
   $("#restore").addEventListener("click", () => $("#restorefile").click());
@@ -295,4 +298,54 @@ function settingsNav() {
     show(b.dataset.sec); window.scrollTo(0, 0);
   }));
   show(settingsSec);
+}
+
+/* ================= Profil: Angaben über dich ================= */
+// Arbeitsfragen: Vorlage „Arbeit“ (oder schon mit Vertrag) mit Stunden-Folgefrage
+const workQuestions = () => state.questions.filter((q) => !q.archived && hoursChildOf(q) && (q.template === "work" || q.contract));
+function profilePanel() {
+  const p = state.profile || {};
+  const jobs = workQuestions();
+  return `<section class="panel" id="profil">
+      <h2>Profil</h2>
+      <div class="row2">
+        <label class="field">Geburtsjahr<input id="pborn" type="number" inputmode="numeric" placeholder="z. B. 1998" value="${p.born || ""}"></label>
+        <label class="field">Geschlecht<select id="psex"><option value="">–</option><option value="m" ${p.sex === "m" ? "selected" : ""}>männlich</option><option value="w" ${p.sex === "w" ? "selected" : ""}>weiblich</option></select></label>
+      </div>
+      <div class="gline" style="margin-top:0"><span>Schlafbedarf</span><input id="psleep" class="gin" type="text" inputmode="decimal" value="${fmtNum(p.sleepNeed || 8)}"><span>Stunden</span></div>
+      ${jobs.map((q) => `<div class="subsep"></div>
+        <div class="olab">Arbeitsvertrag · ${esc(q.text)}</div>
+        <div class="gline" style="margin-top:0"><span>Vertraglich</span><input class="gin" data-ch="${q.id}" type="text" inputmode="decimal" value="${esc(q.contract ? fmtNum(q.contract.h) : "")}" placeholder="20"><span>Stunden</span></div>
+        <div class="seg seg-2" role="group" style="margin:10px 0">${[["week", "pro Woche"], ["month", "pro Monat"]].map(([v, l]) => `<button type="button" data-cper="${q.id}:${v}" aria-pressed="${(q.contract?.per || "week") === v}">${l}</button>`).join("")}</div>
+        <div class="gline" style="margin-top:0"><span>Stundenlohn</span><input class="gin wide" data-cw="${q.id}" type="text" inputmode="decimal" value="${esc(q.contract && q.contract.wage ? q.contract.wage.toFixed(2).replace(".", ",") : "")}" placeholder="15,00"><span>€</span></div>`).join("")}
+      <p class="muted small" style="margin:10px 0 0">Für Mosaik-Alter, Pulszonen, Schlafschuld${jobs.length ? " und den effektiven Stundenlohn" : ""}. Bleibt auf diesem iPhone.</p>
+    </section>`;
+}
+function wireProfile() {
+  const P = () => (state.profile && typeof state.profile === "object" ? state.profile : (state.profile = {}));
+  $("#pborn")?.addEventListener("change", (e) => {
+    const b = parseInt(e.target.value, 10);
+    if (e.target.value && !(b > 1900 && b <= new Date().getFullYear() - 10)) return toast("Bitte ein gültiges Geburtsjahr");
+    if (b) P().born = b; else delete P().born;
+    save(); toast("Gesichert");
+  });
+  $("#psex")?.addEventListener("change", (e) => { if (e.target.value) P().sex = e.target.value; else delete P().sex; save(); toast("Gesichert"); });
+  $("#psleep")?.addEventListener("change", (e) => {
+    const h = parseNum(e.target.value);
+    if (!(h >= 4 && h <= 12)) { e.target.value = fmtNum(P().sleepNeed || 8); return toast("Schlafbedarf zwischen 4 und 12 Stunden"); }
+    P().sleepNeed = h; save(); toast("Gesichert");
+  });
+  const setC = (id, patch) => {
+    const q = qById(id); if (!q) return;
+    const c = { h: 0, wage: 0, per: "week", ...(q.contract || {}), ...patch };
+    q.contract = c.h > 0 || c.wage > 0 ? c : null;
+    save();
+  };
+  document.querySelectorAll("[data-ch]").forEach((i) => i.addEventListener("change", () => { setC(i.dataset.ch, { h: parseNum(i.value) || 0 }); toast("Gesichert"); }));
+  document.querySelectorAll("[data-cw]").forEach((i) => i.addEventListener("change", () => { setC(i.dataset.cw, { wage: parseNum(i.value) || 0 }); toast("Gesichert"); }));
+  document.querySelectorAll("[data-cper]").forEach((b) => b.addEventListener("click", () => {
+    const [id, per] = b.dataset.cper.split(":");
+    setC(id, { per });
+    b.parentElement.querySelectorAll("button").forEach((x) => x.setAttribute("aria-pressed", x === b));
+  }));
 }

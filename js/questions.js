@@ -370,13 +370,6 @@ function openEditor(id) {
         <p class="muted small">Schickt der Kurzbefehl einen Wert mit diesem Kürzel, wird er hier eingetragen. Anleitung unter Einstellungen → Schnittstelle Apple Health.</p>
         ${draft.type === "number" ? `<label class="check" style="margin-top:4px"><input type="checkbox" id="hsrc" ${draft.source === "health" ? "checked" : ""}> Nur aus Apple Health füllen (unter „Tag“ als Health-Feld, wird nicht abgefragt)</label>` : ""}
       </details>` : ""}
-      ${existing && hoursChildOf(draft) ? `<details class="adv" ${draft.contract || draft.template === "work" ? "open" : ""}>
-        <summary>Vertrag (für den effektiven Stundenlohn)</summary>
-        <div class="gline"><span>Vertraglich</span><input id="ch" class="gin" type="text" inputmode="decimal" value="${esc(draft.contract ? fmtNum(draft.contract.h) : "")}" placeholder="20"><span>Stunden</span></div>
-        <div class="seg seg-2" role="group" style="margin-top:10px">${[["week", "pro Woche"], ["month", "pro Monat"]].map(([v, l]) => `<button type="button" data-cper="${v}" aria-pressed="${(draft.contract?.per || "week") === v}">${l}</button>`).join("")}</div>
-        <div class="gline" style="margin-top:0"><span>Stundenlohn</span><input id="cw" class="gin wide" type="text" inputmode="decimal" value="${esc(draft.contract ? fmtNum(draft.contract.wage) : "")}" placeholder="15,00"><span>€</span></div>
-        <p class="muted small">Bezahlt wird nach Vertrag. Die Analyse der Frage „${esc(hoursChildOf(draft).text)}“ vergleicht das mit deinen tatsächlichen Stunden.</p>
-      </details>` : ""}
       ${existing ? `<div class="stack">
         <button type="button" class="btn ghost" id="archive">${existing.archived ? "Wieder einblenden" : "Ausblenden (Daten bleiben)"}</button>
         <button type="button" class="btn danger" id="delete">Frage und ${used} Antworten löschen</button>
@@ -387,11 +380,6 @@ function openEditor(id) {
     const sync = () => {
       draft.text = $("#qtext", dlg).value;
       if ($("#qsport", dlg)) draft.sport = $("#qsport", dlg).checked;
-      if ($("#ch", dlg)) {
-        const h = parseNum($("#ch", dlg).value), w = parseNum($("#cw", dlg).value);
-        const per = draft._cper || draft.contract?.per || "week";
-        draft.contract = h > 0 && w > 0 ? { h, wage: w, per } : (h > 0 || w > 0 ? { h: h || 0, wage: w || 0, per } : null);
-      }
       dlg.querySelectorAll("[data-opt]").forEach((inp) => (draft.options[+inp.dataset.opt] = inp.value));
       if ($("#multi", dlg)) draft.multi = $("#multi", dlg).checked;
       if ($("#noneok", dlg)) draft.noneOk = $("#noneok", dlg).checked;
@@ -515,7 +503,6 @@ function openEditor(id) {
       if (draft.healthKey && state.questions.some((q) => q.id !== draft.id && q.healthKey === draft.healthKey)) return toast("Dieses Health-Kürzel ist schon vergeben");
       if (!draft.cond && !draft.theme) draft.theme = guessTheme(draft);
       delete draft._cper;
-      if (draft.contract && !(draft.contract.h > 0 && draft.contract.wage > 0)) return toast("Vertrag: bitte Stunden und Stundenlohn eintragen (oder beide leeren)");
       gradeEditorClean(draft);
       if (draft.days && !draft.days.length) return toast("Bitte mindestens einen Tag wählen");
       if (draft.days && (draft.days.length === 7 || draft.cond)) delete draft.days;
