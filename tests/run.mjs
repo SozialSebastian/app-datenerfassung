@@ -694,7 +694,8 @@ test("Auffälligkeiten im Verlauf: Sprung, Phase, Knick erkannt – Rauschen ble
       jump: k(findPattern(mk((i) => (i < 60 ? 7.2 : 6.2) + noise(0.5)), days)),
       phase: k(findPattern(mk((i) => 3 + (i >= 40 && i < 50 ? 2 : 0) + noise(0.4)), days)),
       trend: k(findPattern(mk((i) => 7 + (i > 40 ? (i - 40) * 0.04 : 0) + noise(0.4)), days)),
-      short: k(findPattern(mk((i) => (i < 60 ? 7.2 : 6.2)).slice(0, 25), days.slice(0, 25)))
+      short: k(findPattern(mk((i) => (i < 60 ? 7.2 : 6.2)).slice(0, 10), days.slice(0, 10))),
+      multi: findPatterns(mk((i) => 7 + (i >= 20 && i < 27 ? -1.5 : 0) + (i >= 60 ? 0.8 : 0) + noise(0.3)), days).map((p) => p.kind).sort()
     };
   });
   assert.equal(r.flat, null);
@@ -702,6 +703,7 @@ test("Auffälligkeiten im Verlauf: Sprung, Phase, Knick erkannt – Rauschen ble
   assert.equal(r.phase, "phase");
   assert.ok(r.trend === "trend" || r.trend === "jump", r.trend);
   assert.equal(r.short, null);
+  assert.ok(r.multi.length >= 2 && r.multi.length <= 3 && r.multi.includes("phase"), r.multi.join(","));
   assert.deepEqual(errors, []);
   await ctx.close();
 });

@@ -728,8 +728,8 @@ function lineChart(q, days, vals, avg) {
    B Sprung: Niveau verschiebt sich (Welch-t am besten Trennpunkt, Block-Permutation p < 0,05, mind. 0,35 Streuung)
    C Phase: mind. 4 Tage am Stück außerhalb des üblichen Bereichs (Ø ≥ 1 Streuung daneben)
    Ab 30 Tagen Zeitraum und 20 Werten; gezeigt wird höchstens die stärkste Auffälligkeit. */
-function findPattern(pts0, days) {
-  if (days.length < 21 || pts0.length < 14) return null;
+function findPatterns(pts0, days) {
+  if (days.length < 21 || pts0.length < 14) return [];
   const di = new Map(days.map((d, i) => [d, i]));
   let P = pts0.map((p) => ({ d: p.d, t: di.get(p.d), v: p.v })).filter((p) => p.t !== undefined);
   // sehr lange Reihen: für die Suche auf Wochenmittel verdichten (Rechenzeit), Ergebnis gilt dann wochengenau
@@ -745,7 +745,7 @@ function findPattern(pts0, days) {
   const m0 = med(vs), mad = med(vs.map((v) => Math.abs(v - m0))) * 1.4826;
   const sdv = Math.sqrt(vs.reduce((t, v) => t + (v - vs.reduce((a, b) => a + b, 0) / n) ** 2, 0) / (n - 1));
   const scale = mad > 1e-9 ? mad : sdv;
-  if (!(scale > 1e-9)) return null;
+  if (!(scale > 1e-9)) return [];
   const minSeg = coarse ? 3 : 7;
   // Werte hängen von Tag zu Tag zusammen (Stimmung, Schlaf …) → weniger unabhängige Information als Tage.
   // ρ (Autokorrelation 1. Ordnung) aus den Differenzen geschätzt, damit Sprünge/Trends selbst ρ nicht verfälschen:
@@ -835,18 +835,23 @@ function findPattern(pts0, days) {
         const lEff = len * (1 - rho) / (1 + rho); // zusammenhängende Tage zählen weniger
         if (len >= 4 && j < n - 1 && sign * (mean - m0) >= 1.0 * sc && 2 * n * q ** len < 0.05) { // reicht bis heute → eher Sprung/Knick
           const score = (Math.abs(mean - m0) / sc) * Math.sqrt(len);
-          if (!best || score > best.score) best = { kind: "phase", a: i, b: j, mean, base: m0, sign, score };
+          found.push({ kind: "phase", a: i, b: j, mean, base: m0, sign, score }); // jede auffällige Phase ist Kandidat
         }
         i = j + 1;
       }
     }
-    if (best) found.push(best);
   }
-  if (!found.length) return null;
-  const r = found.sort((x, y) => y.score - x.score)[0];
-  r.P = P; r.coarse = coarse;
-  return r;
+  // bis zu 3 Auffälligkeiten, die sich zeitlich nicht überschneiden – die stärksten zuerst
+  const out = [];
+  for (const c of found.sort((x, y) => y.score - x.score)) {
+    if (out.length >= 3) break;
+    if (out.some((o) => c.a <= o.b && o.a <= c.b)) continue;
+    c.P = P; c.coarse = coarse;
+    out.push(c);
+  }
+  return out;
 }
+const findPattern = (pts, days) => findPatterns(pts, days)?.[0] || null;
 
 // Verlauf über die Zeit: monotone Kurve, Fläche zum Durchschnitt (darüber/darunter eingefärbt), Höchst- und Tiefstwert am Punkt,
 // Antippen zeigt eine Sprechblase (wireCurves). pts: [{ d, v }]
@@ -906,8 +911,10 @@ function curveChart(pts0, days, { avg, dir = null, id = "", label = "", range = 
     ? `<text x="${r1(xi(d))}" y="${H - 7}" text-anchor="${days.length > 14 && i === 0 ? "start" : days.length > 14 && i === days.length - 1 ? "end" : "middle"}" class="xl" data-d="${d}">${days.length <= 14 ? WD_SHORT[parseIso(d).getDay()] : `${parseIso(d).getDate()}.${parseIso(d).getMonth() + 1}.`}</text>` : "").join("");
   // Auffälligkeit: betroffener Abschnitt der Kurve farbig, Trend bzw. neues Niveau gestrichelt, Satz darunter
   let patSvg = "", patTxt = "";
-  const pat = pattern ? findPattern(pts0, days) : null;
-  if (pat) {
+  const pats = pattern ? findPatterns(pts0, days) : [];
+  const pat = pats.length > 0;
+  const lines2 = [];
+  for (const pat of pats.sort((x, y) => x.a - y.a)) {
     const dPos = (dd) => pts.findIndex((p) => p.d >= dd);
     const i0 = Math.max(0, dPos(pat.P[pat.a].d)), lastD = pat.P[pat.b].d;
     let i1 = pts.length - 1; if (pat.kind === "phase") i1 = pts.findIndex((p) => p.d >= lastD);
@@ -916,25 +923,29 @@ function curveChart(pts0, days, { avg, dir = null, id = "", label = "", range = 
     const part = pts.slice(i0, i1 + 1);
     const pSegs = [];
     part.forEach((p, i) => { if (!i || (!connect && days.indexOf(p.d) - days.indexOf(part[i - 1].d) > 1)) pSegs.push([]); pSegs[pSegs.length - 1].push(p); });
-    patSvg = pSegs.filter((x) => x.length > 1).map((x) => `<path d="${curve(x)}" class="lnp" style="stroke:${col}"/>`).join("");
+    patSvg += pSegs.filter((x) => x.length > 1).map((x) => `<path d="${curve(x)}" class="lnp" style="stroke:${col}"/>`).join("");
     const dmy = (dd) => `${parseIso(dd).getDate()}.${parseIso(dd).getMonth() + 1}.`;
     const dl = delta || ((x) => fmtBig(Math.abs(x)));
     const t0 = days.indexOf(pts[i0].d), tEnd = days.length - 1;
     const ty = (t) => r1(yi(pat.icpt + pat.slope * t));
+    let tx;
     if (pat.kind === "trend") {
       patSvg += `<line x1="${pts[i0].x}" y1="${ty(t0)}" x2="${r1(xi(days[tEnd]))}" y2="${ty(tEnd)}" class="trendln" style="stroke:${col}"/>`;
       const perM = pat.slope * 30.44;
-      patTxt = [`${up ? "▲" : "▼"} ${i0 === 0 ? "im ganzen Zeitraum" : `seit ${dmy(pts[i0].d)}`} ${up ? "+" : "−"}${dl(perM)} pro Monat`, i0 === 0 ? "stetiger Trend" : "vorher gleichbleibend"];
+      tx = [`${up ? "▲" : "▼"} ${i0 === 0 ? "im ganzen Zeitraum" : `seit ${dmy(pts[i0].d)}`} ${up ? "+" : "−"}${dl(perM)} pro Monat`, i0 === 0 ? "stetiger Trend" : "vorher gleichbleibend"];
     } else if (pat.kind === "jump") {
       const yl = r1(yi(pat.to));
       patSvg += `<line x1="${pts[i0].x}" y1="${yl}" x2="${r1(xi(days[tEnd]))}" y2="${yl}" class="trendln" style="stroke:${col}"/>`;
-      patTxt = [`${up ? "▲" : "▼"} seit ${dmy(pts[i0].d)} ${dl(pat.to - pat.from)} ${up ? "mehr" : "weniger"}`, `Ø vorher ${f(pat.from)}, seitdem ${f(pat.to)}`];
+      tx = [`${up ? "▲" : "▼"} seit ${dmy(pts[i0].d)} ${dl(pat.to - pat.from)} ${up ? "mehr" : "weniger"}`, `Ø vorher ${f(pat.from)}, seitdem ${f(pat.to)}`];
     } else {
-      patTxt = [`${up ? "▲" : "▼"} ${dmy(pts[i0].d)}–${dmy(pts[i1].d)} deutlich ${up ? "höher" : "niedriger"}`, `Ø ${f(pat.mean)} statt sonst ${f(pat.base)}`];
+      tx = [`${up ? "▲" : "▼"} ${dmy(pts[i0].d)}–${dmy(pts[i1].d)} deutlich ${up ? "höher" : "niedriger"}`, `Ø ${f(pat.mean)} statt sonst ${f(pat.base)}`];
     }
-    patTxt = `<p class="ptrend"><b style="color:${col}">${esc(patTxt[0])}</b><span>${esc(patTxt[1])}</span></p>`;
+    lines2.push(`<p class="ptrend"><b style="color:${col}">${esc(tx[0])}</b><span>${esc(tx[1])}</span></p>`);
+  }
+  if (pat) {
+    patTxt = lines2.join("");
   } else if (pattern) {
-    // nichts gefunden: kurzer Hinweis (geprüft wird erst ab 30 Tagen und 20 Werten)
+    // nichts gefunden: kurzer Hinweis (geprüft wird erst ab 3 Wochen und 14 Werten)
     patTxt = `<p class="ptrend"><span>Hinweis: ${days.length >= 21 && pts0.length >= 14 ? "kein Trend erkannt" : "Trends werden ab 3 Wochen und 14 Werten erkannt"}</span></p>`;
   }
   return `<div class="lchart${pat ? " haspat" : ""}">
