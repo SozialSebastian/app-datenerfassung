@@ -985,3 +985,14 @@ input.tgl:disabled { opacity: .45; }
 .mealcard .mk { font-variant-numeric: tabular-nums; color: var(--ink-2); white-space: nowrap; }
 .mealcard .msum { display: flex; flex-wrap: wrap; gap: 4px 12px; margin-top: 8px; padding-top: 8px; border-top: 1px solid var(--line); font-size: 13px; color: var(--ink-2); }
 .mealcard .msum b { color: var(--ink); font-size: 14px; }
+.hrow2 { display: flex; gap: 14px; align-items: center; }
+.hrow2 .hringw { display: grid; place-items: center; width: 96px; height: 96px; flex: none; }
+.hrow2 .hparts { flex: 1; min-width: 0; display: grid; gap: 6px; }
+.hrow2 .hparts div { display: flex; flex-direction: column; }
+.hrow2 .hparts b { font-size: 14px; }
+.hrow2 .hparts span { font-size: 12.5px; color: var(--ink-2); }
+.hmacro { display: flex; height: 10px; border-radius: 999px; overflow: hidden; gap: 2px; margin: 4px 0 6px; }
+.hmacro span { display: block; height: 100%; }
+.hmacrol { margin: 0 0 10px; font-size: 12.5px; color: var(--ink-2); display: flex; flex-wrap: wrap; gap: 4px 10px; align-items: center; }
+.hmacrol i { display: inline-block; width: 9px; height: 9px; border-radius: 50%; margin-right: -6px; }
+.hrow2 .hparts b em { font-style: normal; font-weight: 600; color: var(--ink-2); font-size: 12.5px; margin-left: 4px; }

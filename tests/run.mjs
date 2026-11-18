@@ -745,6 +745,14 @@ test("Mahlzeiten aus Notion: Tagessummen als Felder, Karte unter „Tag“, Korr
   assert.match(card, /08:10[\s\S]*Haferflocken[\s\S]*19:30[\s\S]*Curry[\s\S]*1140 kcal/);
   assert.equal(await page.locator(".healthcard").count(), 0);
   // in Notion korrigiert (halbe Portion) und Frühstück gelöscht
+  // Gesundheit: Karte „Ernährung“ (heute zählt nicht für den Score, daher nur Hinweis + „Heute“)
+  await page.click('[data-tab="health"]');
+  assert.match(await page.locator('[data-hk="nutri"]').innerText(), /Heute:[\s\S]*Haferflocken[\s\S]*1140 kcal/);
+  const sc = await page.evaluate(() => nutriScore([{ d: "x", kcal: 2000, p: 75, kh: 250, z: 50, f: 70, bs: 30 }]));
+  assert.equal(sc.score, 100);
+  const sc2 = await page.evaluate(() => nutriScore([{ d: "x", kcal: 2000, p: 70, kh: 250, z: 150, f: 100, bs: 15 }]));
+  // Ballaststoffe 12,5 · Protein 25 (15 % der Energie: 70·4/2000 = 14 % → 23,3) · Zucker 0 (30 %) · Fett 0 (45 %) → (12,5 + 23,3) · 4 / 4 ≈ 36
+  assert.equal(sc2.score, 36);
   meals = [{ ...meals[1], kcal: 360, p: 12 }];
   await page.evaluate(() => syncMeals(true));
   assert.equal(await page.evaluate((d) => state.answers[d][state.questions.find((x) => x.healthKey === "nahrung_kcal").id], today), 360);

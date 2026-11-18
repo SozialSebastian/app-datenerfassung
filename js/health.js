@@ -95,6 +95,37 @@ function sleepMids(n, bis = todayIso()) {
 }
 
 // Beiträge zum Mosaik-Alter über ein Zeitfenster (Tage)
+// Ballaststoffe: Reynolds et al. 2019 (Lancet) – 25–29 g/Tag gegenüber wenig (< 15 g) ≈ 15 % geringeres Sterberisiko (RR 0,85),
+// darüber kein weiterer gesicherter Nutzen. Bezug 18 g (übliche Aufnahme in Deutschland), dazwischen interpoliert.
+const FIBER_HR = [[10, 1.05], [15, 1.02], [18, 1.0], [25, 0.89], [29, 0.86], [40, 0.86]];
+// Tageswerte der Ernährung (Summen aus den Mahlzeiten); nur Tage mit ≥ 1.000 kcal gelten als vollständig erfasst
+function nutriDays(n, bis = todayIso(), minKcal = 1000) {
+  const out = [];
+  for (let i = 0; i < n; i++) {
+    const d = addDays(bis, -i), kcal = hv("nahrung_kcal", d);
+    if (kcal === null || kcal < minKcal) continue;
+    out.push({ d, kcal, p: hv("protein", d), kh: hv("kohlenhydrate", d), z: hv("zucker", d), f: hv("fett", d), bs: hv("ballaststoffe", d) });
+  }
+  return out;
+}
+// Ernährungs-Score 0–100 aus vier Teilen à 25 Punkte (Ø der vollständig erfassten Tage)
+function nutriScore(days) {
+  if (!days.length) return null;
+  const avg = (k) => { const xs = days.map((x) => x[k]).filter((v) => v !== null); return xs.length ? mean(xs) : null; };
+  const kcal = avg("kcal"), p = avg("p"), z = avg("z"), f = avg("f"), bs = avg("bs");
+  const kg = hvals("gewicht", 120)[0] || null;
+  const pTarget = kg ? 0.8 * kg : null; // DGE: 0,8 g je kg Körpergewicht
+  const parts = [
+    { k: "bs", label: "Ballaststoffe", val: bs, pts: bs === null ? null : 25 * clamp(bs / 30, 0, 1), txt: bs === null ? "–" : `Ø ${Math.round(bs)} g · Ziel 30 g` },
+    { k: "p", label: "Protein", val: p, pts: p === null ? null : 25 * clamp(pTarget ? p / pTarget : (p * 4) / kcal / 0.15, 0, 1),
+      txt: p === null ? "–" : `Ø ${Math.round(p)} g${kg ? ` · ${fmtNum(Math.round((p / kg) * 10) / 10)} g/kg (Ziel 0,8)` : ` · ${Math.round(((p * 4) / kcal) * 100)} % der Energie (Ziel 15 %)`}` },
+    { k: "z", label: "Zucker", val: z, pts: z === null ? null : 25 * clamp((0.2 - (z * 4) / kcal) / 0.1, 0, 1), txt: z === null ? "–" : `Ø ${Math.round(z)} g · ${Math.round(((z * 4) / kcal) * 100)} % der Energie` },
+    { k: "f", label: "Fett", val: f, pts: f === null ? null : 25 * clamp((0.45 - (f * 9) / kcal) / 0.1, 0, 1), txt: f === null ? "–" : `Ø ${Math.round(f)} g · ${Math.round(((f * 9) / kcal) * 100)} % der Energie` }
+  ];
+  const have = parts.filter((x) => x.pts !== null);
+  if (!have.length) return null;
+  return { score: Math.round((have.reduce((t, x) => t + x.pts, 0) / have.length) * 4), parts, kcal, p, kh: avg("kh"), f, n: days.length };
+}
 function bioParts(win, bis = todayIso()) {
   const age = ageNow(), sex = PROFILE().sex;
   const parts = [];
@@ -109,6 +140,9 @@ function bioParts(win, bis = todayIso()) {
   if (mids.length >= 7) { const s = sd(mids) * 60; add("reg", "Schlafrhythmus", `± ${Math.round(s)} min Schwankung`, regHR(s), "Bezug ± 45 min", mids.length); }
   const rh = hvals("ruhepuls", win, bis);
   if (rh.length >= 7) { const m = mean(rh); add("rhr", "Ruhepuls", `Ø ${Math.round(m)}/min`, rhrHR(m), "Bezug 65/min", rh.length); }
+  // Ballaststoffe (aus den Mahlzeiten): nur Tage, die vollständig erfasst wirken (≥ 1.000 kcal), mind. 7 Tage
+  const fib = nutriDays(win, addDays(bis, -1)).map((x) => x.bs).filter((v) => v !== null);
+  if (fib.length >= 7) { const m = mean(fib); add("fiber", "Ballaststoffe", `Ø ${Math.round(m)} g am Tag`, interp(FIBER_HR, m), "Bezug 18 g", fib.length, 0.5); }
   const vo = hvals("vo2max", Math.max(win, 90), bis);
   if (vo.length && age) { const v = vo[0]; add("vo2", "VO₂max", `${fmtNum(Math.round(v * 10) / 10)} ml/kg/min`, vo2HR(v, age, sex), `Median deines Alters ${fmtNum(Math.round(vo2Norm(age, sex) * 10) / 10)}`, vo.length); }
   return parts;
@@ -296,7 +330,7 @@ function renderHealth() {
   const B = bioAge();
   let bioBody;
   if (B.missing === "profile") bioBody = `<p class="muted small hmiss">Trag oben dein Geburtsjahr ein.</p>`;
-  else if (B.missing) bioBody = hmiss("Dafür braucht es mindestens zwei dieser Werte über eine Woche: Schritte, Training, Schlaf, Ruhepuls, VO₂max.");
+  else if (B.missing) bioBody = hmiss("Dafür braucht es mindestens zwei dieser Werte über eine Woche: Schritte, Training, Schlaf, Ruhepuls, VO₂max, Ballaststoffe.");
   else {
     const max = Math.max(1, ...B.parts.map((x) => Math.abs(x.years)));
     bioBody = `<div class="hbig"><b>${fmtNum(Math.round(B.bio * 10) / 10)}</b><span>Jahre · dein Alter ${B.age}</span><em class="${B.delta <= 0 ? "g" : "r"}">${fmtYears(B.delta)} Jahre</em></div>
@@ -342,6 +376,32 @@ function renderHealth() {
         ${SL.bed !== null && SL.wake !== null ? `<div><b>${fmtClock(SL.bed)}–${fmtClock(SL.wake)}</b><span>Ø Einschlafen und Aufwachen</span></div>` : ""}
       </div>`;
 
+  // Ernährung (Mahlzeiten aus Notion)
+  const nd7 = nutriDays(7, y), NS = nutriScore(nd7);
+  const all7 = Array.from({ length: 7 }, (_, i) => { const d = addDays(t, i - 6); return { d, kcal: hv("nahrung_kcal", d) }; });
+  const todayMeals = typeof mealsOn === "function" ? mealsOn(t) : [];
+  const anyMeals = typeof mealStore === "function" && Object.keys(mealStore().items).length > 0;
+  const nutriBody = !anyMeals ? `<p class="muted small hmiss">Fotografier dein Essen im Claude-Projekt „App“ – Claude schätzt die Nährwerte, trägt sie in Notion „Mahlzeiten“ ein und Mosaik holt sie hier ab.</p>`
+    : (() => {
+      const maxK = Math.max(2500, ...all7.map((x) => x.kcal || 0));
+      const todaySum = todayMeals.reduce((t2, m) => t2 + (typeof m.kcal === "number" ? m.kcal : 0), 0);
+      const macro = NS && NS.kcal ? (() => {
+        const e = { p: (NS.p || 0) * 4, kh: (NS.kh || 0) * 4, f: (NS.f || 0) * 9 }, tot = e.p + e.kh + e.f || 1;
+        const w = (x) => Math.round((x / tot) * 100);
+        return `<div class="hmacro"><span style="width:${w(e.p)}%;background:var(--s3)"></span><span style="width:${w(e.kh)}%;background:var(--s1)"></span><span style="width:${w(e.f)}%;background:var(--s2)"></span></div>
+          <p class="hmacrol"><i style="background:var(--s3)"></i>Protein ${w(e.p)} % <i style="background:var(--s1)"></i>Kohlenhydrate ${w(e.kh)} % <i style="background:var(--s2)"></i>Fett ${w(e.f)} %</p>`;
+      })() : "";
+      const col = !NS ? "var(--ink-2)" : NS.score >= 75 ? "var(--s3)" : NS.score >= 50 ? "#d9a400" : "var(--s2)";
+      return `${NS ? `<div class="hrow2">
+          <div class="hringw">${ring(NS.score / 100, col, String(NS.score))}</div>
+          <div class="hparts">${NS.parts.map((x) => `<div><b>${x.label} <em>${x.pts === null ? "–" : Math.round(x.pts)}/25</em></b><span>${esc(x.txt)}</span></div>`).join("")}</div>
+        </div>
+        <p class="small" style="margin:6px 0 10px">Ø ${fmtBig(Math.round(NS.kcal))} kcal an ${NS.n} vollständig erfassten Tag${NS.n === 1 ? "" : "en"} der letzten Woche</p>
+        ${macro}` : `<p class="muted small">Für den Score braucht es mindestens einen vollständig erfassten Tag (ab 1.000 kcal) in der letzten Woche.</p>`}
+        <div class="hbars hk">${all7.map((x) => `<div title="${x.kcal ? Math.round(x.kcal) + " kcal" : "nicht erfasst"}"><span style="height:${x.kcal ? Math.max(3, (x.kcal / maxK) * 100) : 0}%"></span><em>${WD_SHORT[parseIso(x.d).getDay()]}</em></div>`).join("")}</div>
+        ${todayMeals.length ? `<p class="small" style="margin:10px 0 0"><strong>Heute:</strong> ${todayMeals.map((m) => esc(m.name || m.meal)).join(", ")} · ${Math.round(todaySum)} kcal</p>` : ""}`;
+    })();
+
   // Fitness (VO₂max)
   const vo = hvals("vo2max", 120);
   const age = ageNow();
@@ -366,6 +426,7 @@ function renderHealth() {
     ${hcard("stress", "Stress", nav + stressBody)}
     ${hcard("strain", "Belastung", strainBody)}
     ${hcard("sleep", "Schlaf", sleepBody)}
+    ${hcard("nutri", "Ernährung", nutriBody)}
     ${hcard("fit", "Fitness", fitBody)}
     ${bodyCards}
     <p class="muted small" style="margin:4px 4px 0">Schätzungen aus deinen Apple-Health-Werten, angelehnt an Studien – keine Diagnose.</p>`;
@@ -409,7 +470,11 @@ const SRC = {
   whoopstress: ["Whoop: Stress Monitor", "https://www.whoop.com/thelocker/introducing-stress-monitor-a-new-way-to-monitor-manage-stress/"],
   whooprec: ["Whoop: Wie Recovery funktioniert", "https://www.whoop.com/au/en/thelocker/how-does-whoop-recovery-work-101/"],
   oura: ["Oura: Readiness Score", "https://ouraring.com/blog/readiness-score/"],
-  garmin: ["Garmin/Firstbeat: Body Battery und Stress", "https://the5krunner.com/garmin-features/sleep/body-battery/"]
+  garmin: ["Garmin/Firstbeat: Body Battery und Stress", "https://the5krunner.com/garmin-features/sleep/body-battery/"],
+  reynolds: ["Reynolds et al. 2019, Lancet – Kohlenhydratqualität, Ballaststoffe und Gesundheit (Metaanalysen)", "https://www.sciencedaily.com/releases/2019/01/190110184737.htm"],
+  dge: ["DGE – Referenzwerte für die Nährstoffzufuhr (Protein 0,8 g/kg, Ballaststoffe 30 g, Fett 30–35 % der Energie)", "https://www.dge.de/wissenschaft/referenzwerte/"],
+  who: ["WHO 2015 – Zuckeraufnahme bei Erwachsenen und Kindern (freier Zucker unter 10 % der Energie)", "https://www.who.int/publications/i/item/9789241549028"],
+  mealai: ["Nutrients 2025 – Genauigkeit von Kalorienschätzungen aus Fotos mit KI", "https://www.mdpi.com/2072-6643/17/22/3613"]
 };
 const src = (...ks) => `<p class="small" style="margin:12px 0 4px"><strong>Quellen</strong></p><ul class="hsrc">${ks.map((k) => `<li><a href="${SRC[k][1]}" target="_blank" rel="noopener">${esc(SRC[k][0])}</a></li>`).join("")}</ul>`;
 const HINFO = {
@@ -426,10 +491,11 @@ const HINFO = {
       <li><strong>Schlafrhythmus</strong> – Schwankung der Schlafmitte (Standardabweichung); regelmäßig (± 30 min) HR 0,9, unregelmäßig (± 2 h) HR 1,5 – Näherung an Windred 2024 (regelmäßigste Gruppen 20–48 % geringeres Risiko).</li>
       <li><strong>Ruhepuls</strong> – HR 1,09 je 10 Schläge/min über 65 (Zhang 2016).</li>
       <li><strong>VO₂max</strong> – je 3,5 ml/kg/min (1 MET) über dem Median deines Alters und Geschlechts HR 0,87 (Kodama 2009, Normen FRIEND 2022).</li>
+      <li><strong>Ballaststoffe</strong> (aus den Mahlzeiten, nur vollständig erfasste Tage) – 10 g → 1,05 · 18 g → 1,0 · 25 g → 0,89 · ab 29 g → 0,86 (Reynolds 2019); halb gewichtet, weil Foto-Schätzungen ungenau sind.</li>
     </ul>
     <p>Jeder Beitrag ist auf −4 bis +6 Jahre begrenzt, die Summe auf −12 bis +15. <strong>Tempo:</strong> dieselbe Rechnung mit den letzten 30 Tagen; Tempo = 1 + (Δ<sub>30 Tage</sub> − Δ<sub>6 Monate</sub>) / 3, begrenzt auf −1× bis 3× (wie Whoops „Pace of Aging“).</p>
     <p class="muted small">Grenzen: Die Studien zeigen Zusammenhänge in großen Gruppen, nicht Ursache und Wirkung für dich persönlich. Die Effekte überschneiden sich teilweise. Ein Richtwert für deine Gewohnheiten, keine Diagnose.</p>
-    ${src("gompertz", "paluch", "arem", "cappuccio", "windred", "zhang", "kodama", "mandsager", "friend", "whoopage")}`],
+    ${src("gompertz", "paluch", "arem", "cappuccio", "windred", "zhang", "kodama", "mandsager", "friend", "reynolds", "whoopage")}`],
   rec: ["Erholung", `
     <p>Wie gut dein Körper heute erholt ist – ähnlich Whoop Recovery und Oura Readiness. Entscheidend ist nicht der absolute Wert, sondern die <strong>Abweichung von deinem eigenen Normal</strong> der letzten 30 Tage.</p>
     <ul class="hul">
@@ -471,6 +537,19 @@ const HINFO = {
     </ul>
     <p>Regelmäßigkeit ist laut UK-Biobank-Studie ein stärkerer Hinweis auf das Sterberisiko als die Schlafdauer.</p>
     ${src("windred", "cappuccio", "oura")}`],
+  nutri: ["Ernährung", `
+    <p>Grundlage sind die Mahlzeiten, die Claude aus deinen Fotos schätzt und in Notion „Mahlzeiten“ einträgt. Gewertet werden nur <strong>vollständig erfasste Tage</strong> (ab 1.000 kcal) der letzten 7 Tage – ein Tag mit nur einem Foto würde sonst alles verzerren.</p>
+    <p><strong>Ernährungs-Score</strong> (0–100) = Summe aus vier Teilen à 25 Punkten, aus den Ø-Werten:</p>
+    <ul class="hul">
+      <li><strong>Ballaststoffe</strong>: 25 · min(1, g / 30). Ziel 30 g (DGE).</li>
+      <li><strong>Protein</strong>: 25 · min(1, g / (0,8 · Gewicht)) – mit Gewicht aus Apple Health; sonst 25 · min(1, Anteil an der Energie / 15 %).</li>
+      <li><strong>Zucker</strong>: Anteil a = 4 · g / kcal; bis 10 % volle 25 Punkte, ab 20 % keine, dazwischen linear: 25 · (0,20 − a) / 0,10. Gezählt wird aller Zucker (auch aus Obst), die WHO-Grenze von 10 % gilt für freien Zucker – deshalb die großzügigere Spanne bis 20 %.</li>
+      <li><strong>Fett</strong>: Anteil a = 9 · g / kcal; bis 35 % volle Punkte, ab 45 % keine, linear dazwischen (DGE: 30–35 %).</li>
+    </ul>
+    <p>Fehlt ein Teil, wird der Score aus den übrigen hochgerechnet. Der Balken zeigt die Energie-Anteile: Protein und Kohlenhydrate je 4 kcal/g, Fett 9 kcal/g.</p>
+    <p><strong>Im Mosaik-Alter</strong> zählen die Ballaststoffe mit (halb gewichtet, ab 7 vollständig erfassten Tagen): 25–29 g am Tag gingen in der großen Lancet-Auswertung mit etwa 15 % geringerem Sterberisiko einher als wenig Ballaststoffe; Bezug sind 18 g.</p>
+    <p class="muted small">Genauigkeit: Fotos werden je Mahlzeit typischerweise um 20–30 % verschätzt (Portionsgröße, Öl, Soßen). Ein Satz zum Foto oder ein Rezept aus Notion macht es genauer; für Trends über Wochen reicht es gut.</p>
+    ${src("dge", "who", "reynolds", "mealai")}`],
   fit: ["Fitness", `
     <p>VO₂max ist die maximale Sauerstoffaufnahme – das beste Einzelmaß für Ausdauerfitness. Die Apple Watch schätzt sie als „Cardiofitness“ beim Gehen oder Laufen draußen.</p>
     <p><strong>Vergleich:</strong> Median der FRIEND-Normwerte (Laufband-Tests, 2022) für dein Alter und Geschlecht. <strong>Fitness-Alter:</strong> das Alter, in dem dein Wert dem Median entspricht.</p>
