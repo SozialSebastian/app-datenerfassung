@@ -825,32 +825,43 @@ function findPatterns(pts0, days) {
       if (pv < 0.05) found.push({ kind: "jump", a: b.k, b: n - 1, from: b.m1, to: b.m2, score: Math.abs(b.t) * shrink });
     }
   }
-  // A Knick: Abschnitt bis heute mit stetigem Trend (Mann-Kendall); der Start mit dem stärksten |z|
+  // A Knick/Trendabschnitt: ein Abschnitt [a, b] mit stetigem Anstieg/Abfall (Mann-Kendall), z. B. Erholung nach einem Einbruch.
+  // Reicht er bis heute: „seit …“, sonst „von … bis …“. Gesucht auf den Originalwerten; gegen Phasen entscheidet die Stärke.
   {
-    const mk = (a) => {
-      const m = n - a;
-      let S = 0;
-      for (let i = a; i < n; i++) for (let j = i + 1; j < n; j++) S += Math.sign(vj[j] - vj[i]);
-      const varS = (m * (m - 1) * (2 * m + 5)) / 18;
-      return S === 0 ? 0 : ((S - Math.sign(S)) / Math.sqrt(varS)) * shrink; // Varianz um (1+ρ)/(1−ρ) vergrößert
-    };
-    const stepK = Math.max(1, Math.floor(n / 40));
+    // R[i][j] = Σ_{k=i+1..j} sign(v_k − v_i) → S(a, b) = Σ_{i=a..b−1} R[i][b] in O(n)
+    const R = vs.map((vi, i) => { const row = new Float32Array(n); let acc = 0; for (let k = i + 1; k < n; k++) { acc += Math.sign(vs[k] - vi); row[k] = acc; } return row; });
+    const step = Math.max(1, Math.floor(n / 30));
     let best = null;
-    for (let a = 0; a <= n - minSeg; a += stepK) {
-      if (P[n - 1].t - P[a].t < 10) break;
-      const z = mk(a);
-      if (Math.abs(z) > 1.96 && (!best || Math.abs(z) > Math.abs(best.z))) best = { a, z }; // p < 0,05
+    const ends = [];
+    for (let e = n - 1; e >= minSeg - 1; e -= step) ends.push(e);
+    if (ends[ends.length - 1] !== minSeg - 1) ends.push(minSeg - 1);
+    for (const e of ends) {
+      for (let a = 0; a <= e - (minSeg - 1); a += step) {
+        const m = e - a + 1;
+        if (P[e].t - P[a].t < 7) continue;
+        let S = 0; for (let i = a; i < e; i++) S += R[i][e];
+        if (!S) continue;
+        const z = ((S - Math.sign(S)) / Math.sqrt((m * (m - 1) * (2 * m + 5)) / 18)) * shrink;
+        const toEnd = e === n - 1;
+        if (m < (toEnd ? 7 : 8) || P[e].t - P[a].t < 10) continue; // mind. 7 (bis heute) bzw. 8 Werte über 10 Tage
+        if (Math.abs(z) < (toEnd ? 2.2 : 2.576)) continue;
+        // mitten im Zeitraum nur, wenn der Abschnitt sehr gleichmäßig in eine Richtung läuft (Kendalls τ = S / (m(m−1)/2) ≥ 0,6)
+        if (!toEnd && Math.abs(S) / ((m * (m - 1)) / 2) < 0.65) continue; // Abschnitte mitten im Zeitraum: strenger (viele Möglichkeiten)
+        // grobe Veränderung über den Abschnitt (Median der letzten vs. ersten Drittel) als Stärke
+        const third = Math.max(1, Math.floor(m / 3));
+        const d = med(vs.slice(e - third + 1, e + 1)) - med(vs.slice(a, a + third));
+        const score = (Math.abs(d) / 2 / scale) * Math.sqrt(m);
+        if (Math.sign(d) !== Math.sign(z) || Math.abs(d) < (toEnd ? 0.5 : 1.5) * scale) continue;
+        // bis heute: die Gerade beginnt dort, wo die Werte vorher lagen (sonst ist es eher eine Phase/ein Sprung)
+        if (toEnd && a > 0) { const before = vs.slice(Math.max(0, a - 10), a); if (Math.abs(med(vs.slice(a, a + third)) - med(before)) > 0.4 * scale) continue; }
+        if (!best || score > best.score) best = { a, b: e, z, score };
+      }
     }
     if (best) {
-      const seg = P.slice(best.a).map((p, i) => ({ ...p, v: vj[best.a + i] })), sl = [];
+      const seg = P.slice(best.a, best.b + 1), sl = [];
       for (let i = 0; i < seg.length; i++) for (let j = i + 1; j < seg.length; j++) if (seg[j].t !== seg[i].t) sl.push((seg[j].v - seg[i].v) / (seg[j].t - seg[i].t));
       const slope = med(sl), icpt = med(seg.map((p) => p.v - slope * p.t));
-      // sichtbar genug: über den Abschnitt mind. 0,5 Streuung Veränderung
-      // Knick heißt: die Gerade startet dort, wo die Werte vorher lagen (sonst ist es ein Ausreißer/eine Phase, kein Trend)
-      const before = vj.slice(Math.max(0, best.a - 10), best.a);
-      const startOk = !before.length || Math.abs(icpt + slope * seg[0].t - med(before)) <= 0.6 * scale;
-      if (startOk && Math.abs(slope * (seg[seg.length - 1].t - seg[0].t)) >= 0.35 * scale && Math.sign(slope) === Math.sign(best.z))
-        found.push({ kind: "trend", a: best.a, b: n - 1, slope, icpt, score: Math.abs(best.z) });
+      if (Math.sign(slope) === Math.sign(best.z)) found.push({ kind: "trend", a: best.a, b: best.b, slope, icpt, score: best.score });
     }
   }
   // D Schwankung: ab einem Zeitpunkt deutlich ruhiger oder unruhiger (Niveau herausgerechnet über gleitenden Median)
@@ -951,7 +962,7 @@ function curveChart(pts0, days, { avg, dir = null, id = "", label = "", range = 
   for (const pat of pats.sort((x, y) => x.a - y.a)) {
     const dPos = (dd) => pts.findIndex((p) => p.d >= dd);
     const i0 = Math.max(0, dPos(pat.P[pat.a].d)), lastD = pat.P[pat.b].d;
-    let i1 = pts.length - 1; if (pat.kind === "phase") i1 = pts.findIndex((p) => p.d >= lastD);
+    let i1 = pts.length - 1; if (pat.kind === "phase" || (pat.kind === "trend" && pat.b < pat.P.length - 1)) i1 = pts.findIndex((p) => p.d >= lastD);
     const up = pat.kind === "trend" ? pat.slope > 0 : pat.kind === "jump" ? pat.to > pat.from : pat.kind === "spread" ? pat.sd2 > pat.sd1 : pat.sign > 0;
     // Schwankung: ruhiger = gut (grün), unruhiger = orange
     const col = pat.kind === "spread" ? (up ? "var(--s2)" : "var(--s3)") : !dir ? "var(--hold)" : up === (dir === "high") ? "var(--s3)" : "var(--s2)";
@@ -966,10 +977,15 @@ function curveChart(pts0, days, { avg, dir = null, id = "", label = "", range = 
     const ty = (t) => r1(yi(pat.icpt + pat.slope * t));
     let tx;
     if (pat.kind === "trend") {
-      const tL = days.indexOf(pts[pts.length - 1].d); // nur so weit, wie Werte vorliegen
-      patSvg += `<line x1="${pts[i0].x}" y1="${ty(t0)}" x2="${pts[pts.length - 1].x}" y2="${ty(tL)}" class="trendln" clip-path="url(#${gid}pa)" style="stroke:${col}"/>`;
-      const perM = pat.slope * 30.44;
-      tx = [`${up ? "▲" : "▼"} ${i0 === 0 ? "im ganzen Zeitraum" : `seit ${dmy(pts[i0].d)}`} ${up ? "+" : "−"}${dl(perM)} pro Monat`, i0 === 0 ? "stetiger Trend" : "vorher gleichbleibend"];
+      const tL = days.indexOf(pts[i1].d); // nur über den Abschnitt
+      patSvg += `<line x1="${pts[i0].x}" y1="${ty(t0)}" x2="${pts[i1].x}" y2="${ty(tL)}" class="trendln" clip-path="url(#${gid}pa)" style="stroke:${col}"/>`;
+      const toEnd = i1 === pts.length - 1, span = tL - t0;
+      if (toEnd) {
+        const perM = pat.slope * 30.44;
+        tx = [`${up ? "▲" : "▼"} ${i0 === 0 ? "im ganzen Zeitraum" : `seit ${dmy(pts[i0].d)}`} ${up ? "+" : "−"}${dl(perM)} pro Monat`, i0 === 0 ? "stetiger Trend" : "davor anders verlaufen"];
+      } else {
+        tx = [`${up ? "▲" : "▼"} ${dmy(pts[i0].d)}–${dmy(pts[i1].d)} ${up ? "steigend" : "fallend"}`, `${up ? "+" : "−"}${dl(pat.slope * span)} in ${span} Tagen, danach nicht mehr`];
+      }
     } else if (pat.kind === "jump") {
       const yl = r1(yi(pat.to));
       patSvg += `<line x1="${pts[i0].x}" y1="${yl}" x2="${pts[pts.length - 1].x}" y2="${yl}" class="trendln" style="stroke:${col}"/>`;
