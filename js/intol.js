@@ -53,7 +53,8 @@ function intolAnalyse() {
   if (!fq || !bq) return null;
   const A = state.answers;
   const belly = (d) => { const v = (A[d] || {})[bq.id]; return v === "Ja" ? true : v === "Nein" ? false : null; };
-  const ate = (d) => { const v = (A[d] || {})[fq.id]; return Array.isArray(v) ? v : null; };
+  // „Nichts davon“ über den Schalter (leere Auswahl) zählt wie überall in der Analyse nicht – nur die Antwort „Nichts davon“ der Vorlage
+  const ate = (d) => { const v = (A[d] || {})[fq.id]; return Array.isArray(v) && hasData(v) ? v : null; };
   const days = Object.keys(A).sort().filter((d) => ate(d) && belly(d) !== null);
   const groups = {};
   INTOL_FOODS.forEach(([f, g]) => (groups[g] ||= []).push(f));

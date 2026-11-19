@@ -638,7 +638,7 @@ test("Profil: Geburtsjahr, Geschlecht, Schlafbedarf und Arbeitsvertrag unter Ein
   await ctx.close();
 });
 
-test("Antworten bearbeiten: „Nichts davon“ über den Schalter lässt sich löschen, Unverträglichkeiten zählen den Tag dann nicht mehr", async () => {
+test("Antworten bearbeiten: „Nichts davon“ über den Schalter lässt sich löschen und zählt bei Unverträglichkeiten nicht", async () => {
   const data = { version: 1, lastBackup: null, questions: [], answers: {} };
   const { page, ctx, errors } = await open({ data });
   await page.evaluate(() => {
@@ -647,7 +647,8 @@ test("Antworten bearbeiten: „Nichts davon“ über den Schalter lässt sich l�
     for (let i = 1; i <= 16; i++) state.answers[addDays(todayIso(), -i)] = { [f.id]: i <= 15 ? [] : ["Ei"], [b.id]: "Nein" };
     save(); render();
   });
-  assert.equal(await page.evaluate(() => intolAnalyse().days), 16);
+  // leere Auswahl über den Schalter zählt in der Auswertung nicht
+  assert.equal(await page.evaluate(() => intolAnalyse().days), 1);
   await page.click('[data-tab="data"]');
   await page.selectOption("#ansq", await page.evaluate(() => intolQ("intol-food").id));
   assert.match(await page.locator("#antworten").innerText(), /Ei\s*1×[\s\S]*„Nichts davon“ \(ohne Auswahl\)\s*15×/);
