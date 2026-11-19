@@ -381,12 +381,15 @@ function answerTally(q) {
   const cnt = {};
   for (const a of Object.values(state.answers)) {
     const v = a[q.id];
+    if (isNone(v)) { cnt[NONE_KEY] = (cnt[NONE_KEY] || 0) + 1; continue; } // „Nichts davon“ über den Schalter (leere Auswahl)
     if (!hasData(v)) continue;
     for (const k of Array.isArray(v) ? v : [v]) cnt[k] = (cnt[k] || 0) + 1;
   }
-  return Object.entries(cnt).sort((x, y) => y[1] - x[1]);
+  return Object.entries(cnt).sort((x, y) => (x[0] === NONE_KEY) - (y[0] === NONE_KEY) || y[1] - x[1]);
 }
-const isOldText = (q, k) => !q.options.includes(k);
+const NONE_KEY = "__nichts_davon__";
+const ansLabel = (k) => (k === NONE_KEY ? "„Nichts davon“ (ohne Auswahl)" : k);
+const isOldText = (q, k) => k !== NONE_KEY && !q.options.includes(k);
 // Antworten zu Fragen, die es nicht mehr gibt
 function orphanIds() {
   const ids = new Set(state.questions.map((q) => q.id)), out = {};
@@ -400,7 +403,7 @@ function answersPanel() {
   const tally = q ? answerTally(q) : [];
   const orph = Object.values(orphanIds()).reduce((t, n) => t + n, 0);
   const old = qs.flatMap((x) => answerTally(x).filter(([k]) => isOldText(x, k)).map(([k, n]) => ({ q: x, k, n })));
-  const row = (qq, k, n, sub) => `<div class="ansrow"><button type="button" class="atxt${isOldText(qq, k) ? " aold" : ""}" data-aren="${qq.id}" data-aval="${esc(k)}">${esc(k)}${sub ? `<small>${esc(sub)}</small>` : ""}</button><span class="pill">${n}×</span><button type="button" class="iconbtn" data-adel="${qq.id}" data-aval="${esc(k)}" aria-label="Antworten „${esc(k)}“ löschen">✕</button></div>`;
+  const row = (qq, k, n, sub) => `<div class="ansrow">${k === NONE_KEY ? `<span class="atxt">${ansLabel(k)}</span>` : `<button type="button" class="atxt${isOldText(qq, k) ? " aold" : ""}" data-aren="${qq.id}" data-aval="${esc(k)}">${esc(k)}${sub ? `<small>${esc(sub)}</small>` : ""}</button>`}<span class="pill">${n}×</span><button type="button" class="iconbtn" data-adel="${qq.id}" data-aval="${esc(k)}" aria-label="Antworten „${esc(k)}“ löschen">✕</button></div>`;
   return `<section class="panel" id="antworten">
       <h2>Antworten bearbeiten</h2>
       ${qs.length ? `<label class="field" style="margin-bottom:6px"><select id="ansq">${qs.map((x) => `<option value="${x.id}" ${x === q ? "selected" : ""}>${esc(x.text)}${x.archived ? " (ausgeblendet)" : ""}</option>`).join("")}</select></label>
@@ -417,8 +420,8 @@ function deleteAnswerValue(q, k) {
   const kids = [...descendants(q.id)].map(qById).filter(Boolean);
   for (const [d, a] of Object.entries(state.answers)) {
     const v = a[q.id];
-    if (Array.isArray(v) ? !v.includes(k) : v !== k) continue;
-    if (Array.isArray(v) && v.length > 1) a[q.id] = v.filter((x) => x !== k);
+    if (k === NONE_KEY ? !isNone(v) : Array.isArray(v) ? !v.includes(k) : v !== k) continue;
+    if (k !== NONE_KEY && Array.isArray(v) && v.length > 1) a[q.id] = v.filter((x) => x !== k);
     else delete a[q.id];
     for (let changed = true; changed; ) {
       changed = false;
@@ -462,7 +465,7 @@ function wireAnswers() {
   document.querySelectorAll("[data-adel]").forEach((b) => b.addEventListener("click", () => {
     const q = qById(b.dataset.adel), k = b.dataset.aval;
     const n = (answerTally(q).find(([x]) => x === k) || [, 0])[1];
-    if (!confirm(`${n} Antwort${n === 1 ? "" : "en"} „${k}“ bei „${q.text}“ löschen? Das lässt sich nicht rückgängig machen.`)) return;
+    if (!confirm(`${n} Antwort${n === 1 ? "" : "en"} ${k === NONE_KEY ? "„Nichts davon“" : `„${k}“`} bei „${q.text}“ löschen? Das lässt sich nicht rückgängig machen.`)) return;
     deleteAnswerValue(q, k);
     const y = scrollY; renderData(); scrollTo(0, y); toast(`${n} Antwort${n === 1 ? "" : "en"} gelöscht`);
   }));

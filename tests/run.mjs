@@ -638,6 +638,25 @@ test("Profil: Geburtsjahr, Geschlecht, Schlafbedarf und Arbeitsvertrag unter Ein
   await ctx.close();
 });
 
+test("Antworten bearbeiten: „Nichts davon“ über den Schalter lässt sich löschen, Unverträglichkeiten zählen den Tag dann nicht mehr", async () => {
+  const data = { version: 1, lastBackup: null, questions: [], answers: {} };
+  const { page, ctx, errors } = await open({ data });
+  await page.evaluate(() => {
+    state.questions.push(...intolMake());
+    const f = intolQ("intol-food"), b = intolQ("intol-belly"); f.noneOk = true;
+    for (let i = 1; i <= 16; i++) state.answers[addDays(todayIso(), -i)] = { [f.id]: i <= 15 ? [] : ["Ei"], [b.id]: "Nein" };
+    save(); render();
+  });
+  assert.equal(await page.evaluate(() => intolAnalyse().days), 16);
+  await page.click('[data-tab="data"]');
+  await page.selectOption("#ansq", await page.evaluate(() => intolQ("intol-food").id));
+  assert.match(await page.locator("#antworten").innerText(), /Ei\s*1×[\s\S]*„Nichts davon“ \(ohne Auswahl\)\s*15×/);
+  await page.click('#antworten [data-adel][data-aval="__nichts_davon__"]');
+  assert.equal(await page.evaluate(() => intolAnalyse().days), 1);
+  assert.deepEqual(errors, []);
+  await ctx.close();
+});
+
 test("Antworten bearbeiten: Anzahl je Antwort, alte Texte, verwaiste Antworten löschen", async () => {
   const data = { version: 1, lastBackup: null, questions: [
     { id: "t", text: "Wo warst du tanzen?", type: "choice", options: ["Kurs", "Milonga", "Training/Practica"], multi: false, archived: false, cond: null },
