@@ -993,25 +993,46 @@ input.tgl:disabled { opacity: .45; }
 .mealcard .nhead .q-title { margin-bottom: 6px; }
 .mealcard .nscore { font-size: 13px; color: var(--ink-2); white-space: nowrap; }
 .mealcard .nscore b { color: var(--ink); font-size: 16px; }
-.mealcard .nbig { display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap; }
-.mealcard .nbig b { font-size: 30px; letter-spacing: -0.01em; font-variant-numeric: tabular-nums; }
-.mealcard .nbig span { color: var(--ink-2); font-size: 14px; }
-.mealcard .ok > b, .mealcard .ntile.ok .v { color: var(--s3); }
-.mealcard .bad > b, .mealcard .ntile.bad .v { color: var(--danger); }
-.mealcard .nkbar, .mealcard .ntile .tb { position: relative; background: var(--bg); overflow: hidden; }
-.mealcard .nkbar { height: 14px; border-radius: 7px; margin: 8px 0 2px; }
-.mealcard .ntile .tb { height: 7px; border-radius: 4px; margin-top: 7px; background: var(--surface); }
-.mealcard .nkbar .z, .mealcard .tb .z { position: absolute; top: 0; bottom: 0; background: color-mix(in srgb, var(--s3) 30%, transparent); }
-.mealcard .nkbar .e, .mealcard .tb .e { position: absolute; left: 0; top: 0; bottom: 0; border-radius: inherit; background: var(--ink); }
-.mealcard .e.ok { background: var(--s3); }
-.mealcard .e.bad { background: var(--danger); }
-.mealcard .nkbar .m, .mealcard .tb .m { position: absolute; top: 0; bottom: 0; width: 2px; margin-left: -1px; background: var(--ink); opacity: 0.55; }
-.mealcard .ngrid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin-top: 12px; }
-.mealcard .ntile { background: var(--bg); border-radius: 12px; padding: 9px 10px; min-width: 0; }
-.mealcard .ntile .n { font-size: 12px; color: var(--ink-2); font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.mealcard .ntile .v { font-size: 20px; font-weight: 700; margin: 2px 0 1px; font-variant-numeric: tabular-nums; }
-.mealcard .ntile .v small { font-size: 12px; font-weight: 600; color: var(--ink-2); }
-.mealcard .ntile .s { font-size: 11px; color: var(--ink-2); line-height: 1.3; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.nut .nrings { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 8px; }
+.nut .nring { display: flex; flex-direction: column; align-items: center; gap: 6px; }
+.nut .nring .hringw { width: 92px; height: 92px; flex: none; display: grid; place-items: center; position: relative; }
+.nut .nring .hring { width: 92px; height: 92px; }
+.nut .nring .hringw.nnone { border: 6px solid var(--bg); border-radius: 50%; box-sizing: border-box; color: var(--ink-2); font-weight: 700; font-size: 20px; }
+.nut .nring b { font-size: 14px; font-weight: 700; }
+.nut .nsec { display: flex; justify-content: space-between; gap: 8px; margin: 16px 0 6px; font-size: 12px; font-weight: 700; color: var(--ink-2); }
+.nut .nsec span:first-child { text-transform: uppercase; letter-spacing: 0.05em; }
+.nut .nsec span + span { font-weight: 600; text-align: right; }
+.nut .nkcols { display: grid; grid-template-columns: repeat(7, 1fr); gap: 6px; height: 64px; }
+.nut .nkcols div { display: grid; grid-template-rows: 1fr auto; align-items: end; justify-items: center; height: 100%; }
+.nut .nkcols span { width: 100%; max-width: 34px; border-radius: 6px 6px 3px 3px; }
+.nut .nkcols em { font-style: normal; font-size: 10.5px; color: var(--ink-2); margin-top: 3px; }
+.nut .nfood { display: grid; grid-template-columns: 112px 1fr 108px; gap: 8px; align-items: center; margin: 7px 0; font-size: 14px; }
+.nut .nfood .l { font-weight: 600; line-height: 1.15; }
+.nut .nfood .l small { display: block; font-weight: 400; font-size: 11px; color: var(--ink-2); }
+.nut .nfood .tb { position: relative; overflow: hidden; height: 9px; border-radius: 5px; margin: 0; background: var(--bg); }
+.nut .nfood .r { text-align: right; font-weight: 700; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.nut .nfood .r small { font-weight: 500; color: var(--ink-2); font-size: 11.5px; }
+.nut .nfood .r.ok { color: var(--s3); } .nut .nfood .r.bad { color: var(--danger); }
+.nut .nhint { font-size: 13px; background: var(--bg); border-radius: 10px; padding: 8px 10px; margin: 10px 0 0; }
+.nut .nbig { display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap; }
+.nut .nbig b { font-size: 30px; letter-spacing: -0.01em; font-variant-numeric: tabular-nums; }
+.nut .nbig span { color: var(--ink-2); font-size: 14px; }
+.nut .ok > b, .nut .ntile.ok .v { color: var(--s3); }
+.nut .bad > b, .nut .ntile.bad .v { color: var(--danger); }
+.nut .nkbar, .nut .ntile .tb { position: relative; background: var(--bg); overflow: hidden; }
+.nut .nkbar { height: 14px; border-radius: 7px; margin: 8px 0 2px; }
+.nut .ntile .tb { height: 7px; border-radius: 4px; margin-top: 7px; background: var(--surface); }
+.nut .nkbar .z, .nut .tb .z { position: absolute; top: 0; bottom: 0; background: color-mix(in srgb, var(--s3) 30%, transparent); }
+.nut .nkbar .e, .nut .tb .e { position: absolute; left: 0; top: 0; bottom: 0; border-radius: inherit; background: var(--ink); }
+.nut .e.ok { background: var(--s3); }
+.nut .e.bad { background: var(--danger); }
+.nut .nkbar .m, .nut .tb .m { position: absolute; top: 0; bottom: 0; width: 2px; margin-left: -1px; background: var(--ink); opacity: 0.55; }
+.nut .ngrid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin-top: 12px; }
+.nut .ntile { background: var(--bg); border-radius: 12px; padding: 9px 10px; min-width: 0; }
+.nut .ntile .n { font-size: 12px; color: var(--ink-2); font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.nut .ntile .v { font-size: 20px; font-weight: 700; margin: 2px 0 1px; font-variant-numeric: tabular-nums; }
+.nut .ntile .v small { font-size: 12px; font-weight: 600; color: var(--ink-2); }
+.nut .ntile .s { font-size: 11px; color: var(--ink-2); line-height: 1.3; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .mealcard .nsep { border-top: 1px solid var(--line); margin: 12px 0 2px; }
 .mealcard .nsep + .mrow { border-top: 0; }
 .hrow2 { display: flex; gap: 14px; align-items: center; }

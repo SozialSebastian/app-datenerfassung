@@ -410,30 +410,40 @@ function renderHealth() {
         ${SL.bed !== null && SL.wake !== null ? `<div><b>${fmtClock(SL.bed)}–${fmtClock(SL.wake)}</b><span>Ø Einschlafen und Aufwachen</span></div>` : ""}
       </div>`;
 
-  // Ernährung (Mahlzeiten aus Notion)
+  // Ernährung (Mahlzeiten aus Notion): zwei Scores, Ø pro Tag als Ziel-Kacheln, Kalorien der Woche, Lebensmittelgruppen
   const nd7 = nutriDays(7, y), NS = nutriScore(nd7);
-  const all7 = Array.from({ length: 7 }, (_, i) => { const d = addDays(t, i - 6); return { d, kcal: hv("nahrung_kcal", d) }; });
-  const todayMeals = typeof mealsOn === "function" ? mealsOn(t) : [];
   const anyMeals = typeof mealStore === "function" && Object.keys(mealStore().items).length > 0;
   const nutriBody = !anyMeals ? `<p class="muted small hmiss">Fotografier dein Essen im Claude-Projekt „App“ – Claude schätzt die Nährwerte, trägt sie in Notion „Mahlzeiten“ ein und Mosaik holt sie hier ab.</p>`
     : (() => {
-      const maxK = Math.max(2500, ...all7.map((x) => x.kcal || 0));
-      const todaySum = todayMeals.reduce((t2, m) => t2 + (typeof m.kcal === "number" ? m.kcal : 0), 0);
-      const macro = NS && NS.kcal ? (() => {
-        const e = { p: (NS.p || 0) * 4, kh: (NS.kh || 0) * 4, f: (NS.f || 0) * 9 }, tot = e.p + e.kh + e.f || 1;
-        const w = (x) => Math.round((x / tot) * 100);
-        return `<div class="hmacro"><span style="width:${w(e.p)}%;background:var(--s3)"></span><span style="width:${w(e.kh)}%;background:var(--s1)"></span><span style="width:${w(e.f)}%;background:var(--s2)"></span></div>
-          <p class="hmacrol"><i style="background:var(--s3)"></i>Protein ${w(e.p)} % <i style="background:var(--s1)"></i>Kohlenhydrate ${w(e.kh)} % <i style="background:var(--s2)"></i>Fett ${w(e.f)} %</p>`;
-      })() : "";
-      const col = !NS ? "var(--ink-2)" : NS.score >= 75 ? "var(--s3)" : NS.score >= 50 ? "#d9a400" : "var(--s2)";
-      return `${NS ? `<div class="hrow2">
-          <div class="hringw">${ring(NS.score / 100, col, String(NS.score))}</div>
-          <div class="hparts">${NS.parts.map((x) => `<div><b>${x.label} <em>${x.pts === null ? "–" : Math.round(x.pts)}/25</em></b><span>${esc(x.txt)}</span></div>`).join("")}</div>
-        </div>
-        <p class="small" style="margin:6px 0 10px">Ø ${fmtBig(Math.round(NS.kcal))} kcal${NS.need ? ` (Bedarf ca. ${fmtBig(NS.need)})` : ""} an ${NS.n} vollständig erfassten Tag${NS.n === 1 ? "" : "en"} der letzten Woche</p>
-        ${macro}` : `<p class="muted small">Für den Score braucht es mindestens einen vollständig erfassten Tag (ab 1.000 kcal) in der letzten Woche.</p>`}
-        <div class="hbars hk">${all7.map((x) => `<div title="${x.kcal ? Math.round(x.kcal) + " kcal" : "nicht erfasst"}"><span style="height:${x.kcal ? Math.max(3, (x.kcal / maxK) * 100) : 0}%"></span><em>${WD_SHORT[parseIso(x.d).getDay()]}</em></div>`).join("")}</div>
-        ${todayMeals.length ? `<p class="small" style="margin:10px 0 0"><strong>Heute:</strong> ${todayMeals.map((m) => esc(m.name || m.meal)).join(", ")} · ${Math.round(todaySum)} kcal</p>` : ""}`;
+      const T = nutriTargets(), FW = foodWeek(nd7);
+      const sc = (v) => v >= 75 ? "var(--s3)" : v >= 50 ? "#d9a400" : "var(--s2)";
+      const ringBox = (v, name) => `<div class="nring">${v === null ? `<div class="hringw nnone">–</div>` : `<div class="hringw">${ring(v / 100, sc(v), String(v))}</div>`}<b>${name}</b></div>`;
+      const avgOf = (k) => { const xs = nd7.map((x) => x[k]).filter((v) => v !== null && v !== undefined); return xs.length ? mean(xs) : null; };
+      const E = { p: avgOf("p"), kh: avgOf("kh"), f: avgOf("f"), gs: avgOf("gs"), z: avgOf("z"), bs: avgOf("bs") };
+      const days7 = Array.from({ length: 7 }, (_, i) => { const d = addDays(t, i - 6); return { d, kcal: hv("nahrung_kcal", d) }; });
+      const maxK = Math.max(T.kcal ? T.kcal.hi * 1.1 : 2500, ...days7.map((x) => x.kcal || 0));
+      const kcol = (x) => x.d === t || !x.kcal || x.kcal < 1000 ? "var(--line)" : !T.kcal ? "var(--ink)" : nutriState(T.kcal, x.kcal, false) === "ok" ? "var(--s3)" : "var(--danger)";
+      const kcalSec = `<div class="nsec"><span>Kalorien</span><span>${NS ? `Ø ${nfb(NS.kcal)}` : ""}${T.kcal ? ` · Ziel ${nr10(T.kcal.lo)}–${nr10(T.kcal.hi)}` : ""}</span></div>
+        <div class="nkcols">${days7.map((x) => `<div title="${x.kcal ? Math.round(x.kcal) + " kcal" : "nicht erfasst"}"><span style="height:${x.kcal ? Math.max(4, (x.kcal / maxK) * 100) : 0}%;background:${kcol(x)}"></span><em>${WD_SHORT[parseIso(x.d).getDay()]}</em></div>`).join("")}</div>`;
+      const fmtP = (x) => fmtNum(Math.round(x * 10) / 10);
+      const foodSec = !FW ? `<div class="nsec"><span>Lebensmittel</span></div><p class="muted small" style="margin:0">Startet mit den ersten Mahlzeiten, bei denen Claude die Portionen (Gemüse, Obst, Vollkorn …) mit einträgt.</p>`
+        : !FW.n ? `<div class="nsec"><span>Lebensmittel</span></div><p class="muted small" style="margin:0">Ab dem ersten vollständig erfassten Tag mit Portionen (seit ${shortDate(FW.start)}).</p>`
+        : (() => {
+          const rows = FW.rows.map((r) => {
+            const st = nutriState(r.t, r.x, false), goal = r.t.t === "cap" ? `max ${r.unit === "g" ? nfb(r.t.hi) : fmtP(r.t.hi)}` : fmtP(r.t.lo);
+            return `<div class="nfood" data-fg="${r.k}"><span class="l">${r.label}${r.k === "fl" && FW.wu ? `<small>davon Wurst ${nfb(FW.wu)} g</small>` : ""}</span>${nutriBar(r.t, r.x, st, "tb")}<span class="r ${st}">${r.unit === "g" ? nfb(r.x) : fmtP(r.x)}<small> / ${goal}${r.unit === "g" ? " g" : ""}</small></span></div>`;
+          }).join("");
+          const top = FW.rows.filter((r) => r.pts < 10).sort((a, b) => a.pts - b.pts).slice(0, 2);
+          const tip = top.length ? `<p class="nhint"><b>Am meisten drin:</b> ${top.map((r) => r.t.t === "min" ? `${r.label} (+${fmtP(r.gap)} ${r.unit === "Port." ? "Portionen" : r.unit})` : `weniger ${r.label} (−${r.unit === "g" ? nfb(r.gap) + " g" : fmtP(r.gap) + " " + r.unit})`).join(", ")}</p>` : "";
+          return `<div class="nsec"><span>Lebensmittel</span><span>Portionen · ${FW.n} Tag${FW.n === 1 ? "" : "e"}</span></div>${rows}${tip}`;
+        })();
+      return `<div class="nut">
+        <div class="nrings">${ringBox(NS ? NS.score : null, "Nährstoffe")}${ringBox(FW && FW.n ? FW.score : null, "Lebensmittel")}</div>
+        ${NS ? `<div class="nsec"><span>Ø pro Tag</span><span>${NS.n} vollständige${NS.n === 1 ? "r" : ""} Tag${NS.n === 1 ? "" : "e"}</span></div>${nutriTiles(T, E, false)}`
+          : `<p class="muted small" style="margin:10px 0 0">Für die Auswertung braucht es mindestens einen vollständig erfassten Tag (ab 1.000 kcal) in den letzten 7 Tagen bis gestern.</p>`}
+        ${kcalSec}
+        ${foodSec}
+      </div>`;
     })();
 
   // Fitness (VO₂max)
@@ -499,6 +509,9 @@ const SRC = {
   whooprec: ["Whoop: Wie Recovery funktioniert", "https://www.whoop.com/au/en/thelocker/how-does-whoop-recovery-work-101/"],
   oura: ["Oura: Readiness Score", "https://ouraring.com/blog/readiness-score/"],
   garmin: ["Garmin/Firstbeat: Body Battery und Stress", "https://the5krunner.com/garmin-features/sleep/body-battery/"],
+  dge2024: ["DGE 2024 – Gut essen und trinken: lebensmittelbezogene Empfehlungen (Mengen und Portionen)", "https://ernaehrung.de/wp-content/uploads/pdf/patinfo/de/patienteninfo-gut-essen-und-trinken-die-dge-empfehlungen.pdf"],
+  efsa: ["EFSA 2010 – Referenzwerte: Kohlenhydrate 45–60 %, Fett 20–35 % der Energie", "https://www.efsa.europa.eu/en/press/news/nda100326"],
+  aune: ["Aune et al. 2016, BMJ – Vollkorn und Herz-Kreislauf-Erkrankungen, Krebs, Sterblichkeit (Dosis-Wirkungs-Metaanalyse)", "https://pmc.ncbi.nlm.nih.gov/articles/PMC4908315/"],
   hooper: ["Hooper et al. 2020, Cochrane – Weniger gesättigte Fettsäuren und Herz-Kreislauf-Erkrankungen", "https://www.cochrane.org/evidence/CD011737"],
   reynolds: ["Reynolds et al. 2019, Lancet – Kohlenhydratqualität, Ballaststoffe und Gesundheit (Metaanalysen)", "https://www.sciencedaily.com/releases/2019/01/190110184737.htm"],
   dge: ["DGE – Referenzwerte für die Nährstoffzufuhr (Protein 0,8 g/kg, Ballaststoffe 30 g, Fett 30–35 % der Energie)", "https://www.dge.de/wissenschaft/referenzwerte/"],
@@ -567,19 +580,30 @@ const HINFO = {
     <p>Regelmäßigkeit ist laut UK-Biobank-Studie ein stärkerer Hinweis auf das Sterberisiko als die Schlafdauer.</p>
     ${src("windred", "cappuccio", "oura")}`],
   nutri: ["Ernährung", `
-    <p>Grundlage sind die Mahlzeiten, die Claude aus deinen Fotos schätzt und in Notion „Mahlzeiten“ einträgt. Gewertet werden nur <strong>vollständig erfasste Tage</strong> (ab 1.000 kcal) der letzten 7 Tage – ein Tag mit nur einem Foto würde sonst alles verzerren.</p>
-    <p><strong>Ernährungs-Score</strong> (0–100) = Summe aus vier Teilen à 25 Punkten, aus den Ø-Werten:</p>
+    <p>Grundlage sind die Mahlzeiten, die Claude aus deinen Fotos schätzt und in Notion „Mahlzeiten“ einträgt. Gewertet werden nur <strong>vollständig erfasste Tage</strong> (ab 1.000 kcal) der letzten 7 Tage bis gestern – ein Tag mit nur einem Foto würde sonst alles verzerren.</p>
+    <p><strong>Nährstoffe</strong> (0–100) = Summe aus vier Teilen à 25 Punkten, aus den Ø-Werten pro Tag:</p>
     <ul class="hul">
       <li><strong>Ballaststoffe</strong>: 25 · min(1, g / 30). Ziel 30 g (DGE).</li>
       <li><strong>Protein</strong>: 25 · min(1, g / (0,8 · Bezugsgewicht)). Bezugsgewicht = Gewicht aus Apple Health (sonst aus dem Profil), höchstens das Gewicht bei BMI 25 (25 · Größe²); ohne Gewicht das Normalgewicht bei BMI 22 aus der Körpergröße (Profil); ohne beides 25 · min(1, Anteil an der Energie / 15 %).</li>
       <li><strong>Zucker</strong>: Anteil a = 4 · g / kcal; bis 10 % volle 25 Punkte, ab 20 % keine, dazwischen linear: 25 · (0,20 − a) / 0,10. Gezählt wird aller Zucker (auch aus Obst), die WHO-Grenze von 10 % gilt für freien Zucker – deshalb die großzügigere Spanne bis 20 %.</li>
       <li><strong>Fettqualität</strong>: Anteil der gesättigten Fettsäuren a = 9 · g / kcal; bis 10 % volle 25 Punkte, ab 15 % keine, dazwischen linear: 25 · (0,15 − a) / 0,05. Die Fettmenge selbst wird nicht bewertet: Entscheidend ist die Art des Fetts – ungesättigte Fette (Nüsse, Olivenöl, Raps, Fisch) statt gesättigter (Butter, Käse, Sahne, Fleisch, Wurst, Kokos, Palmfett). Weniger gesättigte Fettsäuren senkten in Studien Herz-Kreislauf-Ereignisse um etwa 17 % (RR 0,83), die Sterblichkeit kaum (Hooper 2020, Cochrane). Gezählt werden nur Tage, an denen die gesättigten Fettsäuren bei allen Mahlzeiten mit Fett erfasst sind.</li>
     </ul>
-    <p><strong>Bedarf</strong> (nur zur Einordnung): Grundumsatz nach Mifflin-St Jeor = 10 · kg + 6,25 · cm − 5 · Alter + 5 (Männer) bzw. − 161 (Frauen), mal 1,5 für einen mäßig aktiven Alltag.</p>
-    <p>Fehlt ein Teil, wird der Score aus den übrigen hochgerechnet. Der Balken zeigt die Energie-Anteile: Protein und Kohlenhydrate je 4 kcal/g, Fett 9 kcal/g.</p>
+    <p>Fehlt ein Teil, wird der Score aus den übrigen hochgerechnet.</p>
+    <p><strong>Kacheln „Ø pro Tag“</strong>: grün = Ziel erreicht bzw. im Rahmen, rot = verfehlt bzw. zu viel. Ziele aus deinem Bedarf: Kohlenhydrate 45–60 % und Fett 20–35 % der Energie (EFSA), Zucker und gesättigte Fettsäuren je höchstens 10 %, Protein 0,8 g/kg, Ballaststoffe 30 g. Kalorien: Bedarf ± 10 %.</p>
+    <p><strong>Bedarf</strong>: Grundumsatz nach Mifflin-St Jeor = 10 · kg + 6,25 · cm − 5 · Alter + 5 (Männer) bzw. − 161 (Frauen), mal 1,5 für einen mäßig aktiven Alltag.</p>
+    <p><strong>Lebensmittel</strong> (0–100) = Ø der Punkte (je 0–10) aus neun Gruppen, Portionen der vollständig erfassten Tage. Wochenziele für 7 Tage, bei weniger Tagen anteilig (5 Tage → 5/7):</p>
+    <ul class="hul">
+      <li><strong>Gemüse</strong> ≥ 21 Portionen à 110 g (3 am Tag), <strong>Obst</strong> ≥ 14 à 110 g (2 am Tag) – DGE 2024.</li>
+      <li><strong>Vollkorn</strong> ≥ 21 Portionen à 30 g Vollkornprodukt (3 am Tag): 90 g am Tag gingen mit 17 % geringerer Sterblichkeit und 22 % weniger Herz-Kreislauf-Erkrankungen einher (Aune 2016, BMJ).</li>
+      <li><strong>Milchprodukte</strong> ≥ 14 Portionen (2 am Tag: 250 g Milch, 150 g Joghurt oder 30 g Käse) – DGE 2024.</li>
+      <li><strong>Hülsenfrüchte</strong> ≥ 1 Portion à 125 g gegart, <strong>Fisch</strong> ≥ 1 Portion à 120 g (DGE: 1–2), <strong>Nüsse</strong> ≥ 7 Portionen à 25 g (eine Handvoll am Tag) – DGE 2024.</li>
+      <li><strong>Fleisch & Wurst</strong> höchstens 300 g pro Woche (DGE 2024): volle Punkte bis 300 g, keine ab 600 g, linear dazwischen.</li>
+      <li><strong>Zuckergetränke</strong> (inkl. Saft, je 250 ml) meiden (DGE): volle Punkte bis 2 Gläser pro Woche, keine ab 7 (eines am Tag).</li>
+    </ul>
+    <p>Mindestziele: 10 · min(1, Portionen / Ziel). Ältere Mahlzeiten ohne Portionen zählen nicht mit – die Auswertung beginnt mit dem ersten Tag, an dem Portionen erfasst sind. „Am meisten drin“ nennt die zwei Gruppen mit den meisten verschenkten Punkten.</p>
     <p><strong>Im Mosaik-Alter</strong> zählen die Ballaststoffe mit (halb gewichtet, ab 7 vollständig erfassten Tagen): 25–29 g am Tag gingen in der großen Lancet-Auswertung mit etwa 15 % geringerem Sterberisiko einher als wenig Ballaststoffe; Bezug sind 18 g.</p>
     <p class="muted small">Genauigkeit: Fotos werden je Mahlzeit typischerweise um 20–30 % verschätzt (Portionsgröße, Öl, Soßen). Ein Satz zum Foto oder ein Rezept aus Notion macht es genauer; für Trends über Wochen reicht es gut.</p>
-    ${src("dge", "who", "reynolds", "hooper", "mealai")}`],
+    ${src("dge", "dge2024", "efsa", "who", "hooper", "aune", "reynolds", "mealai")}`],
   fit: ["Fitness", `
     <p>VO₂max ist die maximale Sauerstoffaufnahme – das beste Einzelmaß für Ausdauerfitness. Die Apple Watch schätzt sie als „Cardiofitness“ beim Gehen oder Laufen draußen.</p>
     <p><strong>Vergleich:</strong> Median der FRIEND-Normwerte (Laufband-Tests, 2022) für dein Alter und Geschlecht. <strong>Fitness-Alter:</strong> das Alter, in dem dein Wert dem Median entspricht.</p>

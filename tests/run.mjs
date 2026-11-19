@@ -763,7 +763,9 @@ test("Mahlzeiten aus Notion: Tagessummen als Felder, Karte unter „Tag“, Korr
   // in Notion korrigiert (halbe Portion) und Frühstück gelöscht
   // Gesundheit: Karte „Ernährung“ (heute zählt nicht für den Score, daher nur Hinweis + „Heute“)
   await page.click('[data-tab="health"]');
-  assert.match(await page.locator('[data-hk="nutri"]').innerText(), /Heute:[\s\S]*Haferflocken[\s\S]*1140 kcal/);
+  // nur heute erfasst → noch keine Auswertung, aber beide Scores als Platzhalter und der Hinweis zu den Lebensmitteln
+  const hk = await page.locator('[data-hk="nutri"]').innerText();
+  assert.match(hk, /Nährstoffe[\s\S]*Lebensmittel[\s\S]*vollständig erfassten Tag/);
   const sc = await page.evaluate(() => nutriScore([{ d: "x", kcal: 2000, p: 75, kh: 250, z: 50, f: 70, gs: 20, bs: 30 }]));
   assert.equal(sc.score, 100);
   // viel Fett, aber überwiegend ungesättigt (Nüsse, Olivenöl): 9 · 15 / 2000 = 6,75 % gesättigt → volle Punkte
@@ -1503,6 +1505,37 @@ test("Vorlage „Unverträglichkeiten“: eine Kachel mit Verdacht bzw. keiner",
   // ohne Auffälligkeit
   await page.evaluate((ids) => { for (const d of Object.keys(state.answers)) state.answers[d][ids["intol-belly"]] = "Nein"; save(); renderAnalysis(); }, ids);
   assert.match(await page.locator(".intol").innerText(), /Keine Unverträglichkeit erkannt/);
+  assert.deepEqual(errors, []);
+  await ctx.close();
+});
+
+test("Ernährung unter Gesundheit: Lebensmittelgruppen mit Wochenzielen (anteilig) und Score", async () => {
+  const { page, ctx, errors } = await open({ data: { version: 1, lastBackup: null, answers: {}, questions: [] }, settings: { token: "t" } });
+  const meals = await page.evaluate(() => {
+    const T = todayIso(), D = (i) => addDays(T, -i), out = [];
+    // gestern und vorgestern vollständig mit Portionen; vor 3 Tagen vollständig, aber ohne Portionen (älter als der Start)
+    for (const i of [1, 2]) out.push({ id: "a" + i, name: "A", when: `${D(i)}T12:00:00.000+01:00`, kcal: 2400, p: 90, kh: 300, z: 50, f: 80, gs: 20, bs: 30,
+      gm: 3, ob: 1, vk: 3, mi: 2, hf: i === 1 ? 1 : 0, nu: 0, fi: 0, fl: 150, wu: 60, sg: 1 });
+    out.push({ id: "o", name: "Alt", when: `${D(3)}T12:00:00.000+01:00`, kcal: 2400, p: 90, kh: 300, z: 50, f: 80, gs: 20, bs: 30 });
+    return out;
+  });
+  await page.route(/notion\/meals/, (r) => r.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ meals }) }));
+  const FW = await page.evaluate(async () => { await syncMeals(true); return foodWeek(nutriDays(7, addDays(todayIso(), -1))); });
+  // 2 Tage → Ziele · 2/7: Gemüse 21 · 2/7 = 6 (gegessen 6 → 10 Punkte), Obst 14 · 2/7 = 4 (2 → 5), Vollkorn 6 (6 → 10),
+  // Milch 4 (4 → 10), Hülsenfrüchte 2/7 ≈ 0,29 (1 → 10), Nüsse 2 (0 → 0), Fisch 0,29 (0 → 0),
+  // Fleisch 300 g · 2/7 ≈ 85,7 bis 171,4 (300 → 0), Zuckergetränke 0,57 bis 2 (2 → 0)
+  assert.equal(FW.n, 2);
+  const pts = Object.fromEntries(FW.rows.map((r) => [r.k, Math.round(r.pts * 10) / 10]));
+  assert.deepEqual(pts, { gm: 10, ob: 5, vk: 10, mi: 10, hf: 10, nu: 0, fi: 0, fl: 0, sg: 0 });
+  assert.equal(FW.score, Math.round(45 / 9 * 10)); // (10 + 5 + 10 + 10 + 10) / 9 · 10 = 50
+  assert.equal(FW.wu, 120);
+  await page.click('[data-tab="health"]');
+  const hk = await page.locator('[data-hk="nutri"]').innerText();
+  assert.match(hk, /50[\s\S]*Lebensmittel/);
+  assert.match(hk, /Am meisten drin:/);
+  assert.equal(await page.locator('[data-hk="nutri"] [data-fg="gm"] .r.ok').count(), 1);
+  assert.equal(await page.locator('[data-hk="nutri"] [data-fg="fl"] .r.bad').count(), 1);
+  assert.match(await page.locator('[data-hk="nutri"] [data-fg="fl"]').innerText(), /davon Wurst 120 g/);
   assert.deepEqual(errors, []);
   await ctx.close();
 });
