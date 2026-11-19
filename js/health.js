@@ -104,7 +104,7 @@ function nutriDays(n, bis = todayIso(), minKcal = 1000) {
   for (let i = 0; i < n; i++) {
     const d = addDays(bis, -i), kcal = hv("nahrung_kcal", d);
     if (kcal === null || kcal < minKcal) continue;
-    out.push({ d, kcal, p: hv("protein", d), kh: hv("kohlenhydrate", d), z: hv("zucker", d), f: hv("fett", d), bs: hv("ballaststoffe", d) });
+    out.push({ d, kcal, p: hv("protein", d), kh: hv("kohlenhydrate", d), z: hv("zucker", d), f: hv("fett", d), gs: hv("fett_gesaettigt", d), bs: hv("ballaststoffe", d) });
   }
   return out;
 }
@@ -113,6 +113,10 @@ function nutriScore(days) {
   if (!days.length) return null;
   const avg = (k) => { const xs = days.map((x) => x[k]).filter((v) => v !== null); return xs.length ? mean(xs) : null; };
   const kcal = avg("kcal"), p = avg("p"), z = avg("z"), f = avg("f"), bs = avg("bs");
+  // Fettqualität: nur Tage, an denen die gesättigten Fettsäuren erfasst sind; Anteil an der Energie dieser Tage
+  const gsDays = days.filter((x) => x.gs !== null && x.gs !== undefined);
+  const gs = gsDays.length ? mean(gsDays.map((x) => x.gs)) : null, gsK = gsDays.length ? mean(gsDays.map((x) => x.kcal)) : null;
+  const fU = gsDays.length ? mean(gsDays.map((x) => (x.f || 0) - x.gs)) : null;
   // Protein-Ziel (DGE 0,8 g/kg) bezogen auf das Normalgewicht: bei Übergewicht zählt höchstens das Gewicht bei BMI 25,
   // ohne gemessenes Gewicht das Gewicht bei BMI 22 aus der Körpergröße
   const kgM = hvals("gewicht", 120)[0] || PROFILE().weight || null, hM = PROFILE().height ? PROFILE().height / 100 : null;
@@ -123,7 +127,9 @@ function nutriScore(days) {
     { k: "p", label: "Protein", val: p, pts: p === null ? null : 25 * clamp(pTarget ? p / pTarget : (p * 4) / kcal / 0.15, 0, 1),
       txt: p === null ? "–" : `Ø ${Math.round(p)} g${kg ? ` · ${fmtNum(Math.round((p / kg) * 10) / 10)} g/kg (Ziel 0,8)` : ` · ${Math.round(((p * 4) / kcal) * 100)} % der Energie (Ziel 15 %)`}` },
     { k: "z", label: "Zucker", val: z, pts: z === null ? null : 25 * clamp((0.2 - (z * 4) / kcal) / 0.1, 0, 1), txt: z === null ? "–" : `Ø ${Math.round(z)} g · ${Math.round(((z * 4) / kcal) * 100)} % der Energie` },
-    { k: "f", label: "Fett", val: f, pts: f === null ? null : 25 * clamp((0.45 - (f * 9) / kcal) / 0.1, 0, 1), txt: f === null ? "–" : `Ø ${Math.round(f)} g · ${Math.round(((f * 9) / kcal) * 100)} % der Energie` }
+    // gesättigte Fettsäuren: bis 10 % der Energie volle Punkte (DGE/WHO), ab 15 % keine, dazwischen linear
+    { k: "gs", label: "Fettqualität", val: gs, pts: gs === null ? null : 25 * clamp((0.15 - (gs * 9) / gsK) / 0.05, 0, 1),
+      txt: gs === null ? "gesättigte Fettsäuren noch nicht erfasst" : `gesättigt Ø ${Math.round(gs)} g · ${Math.round(((gs * 9) / gsK) * 100)} % der Energie (Ziel ≤ 10 %) · ungesättigt ${Math.round(fU)} g` }
   ];
   const have = parts.filter((x) => x.pts !== null);
   if (!have.length) return null;
@@ -471,6 +477,7 @@ const SRC = {
   whooprec: ["Whoop: Wie Recovery funktioniert", "https://www.whoop.com/au/en/thelocker/how-does-whoop-recovery-work-101/"],
   oura: ["Oura: Readiness Score", "https://ouraring.com/blog/readiness-score/"],
   garmin: ["Garmin/Firstbeat: Body Battery und Stress", "https://the5krunner.com/garmin-features/sleep/body-battery/"],
+  hooper: ["Hooper et al. 2020, Cochrane – Weniger gesättigte Fettsäuren und Herz-Kreislauf-Erkrankungen", "https://www.cochrane.org/evidence/CD011737"],
   reynolds: ["Reynolds et al. 2019, Lancet – Kohlenhydratqualität, Ballaststoffe und Gesundheit (Metaanalysen)", "https://www.sciencedaily.com/releases/2019/01/190110184737.htm"],
   dge: ["DGE – Referenzwerte für die Nährstoffzufuhr (Protein 0,8 g/kg, Ballaststoffe 30 g, Fett 30–35 % der Energie)", "https://www.dge.de/wissenschaft/referenzwerte/"],
   who: ["WHO 2015 – Zuckeraufnahme bei Erwachsenen und Kindern (freier Zucker unter 10 % der Energie)", "https://www.who.int/publications/i/item/9789241549028"],
@@ -544,13 +551,13 @@ const HINFO = {
       <li><strong>Ballaststoffe</strong>: 25 · min(1, g / 30). Ziel 30 g (DGE).</li>
       <li><strong>Protein</strong>: 25 · min(1, g / (0,8 · Bezugsgewicht)). Bezugsgewicht = Gewicht aus Apple Health (sonst aus dem Profil), höchstens das Gewicht bei BMI 25 (25 · Größe²); ohne Gewicht das Normalgewicht bei BMI 22 aus der Körpergröße (Profil); ohne beides 25 · min(1, Anteil an der Energie / 15 %).</li>
       <li><strong>Zucker</strong>: Anteil a = 4 · g / kcal; bis 10 % volle 25 Punkte, ab 20 % keine, dazwischen linear: 25 · (0,20 − a) / 0,10. Gezählt wird aller Zucker (auch aus Obst), die WHO-Grenze von 10 % gilt für freien Zucker – deshalb die großzügigere Spanne bis 20 %.</li>
-      <li><strong>Fett</strong>: Anteil a = 9 · g / kcal; bis 35 % volle Punkte, ab 45 % keine, linear dazwischen (DGE: 30–35 %).</li>
+      <li><strong>Fettqualität</strong>: Anteil der gesättigten Fettsäuren a = 9 · g / kcal; bis 10 % volle 25 Punkte, ab 15 % keine, dazwischen linear: 25 · (0,15 − a) / 0,05. Die Fettmenge selbst wird nicht bewertet: Entscheidend ist die Art des Fetts – ungesättigte Fette (Nüsse, Olivenöl, Raps, Fisch) statt gesättigter (Butter, Käse, Sahne, Fleisch, Wurst, Kokos, Palmfett). Weniger gesättigte Fettsäuren senkten in Studien Herz-Kreislauf-Ereignisse um etwa 17 % (RR 0,83), die Sterblichkeit kaum (Hooper 2020, Cochrane). Gezählt werden nur Tage, an denen die gesättigten Fettsäuren bei allen Mahlzeiten mit Fett erfasst sind.</li>
     </ul>
     <p><strong>Bedarf</strong> (nur zur Einordnung): Grundumsatz nach Mifflin-St Jeor = 10 · kg + 6,25 · cm − 5 · Alter + 5 (Männer) bzw. − 161 (Frauen), mal 1,5 für einen mäßig aktiven Alltag.</p>
     <p>Fehlt ein Teil, wird der Score aus den übrigen hochgerechnet. Der Balken zeigt die Energie-Anteile: Protein und Kohlenhydrate je 4 kcal/g, Fett 9 kcal/g.</p>
     <p><strong>Im Mosaik-Alter</strong> zählen die Ballaststoffe mit (halb gewichtet, ab 7 vollständig erfassten Tagen): 25–29 g am Tag gingen in der großen Lancet-Auswertung mit etwa 15 % geringerem Sterberisiko einher als wenig Ballaststoffe; Bezug sind 18 g.</p>
     <p class="muted small">Genauigkeit: Fotos werden je Mahlzeit typischerweise um 20–30 % verschätzt (Portionsgröße, Öl, Soßen). Ein Satz zum Foto oder ein Rezept aus Notion macht es genauer; für Trends über Wochen reicht es gut.</p>
-    ${src("dge", "who", "reynolds", "mealai")}`],
+    ${src("dge", "who", "reynolds", "hooper", "mealai")}`],
   fit: ["Fitness", `
     <p>VO₂max ist die maximale Sauerstoffaufnahme – das beste Einzelmaß für Ausdauerfitness. Die Apple Watch schätzt sie als „Cardiofitness“ beim Gehen oder Laufen draußen.</p>
     <p><strong>Vergleich:</strong> Median der FRIEND-Normwerte (Laufband-Tests, 2022) für dein Alter und Geschlecht. <strong>Fitness-Alter:</strong> das Alter, in dem dein Wert dem Median entspricht.</p>

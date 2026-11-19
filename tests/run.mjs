@@ -734,12 +734,13 @@ test("Mahlzeiten aus Notion: Tagessummen als Felder, Karte unter „Tag“, Korr
   const today = await page.evaluate(() => todayIso());
   let meals = [
     { id: "m1", name: "Haferflocken mit Beeren", when: `${today}T08:10:00.000+01:00`, meal: "Frühstück", kcal: 420, p: 15, kh: 62, z: 14, f: 11, bs: 8, basis: "Foto", note: "" },
-    { id: "m2", name: "Curry mit Reis", when: `${today}T19:30:00.000+01:00`, meal: "Abend", kcal: 720, p: 24, kh: 98, z: 9, f: 24, bs: 8, basis: "Foto + Beschreibung", note: "1 EL Öl angenommen" }
+    { id: "m2", name: "Curry mit Reis", when: `${today}T19:30:00.000+01:00`, meal: "Abend", kcal: 720, p: 24, kh: 98, z: 9, f: 24, gs: 6, bs: 8, basis: "Foto + Beschreibung", note: "1 EL Öl angenommen" }
   ];
   await page.route(/notion\/meals/, (r) => r.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ meals }) }));
   await page.evaluate(() => syncMeals(true));
-  const r1 = await page.evaluate((d) => { const q = (k) => state.questions.find((x) => x.healthKey === k); return { kcal: state.answers[d][q("nahrung_kcal").id], p: state.answers[d][q("protein").id], theme: q("protein").theme }; }, today);
-  assert.deepEqual(r1, { kcal: 1140, p: 39, theme: "food" });
+  const r1 = await page.evaluate((d) => { const q = (k) => state.questions.find((x) => x.healthKey === k); return { kcal: state.answers[d][q("nahrung_kcal").id], p: state.answers[d][q("protein").id], gs: state.answers[d][q("fett_gesaettigt").id], theme: q("protein").theme }; }, today);
+  // gesättigte Fettsäuren fehlen beim Frühstück (älterer Eintrag) → kein Tageswert statt einer zu kleinen Summe
+  assert.deepEqual(r1, { kcal: 1140, p: 39, gs: undefined, theme: "food" });
   await page.evaluate(() => { current = todayIso(); tab = "day"; render(); });
   const card = await page.locator(".mealcard").innerText();
   assert.match(card, /08:10[\s\S]*Haferflocken[\s\S]*19:30[\s\S]*Curry[\s\S]*1140 kcal/);
@@ -748,14 +749,22 @@ test("Mahlzeiten aus Notion: Tagessummen als Felder, Karte unter „Tag“, Korr
   // Gesundheit: Karte „Ernährung“ (heute zählt nicht für den Score, daher nur Hinweis + „Heute“)
   await page.click('[data-tab="health"]');
   assert.match(await page.locator('[data-hk="nutri"]').innerText(), /Heute:[\s\S]*Haferflocken[\s\S]*1140 kcal/);
-  const sc = await page.evaluate(() => nutriScore([{ d: "x", kcal: 2000, p: 75, kh: 250, z: 50, f: 70, bs: 30 }]));
+  const sc = await page.evaluate(() => nutriScore([{ d: "x", kcal: 2000, p: 75, kh: 250, z: 50, f: 70, gs: 20, bs: 30 }]));
   assert.equal(sc.score, 100);
-  const sc2 = await page.evaluate(() => nutriScore([{ d: "x", kcal: 2000, p: 70, kh: 250, z: 150, f: 100, bs: 15 }]));
-  // Ballaststoffe 12,5 · Protein 25 (15 % der Energie: 70·4/2000 = 14 % → 23,3) · Zucker 0 (30 %) · Fett 0 (45 %) → (12,5 + 23,3) · 4 / 4 ≈ 36
+  // viel Fett, aber überwiegend ungesättigt (Nüsse, Olivenöl): 9 · 15 / 2000 = 6,75 % gesättigt → volle Punkte
+  const scU = await page.evaluate(() => nutriScore([{ d: "x", kcal: 2000, p: 75, kh: 200, z: 50, f: 100, gs: 15, bs: 30 }]));
+  assert.equal(scU.parts.find((x) => x.k === "gs").pts, 25);
+  // 12,5 % gesättigt → 25 · (0,15 − 0,125) / 0,05 = 12,5
+  const scS = await page.evaluate(() => nutriScore([{ d: "x", kcal: 2000, p: 75, kh: 200, z: 50, f: 60, gs: 27.78, bs: 30 }]));
+  assert.ok(Math.abs(scS.parts.find((x) => x.k === "gs").pts - 12.5) < 0.1);
+  const sc2 = await page.evaluate(() => nutriScore([{ d: "x", kcal: 2000, p: 70, kh: 250, z: 150, f: 100, gs: 40, bs: 15 }]));
+  // Ballaststoffe 12,5 · Protein 25 (15 % der Energie: 70·4/2000 = 14 % → 23,3) · Zucker 0 (30 %) · Fettqualität 0 (18 % gesättigt) → (12,5 + 23,3) · 4 / 4 ≈ 36
   assert.equal(sc2.score, 36);
   meals = [{ ...meals[1], kcal: 360, p: 12 }];
   await page.evaluate(() => syncMeals(true));
   assert.equal(await page.evaluate((d) => state.answers[d][state.questions.find((x) => x.healthKey === "nahrung_kcal").id], today), 360);
+  // jetzt haben alle Mahlzeiten mit Fett einen Wert → Tagessumme
+  assert.equal(await page.evaluate((d) => state.answers[d][state.questions.find((x) => x.healthKey === "fett_gesaettigt").id], today), 6);
   assert.deepEqual(errors, []);
   await ctx.close();
 });

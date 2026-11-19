@@ -169,7 +169,7 @@ const HEALTH_NAMES = {
   achtsamkeit: ["Achtsamkeitsminuten", "min"], stockwerke: ["Stockwerke", ""],
   vo2max: ["VO₂max", "ml/kg/min"], atemfrequenz: ["Atemfrequenz", "/min"],
   // Ernährung (Tagessummen aus der Notion-Datenbank „Mahlzeiten“)
-  nahrung_kcal: ["Kalorien (Essen)", "kcal"], protein: ["Protein", "g"], kohlenhydrate: ["Kohlenhydrate", "g"], zucker: ["Zucker", "g"], fett: ["Fett", "g"], ballaststoffe: ["Ballaststoffe", "g"]
+  nahrung_kcal: ["Kalorien (Essen)", "kcal"], protein: ["Protein", "g"], kohlenhydrate: ["Kohlenhydrate", "g"], zucker: ["Zucker", "g"], fett: ["Fett", "g"], fett_gesaettigt: ["Gesättigte Fettsäuren", "g"], ballaststoffe: ["Ballaststoffe", "g"]
 };
 // Tagesverläufe für den Bereich Gesundheit (keine eigenen Felder): Puls, Schritte je Stunde, Trainingszeiten
 const HEALTH_SERIES = ["puls_serie", "schrittez_serie", "workouts"];

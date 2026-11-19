@@ -594,7 +594,7 @@ async function handle(request, env) {
           id: pg.id, name: txt(P.Name), when,
           meal: P.Mahlzeit && P.Mahlzeit.select ? P.Mahlzeit.select.name : "",
           kcal: num(P.kcal), p: num(P["Protein (g)"]), kh: num(P["Kohlenhydrate (g)"]), z: num(P["Zucker (g)"]),
-          f: num(P["Fett (g)"]), bs: num(P["Ballaststoffe (g)"]),
+          f: num(P["Fett (g)"]), gs: num(P["Gesättigte Fettsäuren (g)"]), bs: num(P["Ballaststoffe (g)"]),
           basis: P.Grundlage && P.Grundlage.select ? P.Grundlage.select.name : "", note: txt(P.Notiz)
         });
       }

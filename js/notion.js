@@ -105,7 +105,7 @@ if (syncRecipeQuestions()) save();
    Mosaik holt die Einträge über den Dienst (/notion/meals), speichert sie je Tag und bildet Tagessummen
    als automatische Felder (wie Apple Health) – damit gibt es Analyse, Ziele, Wochenbericht und Excel. */
 const NUTRI = [["nahrung_kcal", "kcal", "Kalorien (Essen)", "kcal"], ["protein", "p", "Protein", "g"], ["kohlenhydrate", "kh", "Kohlenhydrate", "g"],
-  ["zucker", "z", "Zucker", "g"], ["fett", "f", "Fett", "g"], ["ballaststoffe", "bs", "Ballaststoffe", "g"]];
+  ["zucker", "z", "Zucker", "g"], ["fett", "f", "Fett", "g"], ["fett_gesaettigt", "gs", "Gesättigte Fettsäuren", "g"], ["ballaststoffe", "bs", "Ballaststoffe", "g"]];
 const NUTRI_KEYS = NUTRI.map((x) => x[0]);
 const isNutriQ = (q) => q && q.source === "health" && NUTRI_KEYS.includes(q.healthKey);
 const mealStore = () => (state.meals && typeof state.meals === "object" ? state.meals : (state.meals = { items: {}, since: "" }));
@@ -148,7 +148,9 @@ async function syncMeals(manual) {
           const q = qs[i] || qs.find((x) => x.healthKey === key);
           if (!q) return;
           const vals = ms.map((m) => m[f]).filter((v) => typeof v === "number");
-          if (vals.length) a[q.id] = Math.round(vals.reduce((x, y) => x + y, 0) * 10) / 10;
+          // gesättigte Fettsäuren nur, wenn jede Mahlzeit mit Fett einen Wert hat (ältere Einträge haben die Spalte nicht)
+          const partial = f === "gs" && ms.some((m) => typeof m.gs !== "number" && (m.f || 0) > 0);
+          if (vals.length && !partial) a[q.id] = Math.round(vals.reduce((x, y) => x + y, 0) * 10) / 10;
           else delete a[q.id];
         });
         if (!Object.keys(a).length) delete state.answers[d];
@@ -175,6 +177,6 @@ function mealsDayCard(day) {
   return `<section class="q mealcard">
     <p class="q-title">Ernährung <span class="muted small">aus Notion</span></p>
     ${ms.map((m) => `<div class="mrow"><span class="mt">${esc(hm(m.when))}</span><span class="mn">${esc(m.name || m.meal || "Mahlzeit")}${m.note ? `<small>${esc(m.note)}</small>` : ""}</span><span class="mk">${typeof m.kcal === "number" ? `${Math.round(m.kcal)} kcal` : ""}</span></div>`).join("")}
-    <div class="msum"><b>${sum("kcal")} kcal</b><span>Protein ${sum("p")} g</span><span>KH ${sum("kh")} g</span><span>Fett ${sum("f")} g</span><span>Ballaststoffe ${sum("bs")} g</span></div>
+    <div class="msum"><b>${sum("kcal")} kcal</b><span>Protein ${sum("p")} g</span><span>KH ${sum("kh")} g</span><span>Fett ${sum("f")} g${ms.some((m) => typeof m.gs === "number") ? ` (ges. ${sum("gs")} g)` : ""}</span><span>Ballaststoffe ${sum("bs")} g</span></div>
   </section>`;
 }
