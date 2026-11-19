@@ -595,9 +595,9 @@ async function handle(request, env) {
           meal: P.Mahlzeit && P.Mahlzeit.select ? P.Mahlzeit.select.name : "",
           kcal: num(P.kcal), p: num(P["Protein (g)"]), kh: num(P["Kohlenhydrate (g)"]), z: num(P["Zucker (g)"]),
           f: num(P["Fett (g)"]), gs: num(P["Gesättigte Fettsäuren (g)"]), bs: num(P["Ballaststoffe (g)"]),
-          // Lebensmittelgruppen (Portionen bzw. Gramm/Gläser)
-          gm: num(P["Gemüse (Port.)"]), ob: num(P["Obst (Port.)"]), vk: num(P["Vollkorn (Port.)"]), mi: num(P["Milchprodukte (Port.)"]),
-          hf: num(P["Hülsenfrüchte (Port.)"]), nu: num(P["Nüsse (Port.)"]), fi: num(P["Fisch (Port.)"]),
+          // Lebensmittelgruppen: Gramm (Milchprodukte in Portionen, Zuckergetränke in Gläsern)
+          gm: num(P["Gemüse (g)"]), ob: num(P["Obst (g)"]), vk: num(P["Vollkorn (g)"]), mi: num(P["Milchprodukte (Port.)"]),
+          hf: num(P["Hülsenfrüchte (g)"]), nu: num(P["Nüsse (g)"]), fi: num(P["Fisch (g)"]),
           fl: num(P["Fleisch & Wurst (g)"]), wu: num(P["davon Wurst (g)"]), sg: num(P["Zuckergetränke (Gläser)"]),
           basis: P.Grundlage && P.Grundlage.select ? P.Grundlage.select.name : "", note: txt(P.Notiz)
         });

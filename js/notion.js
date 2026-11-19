@@ -173,14 +173,15 @@ async function syncMeals(manual) {
    mind. 1 Portion à 125 g und Fisch 1–2 Portionen à 120 g pro Woche, Nüsse 25 g am Tag, Fleisch und Wurst max. 300 g pro Woche,
    zuckerhaltige Getränke meiden); Vollkorn 3 Portionen à 30 g am Tag (Aune 2016, BMJ). Punkte je Gruppe 0–10:
    Mindestziel 10 · min(1, x / Ziel); Obergrenze volle Punkte bis zur Grenze, 0 ab „zero“, linear dazwischen. */
+// In Notion stehen Gramm (g = Gramm je Portion); Milchprodukte direkt in Portionen (Milch, Joghurt und Käse lassen sich nicht in Gramm addieren).
 const FOOD = [
-  { k: "gm", label: "Gemüse", t: { t: "min", lo: 21 }, unit: "Port." },
-  { k: "ob", label: "Obst", t: { t: "min", lo: 14 }, unit: "Port." },
-  { k: "vk", label: "Vollkorn", t: { t: "min", lo: 21 }, unit: "Port." },
+  { k: "gm", label: "Gemüse", t: { t: "min", lo: 21 }, unit: "Port.", g: 110 },
+  { k: "ob", label: "Obst", t: { t: "min", lo: 14 }, unit: "Port.", g: 110 },
+  { k: "vk", label: "Vollkorn", t: { t: "min", lo: 21 }, unit: "Port.", g: 30 },
   { k: "mi", label: "Milchprodukte", t: { t: "min", lo: 14 }, unit: "Port." },
-  { k: "hf", label: "Hülsenfrüchte", t: { t: "min", lo: 1 }, unit: "Port." },
-  { k: "nu", label: "Nüsse", t: { t: "min", lo: 7 }, unit: "Port." },
-  { k: "fi", label: "Fisch", t: { t: "min", lo: 1 }, unit: "Port." },
+  { k: "hf", label: "Hülsenfrüchte", t: { t: "min", lo: 1 }, unit: "Port.", g: 125 },
+  { k: "nu", label: "Nüsse", t: { t: "min", lo: 7 }, unit: "Port.", g: 25 },
+  { k: "fi", label: "Fisch", t: { t: "min", lo: 1 }, unit: "Port.", g: 120 },
   { k: "fl", label: "Fleisch & Wurst", t: { t: "cap", hi: 300 }, zero: 600, unit: "g" },
   { k: "sg", label: "Zuckergetränke", t: { t: "cap", hi: 2 }, zero: 7, unit: "Gläser" }
 ];
@@ -195,7 +196,7 @@ function foodWeek(days) {
   const f = ds.length / 7, sum = {};
   for (const k of FOOD_KEYS) sum[k] = ds.reduce((t, d) => t + mealsOn(d).reduce((u, m) => u + (typeof m[k] === "number" ? m[k] : 0), 0), 0);
   const rows = FOOD.map((g) => {
-    const t = g.t.t === "cap" ? { t: "cap", hi: g.t.hi * f } : { t: "min", lo: g.t.lo * f }, x = sum[g.k];
+    const t = g.t.t === "cap" ? { t: "cap", hi: g.t.hi * f } : { t: "min", lo: g.t.lo * f }, x = g.g ? sum[g.k] / g.g : sum[g.k];
     const zero = g.zero ? g.zero * f : null;
     const pts = t.t === "min" ? 10 * clamp(x / t.lo, 0, 1) : x <= t.hi ? 10 : 10 * clamp((zero - x) / (zero - t.hi), 0, 1);
     // was fehlt bzw. zu viel ist (für den Hinweis)

@@ -1515,12 +1515,13 @@ test("Ernährung unter Gesundheit: Lebensmittelgruppen mit Wochenzielen (anteili
     const T = todayIso(), D = (i) => addDays(T, -i), out = [];
     // gestern und vorgestern vollständig mit Portionen; vor 3 Tagen vollständig, aber ohne Portionen (älter als der Start)
     for (const i of [1, 2]) out.push({ id: "a" + i, name: "A", when: `${D(i)}T12:00:00.000+01:00`, kcal: 2400, p: 90, kh: 300, z: 50, f: 80, gs: 20, bs: 30,
-      gm: 3, ob: 1, vk: 3, mi: 2, hf: i === 1 ? 1 : 0, nu: 0, fi: 0, fl: 150, wu: 60, sg: 1 });
+      gm: 330, ob: 110, vk: 90, mi: 2, hf: i === 1 ? 125 : 0, nu: 0, fi: 0, fl: 150, wu: 60, sg: 1 });
     out.push({ id: "o", name: "Alt", when: `${D(3)}T12:00:00.000+01:00`, kcal: 2400, p: 90, kh: 300, z: 50, f: 80, gs: 20, bs: 30 });
     return out;
   });
   await page.route(/notion\/meals/, (r) => r.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ meals }) }));
   const FW = await page.evaluate(async () => { await syncMeals(true); return foodWeek(nutriDays(7, addDays(todayIso(), -1))); });
+  // Gramm → Portionen: Gemüse 2 · 330 / 110 = 6, Obst 2 · 110 / 110 = 2, Vollkorn 2 · 90 / 30 = 6, Hülsenfrüchte 125 / 125 = 1
   // 2 Tage → Ziele · 2/7: Gemüse 21 · 2/7 = 6 (gegessen 6 → 10 Punkte), Obst 14 · 2/7 = 4 (2 → 5), Vollkorn 6 (6 → 10),
   // Milch 4 (4 → 10), Hülsenfrüchte 2/7 ≈ 0,29 (1 → 10), Nüsse 2 (0 → 0), Fisch 0,29 (0 → 0),
   // Fleisch 300 g · 2/7 ≈ 85,7 bis 171,4 (300 → 0), Zuckergetränke 0,57 bis 2 (2 → 0)

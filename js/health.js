@@ -594,12 +594,13 @@ const HINFO = {
     <p><strong>Lebensmittel</strong> (0–100) = Ø der Punkte (je 0–10) aus neun Gruppen, Portionen der vollständig erfassten Tage. Wochenziele für 7 Tage, bei weniger Tagen anteilig (5 Tage → 5/7):</p>
     <ul class="hul">
       <li><strong>Gemüse</strong> ≥ 21 Portionen à 110 g (3 am Tag), <strong>Obst</strong> ≥ 14 à 110 g (2 am Tag) – DGE 2024.</li>
-      <li><strong>Vollkorn</strong> ≥ 21 Portionen à 30 g Vollkornprodukt (3 am Tag): 90 g am Tag gingen mit 17 % geringerer Sterblichkeit und 22 % weniger Herz-Kreislauf-Erkrankungen einher (Aune 2016, BMJ).</li>
+      <li><strong>Vollkorn</strong> ≥ 21 Portionen à 30 g Vollkornprodukt (3 am Tag; Haferflocken, Nudeln, Reis als Trockengewicht). Die DGE nennt 5 Portionen Getreide am Tag, aber keinen Vollkorn-Anteil; deshalb Aune 2016: 90 g Vollkorn am Tag gingen mit 17 % geringerer Sterblichkeit und 22 % weniger Herz-Kreislauf-Erkrankungen einher (Aune 2016, BMJ).</li>
       <li><strong>Milchprodukte</strong> ≥ 14 Portionen (2 am Tag: 250 g Milch, 150 g Joghurt oder 30 g Käse) – DGE 2024.</li>
-      <li><strong>Hülsenfrüchte</strong> ≥ 1 Portion à 125 g gegart, <strong>Fisch</strong> ≥ 1 Portion à 120 g (DGE: 1–2), <strong>Nüsse</strong> ≥ 7 Portionen à 25 g (eine Handvoll am Tag) – DGE 2024.</li>
+      <li><strong>Hülsenfrüchte</strong> ≥ 1 Portion (DGE 2024 ohne Grammangabe; hier 125 g gegart), <strong>Fisch</strong> ≥ 1 Portion à 120 g (DGE: 1–2), <strong>Nüsse</strong> ≥ 7 Portionen à 25 g (eine Handvoll am Tag) – DGE 2024.</li>
       <li><strong>Fleisch & Wurst</strong> höchstens 300 g pro Woche (DGE 2024): volle Punkte bis 300 g, keine ab 600 g, linear dazwischen.</li>
       <li><strong>Zuckergetränke</strong> (inkl. Saft, je 250 ml) meiden (DGE): volle Punkte bis 2 Gläser pro Woche, keine ab 7 (eines am Tag).</li>
     </ul>
+    <p>Claude trägt Gramm ein (Milchprodukte in Portionen auf 0,1 genau, Zuckergetränke in Gläsern); Mosaik rechnet in Portionen um: Portionen = Gramm / Portionsgröße, z. B. 220 g Gemüse / 110 g = 2,0.</p>
     <p>Mindestziele: 10 · min(1, Portionen / Ziel). Ältere Mahlzeiten ohne Portionen zählen nicht mit – die Auswertung beginnt mit dem ersten Tag, an dem Portionen erfasst sind. „Am meisten drin“ nennt die zwei Gruppen mit den meisten verschenkten Punkten.</p>
     <p><strong>Im Mosaik-Alter</strong> zählen die Ballaststoffe mit (halb gewichtet, ab 7 vollständig erfassten Tagen): 25–29 g am Tag gingen in der großen Lancet-Auswertung mit etwa 15 % geringerem Sterberisiko einher als wenig Ballaststoffe; Bezug sind 18 g.</p>
     <p class="muted small">Genauigkeit: Fotos werden je Mahlzeit typischerweise um 20–30 % verschätzt (Portionsgröße, Öl, Soßen). Ein Satz zum Foto oder ein Rezept aus Notion macht es genauer; für Trends über Wochen reicht es gut.</p>
