@@ -757,6 +757,9 @@ test("Mahlzeiten aus Notion: Tagessummen als Felder, Karte unter „Tag“, Korr
   // 12,5 % gesättigt → 25 · (0,15 − 0,125) / 0,05 = 12,5
   const scS = await page.evaluate(() => nutriScore([{ d: "x", kcal: 2000, p: 75, kh: 200, z: 50, f: 60, gs: 27.78, bs: 30 }]));
   assert.ok(Math.abs(scS.parts.find((x) => x.k === "gs").pts - 12.5) < 0.1);
+  // Zucker nur an einem Tag erfasst: Anteil auf dessen kcal beziehen (4 · 50 / 1000 = 20 % → 0), nicht auf den Ø beider Tage (10 %)
+  const scZ = await page.evaluate(() => nutriScore([{ d: "x", kcal: 1000, p: 40, kh: 100, z: 50, f: 30, gs: 8, bs: 10 }, { d: "y", kcal: 3000, p: 100, kh: 300, z: null, f: 100, gs: 25, bs: 30 }]));
+  assert.equal(scZ.parts.find((x) => x.k === "z").pts, 0);
   const sc2 = await page.evaluate(() => nutriScore([{ d: "x", kcal: 2000, p: 70, kh: 250, z: 150, f: 100, gs: 40, bs: 15 }]));
   // Ballaststoffe 12,5 · Protein 25 (15 % der Energie: 70·4/2000 = 14 % → 23,3) · Zucker 0 (30 %) · Fettqualität 0 (18 % gesättigt) → (12,5 + 23,3) · 4 / 4 ≈ 36
   assert.equal(sc2.score, 36);

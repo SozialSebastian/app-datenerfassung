@@ -113,6 +113,9 @@ function nutriScore(days) {
   if (!days.length) return null;
   const avg = (k) => { const xs = days.map((x) => x[k]).filter((v) => v !== null); return xs.length ? mean(xs) : null; };
   const kcal = avg("kcal"), p = avg("p"), z = avg("z"), f = avg("f"), bs = avg("bs");
+  // Energie-Anteile immer auf dieselben Tage beziehen: Ø kcal nur der Tage, an denen der Wert erfasst ist
+  const kOf = (k) => { const xs = days.filter((x) => x[k] !== null && x[k] !== undefined); return xs.length ? mean(xs.map((x) => x.kcal)) : null; };
+  const kP = kOf("p"), kZ = kOf("z");
   // Fettqualität: nur Tage, an denen die gesättigten Fettsäuren erfasst sind; Anteil an der Energie dieser Tage
   const gsDays = days.filter((x) => x.gs !== null && x.gs !== undefined);
   const gs = gsDays.length ? mean(gsDays.map((x) => x.gs)) : null, gsK = gsDays.length ? mean(gsDays.map((x) => x.kcal)) : null;
@@ -124,9 +127,9 @@ function nutriScore(days) {
   const pTarget = kg ? 0.8 * kg : null;
   const parts = [
     { k: "bs", label: "Ballaststoffe", val: bs, pts: bs === null ? null : 25 * clamp(bs / 30, 0, 1), txt: bs === null ? "–" : `Ø ${Math.round(bs)} g · Ziel 30 g` },
-    { k: "p", label: "Protein", val: p, pts: p === null ? null : 25 * clamp(pTarget ? p / pTarget : (p * 4) / kcal / 0.15, 0, 1),
-      txt: p === null ? "–" : `Ø ${Math.round(p)} g${kg ? ` · ${fmtNum(Math.round((p / kg) * 10) / 10)} g/kg (Ziel 0,8)` : ` · ${Math.round(((p * 4) / kcal) * 100)} % der Energie (Ziel 15 %)`}` },
-    { k: "z", label: "Zucker", val: z, pts: z === null ? null : 25 * clamp((0.2 - (z * 4) / kcal) / 0.1, 0, 1), txt: z === null ? "–" : `Ø ${Math.round(z)} g · ${Math.round(((z * 4) / kcal) * 100)} % der Energie` },
+    { k: "p", label: "Protein", val: p, pts: p === null ? null : 25 * clamp(pTarget ? p / pTarget : (p * 4) / kP / 0.15, 0, 1),
+      txt: p === null ? "–" : `Ø ${Math.round(p)} g${kg ? ` · ${fmtNum(Math.round((p / kg) * 10) / 10)} g/kg (Ziel 0,8)` : ` · ${Math.round(((p * 4) / kP) * 100)} % der Energie (Ziel 15 %)`}` },
+    { k: "z", label: "Zucker", val: z, pts: z === null ? null : 25 * clamp((0.2 - (z * 4) / kZ) / 0.1, 0, 1), txt: z === null ? "–" : `Ø ${Math.round(z)} g · ${Math.round(((z * 4) / kZ) * 100)} % der Energie` },
     // gesättigte Fettsäuren: bis 10 % der Energie volle Punkte (DGE/WHO), ab 15 % keine, dazwischen linear
     { k: "gs", label: "Fettqualität", val: gs, pts: gs === null ? null : 25 * clamp((0.15 - (gs * 9) / gsK) / 0.05, 0, 1),
       txt: gs === null ? "gesättigte Fettsäuren noch nicht erfasst" : `gesättigt Ø ${Math.round(gs)} g · ${Math.round(((gs * 9) / gsK) * 100)} % der Energie (Ziel ≤ 10 %) · ungesättigt ${Math.round(fU)} g` }
