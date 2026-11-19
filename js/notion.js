@@ -200,7 +200,7 @@ function nutriBuffer(day, ms) {
       ${bar(T.kcal, e, st, "nkbar")}`;
   }
   const S = nutriScore([{ d: day, kcal: E.kcal || 0, p: E.p, kh: E.kh, z: E.z, f: E.f, gs: E.gs, bs: E.bs }]);
-  return `<div class="nhead"><p class="q-title">Ernährung</p>${S && E.kcal ? `<span class="nscore${isToday ? " now" : ""}">Score <b>${S.score}</b>${isToday ? " bis jetzt" : ""}</span>` : ""}</div>
+  return `<div class="nhead"><p class="q-title">Ernährung</p>${S && E.kcal ? `<span class="nscore${isToday ? " now" : ""}">Score <b>${S.score}</b></span>` : ""}</div>
     ${head}
     <div class="ngrid">${tile("p", "Protein")}${tile("kh", "Kohlenhydr.")}${tile("f", "Fett")}${tile("gs", "ges. Fett")}${tile("z", "Zucker")}${tile("bs", "Ballaststoffe")}</div>
     ${T.need ? "" : `<p class="muted small" style="margin:8px 0 0">Ziele für 2.000 kcal. Mit Geburtsjahr, Geschlecht, Größe und Gewicht im Profil gelten deine eigenen.</p>`}
@@ -216,6 +216,5 @@ function mealsDayCard(day) {
   return `<section class="q mealcard">
     ${nutriBuffer(day, ms)}
     ${ms.map((m) => `<div class="mrow"><span class="mt">${esc(hm(m.when))}</span><span class="mn">${esc(m.name || m.meal || "Mahlzeit")}${m.note ? `<small>${esc(m.note)}</small>` : ""}</span><span class="mk">${typeof m.kcal === "number" ? `${Math.round(m.kcal)} kcal` : ""}</span></div>`).join("")}
-    <div class="msum"><b>${sum("kcal")} kcal</b><span>Protein ${sum("p")} g</span><span>KH ${sum("kh")} g</span><span>Fett ${sum("f")} g${ms.some((m) => typeof m.gs === "number") ? ` (ges. ${sum("gs")} g)` : ""}</span><span>Ballaststoffe ${sum("bs")} g</span></div>
   </section>`;
 }

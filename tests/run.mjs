@@ -743,7 +743,8 @@ test("Mahlzeiten aus Notion: Tagessummen als Felder, Karte unter „Tag“, Korr
   assert.deepEqual(r1, { kcal: 1140, p: 39, gs: undefined, theme: "food" });
   await page.evaluate(() => { current = todayIso(); tab = "day"; render(); });
   const card = await page.locator(".mealcard").innerText();
-  assert.match(card, /08:10[\s\S]*Haferflocken[\s\S]*19:30[\s\S]*Curry[\s\S]*1140 kcal/);
+  assert.match(card, /08:10[\s\S]*Haferflocken[\s\S]*19:30[\s\S]*Curry/);
+  assert.equal(await page.locator(".mealcard .msum").count(), 0); // keine doppelte Summenzeile unter den Mahlzeiten
   // Tagesziele oben (Ist-Werte): ohne Profil Bezug 2.000 kcal → Zucker max. 0,1 · 2000 / 4 = 50 g; 23 g → grün
   assert.doesNotMatch(card, /aus Notion/);
   assert.match(await page.locator('.mealcard [data-nt="z"]').innerText(), /23 g[\s\S]*max\. 50 g/);
