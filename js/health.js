@@ -108,6 +108,32 @@ function nutriDays(n, bis = todayIso(), minKcal = 1000) {
   }
   return out;
 }
+// Bezugsgewicht, Protein-Ziel und Energiebedarf aus Profil und Apple Health
+function nutriBase() {
+  // Protein-Ziel (DGE 0,8 g/kg) bezogen auf das Normalgewicht: bei Übergewicht zählt höchstens das Gewicht bei BMI 25,
+  // ohne gemessenes Gewicht das Gewicht bei BMI 22 aus der Körpergröße
+  const kgM = hvals("gewicht", 120)[0] || PROFILE().weight || null, hM = PROFILE().height ? PROFILE().height / 100 : null;
+  const kg = kgM && hM ? Math.min(kgM, 25 * hM * hM) : kgM || (hM ? 22 * hM * hM : null);
+  // Energiebedarf (Mifflin-St Jeor) × PAL 1,5 – geht nicht in den Score ein
+  const age = ageNow(), sex = PROFILE().sex;
+  const need = kgM && hM && age && sex ? Math.round((10 * kgM + 625 * hM - 5 * age + (sex === "m" ? 5 : -161)) * 1.5 / 50) * 50 : null;
+  return { kg, pTarget: kg ? 0.8 * kg : null, need };
+}
+// Tagesziele: Bereiche (EFSA: Kohlenhydrate 45–60 %, Fett 20–35 % der Energie), Obergrenzen (Zucker, gesättigte Fettsäuren je ≤ 10 %),
+// Mindestziele (Protein 0,8 g/kg, Ballaststoffe 30 g). Ohne Bedarf: Bezug 2.000 kcal (wie auf Verpackungen), dann ohne Kalorienziel.
+function nutriTargets() {
+  const { pTarget, need } = nutriBase(), N = need || 2000;
+  return {
+    need, ref: N,
+    kcal: need ? { t: "range", lo: 0.9 * need, hi: 1.1 * need } : null,
+    p: { t: "min", lo: pTarget || (0.15 * N) / 4 },
+    kh: { t: "range", lo: (0.45 * N) / 4, hi: (0.6 * N) / 4 },
+    f: { t: "range", lo: (0.2 * N) / 9, hi: (0.35 * N) / 9 },
+    gs: { t: "cap", hi: (0.1 * N) / 9 },
+    z: { t: "cap", hi: (0.1 * N) / 4 },
+    bs: { t: "min", lo: 30 }
+  };
+}
 // Ernährungs-Score 0–100 aus vier Teilen à 25 Punkte (Ø der vollständig erfassten Tage)
 function nutriScore(days) {
   if (!days.length) return null;
@@ -120,11 +146,7 @@ function nutriScore(days) {
   const gsDays = days.filter((x) => x.gs !== null && x.gs !== undefined);
   const gs = gsDays.length ? mean(gsDays.map((x) => x.gs)) : null, gsK = gsDays.length ? mean(gsDays.map((x) => x.kcal)) : null;
   const fU = gsDays.length ? mean(gsDays.map((x) => (x.f || 0) - x.gs)) : null;
-  // Protein-Ziel (DGE 0,8 g/kg) bezogen auf das Normalgewicht: bei Übergewicht zählt höchstens das Gewicht bei BMI 25,
-  // ohne gemessenes Gewicht das Gewicht bei BMI 22 aus der Körpergröße
-  const kgM = hvals("gewicht", 120)[0] || PROFILE().weight || null, hM = PROFILE().height ? PROFILE().height / 100 : null;
-  const kg = kgM && hM ? Math.min(kgM, 25 * hM * hM) : kgM || (hM ? 22 * hM * hM : null);
-  const pTarget = kg ? 0.8 * kg : null;
+  const { kg, pTarget, need } = nutriBase();
   const parts = [
     { k: "bs", label: "Ballaststoffe", val: bs, pts: bs === null ? null : 25 * clamp(bs / 30, 0, 1), txt: bs === null ? "–" : `Ø ${Math.round(bs)} g · Ziel 30 g` },
     { k: "p", label: "Protein", val: p, pts: p === null ? null : 25 * clamp(pTarget ? p / pTarget : (p * 4) / kP / 0.15, 0, 1),
@@ -136,9 +158,6 @@ function nutriScore(days) {
   ];
   const have = parts.filter((x) => x.pts !== null);
   if (!have.length) return null;
-  // Energiebedarf (Mifflin-St Jeor) × PAL 1,5 – nur zur Einordnung, geht nicht in den Score ein
-  const age = ageNow(), sex = PROFILE().sex;
-  const need = kgM && hM && age && sex ? Math.round((10 * kgM + 625 * hM - 5 * age + (sex === "m" ? 5 : -161)) * 1.5 / 50) * 50 : null;
   return { score: Math.round((have.reduce((t, x) => t + x.pts, 0) / have.length) * 4), parts, kcal, p, kh: avg("kh"), f, n: days.length, need };
 }
 function bioParts(win, bis = todayIso()) {

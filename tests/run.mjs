@@ -744,6 +744,16 @@ test("Mahlzeiten aus Notion: Tagessummen als Felder, Karte unter „Tag“, Korr
   await page.evaluate(() => { current = todayIso(); tab = "day"; render(); });
   const card = await page.locator(".mealcard").innerText();
   assert.match(card, /08:10[\s\S]*Haferflocken[\s\S]*19:30[\s\S]*Curry[\s\S]*1140 kcal/);
+  // Puffer oben: ohne Profil Bezug 2.000 kcal → Zucker ≤ 0,1 · 2000 / 4 = 50 g, gegessen 23 g → 27 g Spielraum; Ballaststoffe 30 − 16 = 14 fehlen
+  assert.doesNotMatch(card, /aus Notion/);
+  assert.match(await page.locator('.mealcard [data-nt="z"]').innerText(), /27[\s\S]*Spielraum · 23\/50/);
+  assert.match(await page.locator('.mealcard [data-nt="bs"]').innerText(), /14[\s\S]*fehlen · 16\/30/);
+  assert.equal(await page.locator(".mealcard .nbig").count(), 0); // ohne Profil kein Kalorienziel
+  // mit Profil: Bedarf (10·74 + 625·1,87 − 5·Alter + 5) · 1,5 → Kalorien-Puffer als Bereich
+  const need = await page.evaluate(() => { state.profile = { born: new Date().getFullYear() - 27, sex: "m", height: 187, weight: 74 }; render(); return nutriTargets().need; });
+  assert.equal(need, Math.round((740 + 625 * 1.87 - 135 + 5) * 1.5 / 50) * 50);
+  assert.match(await page.locator(".mealcard .nbig").innerText(), /1\.250–1\.780[\s\S]*kcal Puffer heute/);
+  await page.evaluate(() => { state.profile = {}; });
   assert.equal(await page.locator(".healthcard").count(), 0);
   // in Notion korrigiert (halbe Portion) und Frühstück gelöscht
   // Gesundheit: Karte „Ernährung“ (heute zählt nicht für den Score, daher nur Hinweis + „Heute“)

@@ -990,6 +990,32 @@ input.tgl:disabled { opacity: .45; }
 .mealcard .mn small { display: block; font-weight: 400; color: var(--ink-2); font-size: 12.5px; }
 .mealcard .mk { font-variant-numeric: tabular-nums; color: var(--ink-2); white-space: nowrap; }
 .mealcard .msum { display: flex; flex-wrap: wrap; gap: 4px 12px; margin-top: 8px; padding-top: 8px; border-top: 1px solid var(--line); font-size: 13px; color: var(--ink-2); }
+.mealcard .nhead { display: flex; justify-content: space-between; align-items: baseline; gap: 10px; }
+.mealcard .nhead .q-title { margin-bottom: 6px; }
+.mealcard .nscore { font-size: 13px; color: var(--ink-2); white-space: nowrap; }
+.mealcard .nscore b { color: var(--ink); font-size: 16px; }
+.mealcard .nbig { display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap; }
+.mealcard .nbig b { font-size: 30px; letter-spacing: -0.01em; font-variant-numeric: tabular-nums; }
+.mealcard .nbig span { color: var(--ink-2); font-size: 14px; }
+.mealcard .nbig.ok b { color: var(--s3); }
+.mealcard .nbig.over b { color: var(--danger); }
+.mealcard .nkbar { position: relative; height: 14px; border-radius: 7px; background: var(--bg); margin: 8px 0 4px; overflow: hidden; }
+.mealcard .nkbar .z { position: absolute; top: 0; bottom: 0; background: color-mix(in srgb, var(--s3) 28%, transparent); }
+.mealcard .nkbar .e { position: absolute; left: 0; top: 0; bottom: 0; border-radius: 7px; background: var(--ink); }
+.mealcard .nbig.over + .nkbar .e { background: var(--danger); }
+.mealcard .nkscale { display: flex; justify-content: space-between; font-size: 11.5px; color: var(--ink-2); }
+.mealcard .ngrid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin-top: 12px; }
+.mealcard .ntile { background: var(--bg); border-radius: 12px; padding: 9px 10px; min-width: 0; }
+.mealcard .ntile .n { font-size: 12px; color: var(--ink-2); font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.mealcard .ntile .v { font-size: 20px; font-weight: 700; margin: 2px 0 1px; font-variant-numeric: tabular-nums; }
+.mealcard .ntile .v small { font-size: 12px; font-weight: 600; color: var(--ink-2); }
+.mealcard .ntile .s { font-size: 11px; color: var(--ink-2); line-height: 1.3; }
+.mealcard .ntile.ok .v { color: var(--s3); }
+.mealcard .ntile.over .v { color: var(--danger); }
+.mealcard .ntile .tb { height: 5px; border-radius: 3px; background: var(--line); margin-top: 6px; overflow: hidden; }
+.mealcard .ntile .tb i { display: block; height: 100%; border-radius: 3px; }
+.mealcard .nsep { border-top: 1px solid var(--line); margin: 12px 0 2px; }
+.mealcard .nsep + .mrow { border-top: 0; }
 .mealcard .msum b { color: var(--ink); font-size: 14px; }
 .hrow2 { display: flex; gap: 14px; align-items: center; }
 .hrow2 .hringw { display: grid; place-items: center; width: 96px; height: 96px; flex: none; }

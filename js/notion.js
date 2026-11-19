@@ -168,6 +168,45 @@ async function syncMeals(manual) {
   }
 }
 
+// Puffer bis zu den Tageszielen (oben in der Ernährungskarte): Kalorien groß, darunter je Nährstoff eine Kachel.
+// Mindestziel → „fehlen“ (dunkel) bzw. erreicht (grün); Obergrenze → „Spielraum“ (grün) bzw. „drüber“ (rot);
+// Bereich → bis zur Untergrenze „fehlen“, im Bereich Spielraum bis zur Obergrenze, darüber rot.
+function nutriBuffer(day, ms) {
+  const T = nutriTargets(), isToday = day === todayIso();
+  const tot = (k) => { const xs = ms.map((m) => m[k]).filter((v) => typeof v === "number"); return xs.length ? xs.reduce((a, b) => a + b, 0) : null; };
+  // gesättigte Fettsäuren nur, wenn jede Mahlzeit mit Fett einen Wert hat
+  const gsOk = !ms.some((m) => typeof m.gs !== "number" && (m.f || 0) > 0);
+  const E = { kcal: tot("kcal"), p: tot("p"), kh: tot("kh"), f: tot("f"), gs: gsOk ? tot("gs") : null, z: tot("z"), bs: tot("bs") };
+  const r = (x) => Math.round(x), fb = (x) => fmtBig(r(x));
+  const stOf = (t, e) => e === null ? "na" : t.t === "min" ? (e >= t.lo ? "ok" : "need") : t.t === "cap" ? (e <= t.hi ? "ok" : "over") : e < t.lo ? "need" : e <= t.hi ? "ok" : "over";
+  const tile = (k, label, color) => {
+    const t = T[k], e = E[k], st = stOf(t, e);
+    const of = t.t === "range" ? `${fb(e || 0)}/${fb(t.lo)}–${fb(t.hi)}` : `${fb(e || 0)}/${fb(t.t === "cap" ? t.hi : t.lo)}`;
+    const [v, sub] = st === "na" ? ["–", "nicht erfasst"]
+      : st === "over" ? [`+${fb(e - t.hi)}`, `drüber · ${of}`]
+      : st === "need" ? [fb(t.lo - e), `fehlen · ${of}`]
+      : t.t === "min" ? ["✓", `erreicht · ${of}`] : [fb(t.hi - e), `Spielraum · ${of}`];
+    const goal = t.t === "cap" || t.t === "range" ? t.hi : t.lo;
+    return `<div class="ntile ${st}" data-nt="${k}"><div class="n">${label}</div><div class="v">${v}${v === "✓" || v === "–" ? "" : "<small> g</small>"}</div><div class="s">${sub}</div><div class="tb"><i style="width:${Math.min(100, ((e || 0) / goal) * 100)}%;background:${st === "over" ? "var(--danger)" : color}"></i></div></div>`;
+  };
+  let head = "";
+  if (T.kcal) {
+    const e = E.kcal || 0, { lo, hi } = T.kcal, st = stOf(T.kcal, e), mx = hi * 1.15, r10 = (x) => fmtBig(Math.round(x / 10) * 10);
+    // heute: Puffer bis in den Zielbereich; vergangene Tage: wie weit darunter bzw. darüber
+    const big = st === "need" ? (isToday ? `${r10(lo - e)}–${r10(hi - e)}` : r10(lo - e)) : st === "ok" ? r10(hi - e) : `+${r10(e - hi)}`;
+    const lab = st === "over" ? "kcal über dem Bedarf" : st === "need" && !isToday ? "kcal unter dem Ziel" : `kcal Puffer${isToday ? " heute" : ""}`;
+    head = `<div class="nbig ${st}"><b>${big}</b><span>${lab}</span></div>
+      <div class="nkbar"><span class="z" style="left:${(lo / mx) * 100}%;width:${((hi - lo) / mx) * 100}%"></span><span class="e" style="width:${Math.min(100, (e / mx) * 100)}%"></span></div>
+      <div class="nkscale"><span>gegessen ${fb(e)}</span><span>Ziel ${r10(lo)}–${r10(hi)}</span></div>`;
+  }
+  const S = nutriScore([{ d: day, kcal: E.kcal || 0, p: E.p, kh: E.kh, z: E.z, f: E.f, gs: E.gs, bs: E.bs }]);
+  return `<div class="nhead"><p class="q-title">Ernährung</p>${S && E.kcal ? `<span class="nscore${isToday ? " now" : ""}">Score <b>${S.score}</b>${isToday ? " bis jetzt" : ""}</span>` : ""}</div>
+    ${head}
+    <div class="ngrid">${tile("p", "Protein", "var(--s3)")}${tile("kh", "Kohlenhydr.", "var(--s1)")}${tile("f", "Fett", "var(--s2)")}${tile("gs", "ges. Fett", "var(--s2)")}${tile("z", "Zucker", "var(--s4)")}${tile("bs", "Ballaststoffe", "var(--s3)")}</div>
+    ${T.need ? "" : `<p class="muted small" style="margin:8px 0 0">Ziele für 2.000 kcal. Mit Geburtsjahr, Geschlecht, Größe und Gewicht im Profil gelten deine eigenen.</p>`}
+    <div class="nsep"></div>`;
+}
+
 // Tag-Seite: Karte „Ernährung“ mit den Mahlzeiten des Tages und der Summe
 function mealsDayCard(day) {
   const ms = mealsOn(day);
@@ -175,7 +214,7 @@ function mealsDayCard(day) {
   const sum = (f) => Math.round(ms.reduce((t, m) => t + (typeof m[f] === "number" ? m[f] : 0), 0));
   const hm = (w) => (String(w).length > 10 ? String(w).slice(11, 16) : "");
   return `<section class="q mealcard">
-    <p class="q-title">Ernährung <span class="muted small">aus Notion</span></p>
+    ${nutriBuffer(day, ms)}
     ${ms.map((m) => `<div class="mrow"><span class="mt">${esc(hm(m.when))}</span><span class="mn">${esc(m.name || m.meal || "Mahlzeit")}${m.note ? `<small>${esc(m.note)}</small>` : ""}</span><span class="mk">${typeof m.kcal === "number" ? `${Math.round(m.kcal)} kcal` : ""}</span></div>`).join("")}
     <div class="msum"><b>${sum("kcal")} kcal</b><span>Protein ${sum("p")} g</span><span>KH ${sum("kh")} g</span><span>Fett ${sum("f")} g${ms.some((m) => typeof m.gs === "number") ? ` (ges. ${sum("gs")} g)` : ""}</span><span>Ballaststoffe ${sum("bs")} g</span></div>
   </section>`;
