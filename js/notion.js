@@ -168,41 +168,41 @@ async function syncMeals(manual) {
   }
 }
 
-// Puffer bis zu den Tageszielen (oben in der Ernährungskarte): Kalorien groß, darunter je Nährstoff eine Kachel.
-// Mindestziel → „fehlen“ (dunkel) bzw. erreicht (grün); Obergrenze → „Spielraum“ (grün) bzw. „drüber“ (rot);
-// Bereich → bis zur Untergrenze „fehlen“, im Bereich Spielraum bis zur Obergrenze, darüber rot.
+// Tagesziele oben in der Ernährungskarte: Kalorien groß, darunter je Nährstoff eine Kachel mit dem Ist-Wert;
+// Ziel, Zielbereich bzw. Obergrenze sind im Balken markiert.
 function nutriBuffer(day, ms) {
   const T = nutriTargets(), isToday = day === todayIso();
   const tot = (k) => { const xs = ms.map((m) => m[k]).filter((v) => typeof v === "number"); return xs.length ? xs.reduce((a, b) => a + b, 0) : null; };
   // gesättigte Fettsäuren nur, wenn jede Mahlzeit mit Fett einen Wert hat
   const gsOk = !ms.some((m) => typeof m.gs !== "number" && (m.f || 0) > 0);
   const E = { kcal: tot("kcal"), p: tot("p"), kh: tot("kh"), f: tot("f"), gs: gsOk ? tot("gs") : null, z: tot("z"), bs: tot("bs") };
-  const r = (x) => Math.round(x), fb = (x) => fmtBig(r(x));
-  const stOf = (t, e) => e === null ? "na" : t.t === "min" ? (e >= t.lo ? "ok" : "need") : t.t === "cap" ? (e <= t.hi ? "ok" : "over") : e < t.lo ? "need" : e <= t.hi ? "ok" : "over";
-  const tile = (k, label, color) => {
+  const r = (x) => Math.round(x), fb = (x) => fmtBig(r(x)), r10 = (x) => fmtBig(Math.round(x / 10) * 10);
+  // Farbe des Ist-Werts: grün = Ziel erreicht bzw. im Rahmen, rot = zu viel (Obergrenze/Bereich überschritten)
+  // oder an einem vergangenen Tag nicht erreicht, schwarz = heute noch nicht erreicht
+  const stOf = (t, e) => e === null ? "na" : t.t === "cap" ? (e <= t.hi ? "ok" : "bad")
+    : e > (t.hi ?? Infinity) ? "bad" : e >= t.lo ? "ok" : isToday ? "open" : "bad";
+  // Balken: Skala bis 125 % des Ziels; Zielbereich grün hinterlegt, Grenzen als Strich
+  const bar = (t, e, st, cls) => {
+    const mx = 1.25 * (t.hi ?? t.lo), P = (x) => `${Math.min(100, (x / mx) * 100)}%`;
+    const zone = t.t === "cap" ? `<span class="z" style="left:0;width:${P(t.hi)}"></span>` : t.t === "min" ? `<span class="z" style="left:${P(t.lo)};right:0"></span>` : `<span class="z" style="left:${P(t.lo)};width:${P(t.hi - t.lo)}"></span>`;
+    const marks = [t.t !== "cap" ? t.lo : null, t.hi ?? null].filter((x) => x !== null).map((x) => `<span class="m" style="left:${P(x)}"></span>`).join("");
+    return `<div class="${cls}">${zone}<span class="e ${st}" style="width:${P(e || 0)}"></span>${marks}</div>`;
+  };
+  const goalTxt = (t, f) => t.t === "cap" ? `max. ${f(t.hi)}` : t.t === "min" ? `Ziel ≥ ${f(t.lo)}` : `Ziel ${f(t.lo)}–${f(t.hi)}`;
+  const tile = (k, label) => {
     const t = T[k], e = E[k], st = stOf(t, e);
-    const of = t.t === "range" ? `${fb(e || 0)}/${fb(t.lo)}–${fb(t.hi)}` : `${fb(e || 0)}/${fb(t.t === "cap" ? t.hi : t.lo)}`;
-    const [v, sub] = st === "na" ? ["–", "nicht erfasst"]
-      : st === "over" ? [`+${fb(e - t.hi)}`, `drüber · ${of}`]
-      : st === "need" ? [fb(t.lo - e), `fehlen · ${of}`]
-      : t.t === "min" ? ["✓", `erreicht · ${of}`] : [fb(t.hi - e), `Spielraum · ${of}`];
-    const goal = t.t === "cap" || t.t === "range" ? t.hi : t.lo;
-    return `<div class="ntile ${st}" data-nt="${k}"><div class="n">${label}</div><div class="v">${v}${v === "✓" || v === "–" ? "" : "<small> g</small>"}</div><div class="s">${sub}</div><div class="tb"><i style="width:${Math.min(100, ((e || 0) / goal) * 100)}%;background:${st === "over" ? "var(--danger)" : color}"></i></div></div>`;
+    return `<div class="ntile ${st}" data-nt="${k}"><div class="n">${label}</div><div class="v">${e === null ? "–" : `${fb(e)}<small> g</small>`}</div><div class="s">${e === null ? "nicht erfasst" : goalTxt(t, fb) + " g"}</div>${bar(t, e, st, "tb")}</div>`;
   };
   let head = "";
   if (T.kcal) {
-    const e = E.kcal || 0, { lo, hi } = T.kcal, st = stOf(T.kcal, e), mx = hi * 1.15, r10 = (x) => fmtBig(Math.round(x / 10) * 10);
-    // heute: Puffer bis in den Zielbereich; vergangene Tage: wie weit darunter bzw. darüber
-    const big = st === "need" ? (isToday ? `${r10(lo - e)}–${r10(hi - e)}` : r10(lo - e)) : st === "ok" ? r10(hi - e) : `+${r10(e - hi)}`;
-    const lab = st === "over" ? "kcal über dem Bedarf" : st === "need" && !isToday ? "kcal unter dem Ziel" : `kcal Puffer${isToday ? " heute" : ""}`;
-    head = `<div class="nbig ${st}"><b>${big}</b><span>${lab}</span></div>
-      <div class="nkbar"><span class="z" style="left:${(lo / mx) * 100}%;width:${((hi - lo) / mx) * 100}%"></span><span class="e" style="width:${Math.min(100, (e / mx) * 100)}%"></span></div>
-      <div class="nkscale"><span>gegessen ${fb(e)}</span><span>Ziel ${r10(lo)}–${r10(hi)}</span></div>`;
+    const e = E.kcal || 0, st = stOf(T.kcal, e);
+    head = `<div class="nbig ${st}"><b>${fb(e)}</b><span>kcal · ${goalTxt(T.kcal, r10)}</span></div>
+      ${bar(T.kcal, e, st, "nkbar")}`;
   }
   const S = nutriScore([{ d: day, kcal: E.kcal || 0, p: E.p, kh: E.kh, z: E.z, f: E.f, gs: E.gs, bs: E.bs }]);
   return `<div class="nhead"><p class="q-title">Ernährung</p>${S && E.kcal ? `<span class="nscore${isToday ? " now" : ""}">Score <b>${S.score}</b>${isToday ? " bis jetzt" : ""}</span>` : ""}</div>
     ${head}
-    <div class="ngrid">${tile("p", "Protein", "var(--s3)")}${tile("kh", "Kohlenhydr.", "var(--s1)")}${tile("f", "Fett", "var(--s2)")}${tile("gs", "ges. Fett", "var(--s2)")}${tile("z", "Zucker", "var(--s4)")}${tile("bs", "Ballaststoffe", "var(--s3)")}</div>
+    <div class="ngrid">${tile("p", "Protein")}${tile("kh", "Kohlenhydr.")}${tile("f", "Fett")}${tile("gs", "ges. Fett")}${tile("z", "Zucker")}${tile("bs", "Ballaststoffe")}</div>
     ${T.need ? "" : `<p class="muted small" style="margin:8px 0 0">Ziele für 2.000 kcal. Mit Geburtsjahr, Geschlecht, Größe und Gewicht im Profil gelten deine eigenen.</p>`}
     <div class="nsep"></div>`;
 }
