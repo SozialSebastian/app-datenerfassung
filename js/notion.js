@@ -109,9 +109,24 @@ const NUTRI = [["nahrung_kcal", "kcal", "Kalorien (Essen)", "kcal"], ["protein",
 const NUTRI_KEYS = NUTRI.map((x) => x[0]);
 const isNutriQ = (q) => q && q.source === "health" && NUTRI_KEYS.includes(q.healthKey);
 const mealStore = () => (state.meals && typeof state.meals === "object" ? state.meals : (state.meals = { items: {}, since: "" }));
-const mealsOn = (day) => Object.values(mealStore().items).filter((m) => m.day === day).sort((a, b) => (a.when < b.when ? -1 : 1));
+const mealsOn = (day) => Object.values(mealStore().items).filter((m) => mealDayOf(m) === day).sort((a, b) => (a.when < b.when ? -1 : 1));
 // Tag der Mahlzeit: Datum aus Notion (ohne Uhrzeit = ganzer Tag; mit Uhrzeit = lokales Datum laut Angabe)
 const mealDay = (when) => String(when).slice(0, 10);
+/* Ernährungstag = vom Aufstehen bis zum Schlafengehen: Eine Mahlzeit nach Mitternacht, aber vor dem Einschlafen gehört
+   noch zum Vortag – z. B. der Snack um 0:20 Uhr. Grenze am Kalendertag d:
+   - Einschlafzeit der Nacht, die an d endet, liegt nach Mitternacht (Apple Health speichert dann 24 + Uhrzeit):
+     Grenze = Einschlafzeit + 15 min (Puffer, weil die Uhr das Einschlafen etwas später erkennt)
+   - sonst: 5:00 Uhr, bei früherem Aufwachen die Aufwachzeit */
+const MEAL_DAY_CUTOFF = 5;
+function mealDayOf(m) {
+  const d = mealDay(m.when), hm = /T(\d{2}):(\d{2})/.exec(String(m.when));
+  if (!hm) return d;
+  const t = +hm[1] + +hm[2] / 60;
+  const bed = typeof hv === "function" ? hv("schlafenszeit", d) : null, wake = typeof hv === "function" ? hv("aufwachzeit", d) : null;
+  const cut = typeof bed === "number" && bed >= 24 && bed < 36 ? bed - 24 + 0.25
+    : typeof wake === "number" && wake > 0 ? Math.min(wake, MEAL_DAY_CUTOFF) : MEAL_DAY_CUTOFF;
+  return t < cut ? addDays(d, -1) : d;
+}
 
 /* Frage „Was davon hast du heute gegessen oder getrunken?“ (Vorlage Unverträglichkeiten) aus den Mahlzeiten beantworten:
    Notion-Spalte „Enthält“ hat dieselben Optionen (Kommas durch „ / “ ersetzt, Notion erlaubt keine Kommas).
@@ -119,7 +134,7 @@ const mealDay = (when) => String(when).slice(0, 10);
    mit allen markierten Optionen bzw. „Nichts davon“. Von Hand geänderte Antworten bleiben stehen. */
 const intolTag = (o) => o.replace(/, /g, " / ");
 const mealAuto = () => (state.mealAuto && typeof state.mealAuto === "object" ? state.mealAuto : (state.mealAuto = {}));
-const tagStart = () => Object.values(mealStore().items).filter((m) => Array.isArray(m.tags) && m.tags.length).map((m) => m.day).sort()[0] || null;
+const tagStart = () => Object.values(mealStore().items).filter((m) => Array.isArray(m.tags) && m.tags.length).map(mealDayOf).sort()[0] || null;
 function mealIntol(d, a) {
   const fq = typeof intolQ === "function" ? intolQ("intol-food") : null;
   if (!fq) return;
@@ -156,8 +171,9 @@ async function syncMeals(manual) {
     settings.notion.mealsAt = Date.now(); settings.notion.mealsErr = ""; saveSettings();
     const changed = before !== JSON.stringify(Object.values(st.items).filter((m) => m.day >= since));
     // Tagessummen ab „since“ neu setzen (Tage ohne Eintrag: keine Werte – nichts gegessen heißt hier „nicht erfasst“)
-    // auch ohne Änderung neu durchgehen, wenn es die Frage zu Unverträglichkeiten gibt (z. B. gerade erst angelegt)
-    if (changed || manual || (typeof intolQ === "function" && intolQ("intol-food"))) {
+    // immer neu durchgehen: die Zuordnung später Mahlzeiten hängt an der Aufwachzeit (kann nach den Mahlzeiten kommen),
+    // und die Frage zu Unverträglichkeiten kann gerade erst angelegt sein
+    if (changed || manual || Object.keys(st.items).length) {
       const created = [];
       const any = Object.keys(st.items).length > 0;
       const qs = any ? NUTRI.map(([key, , text, unit]) => {
@@ -166,7 +182,7 @@ async function syncMeals(manual) {
         q.text = q.text || text; if (!q.unit) q.unit = unit;
         return q;
       }) : state.questions.filter(isNutriQ);
-      for (let d = since; d <= todayIso(); d = addDays(d, 1)) {
+      for (let d = addDays(since, -1); d <= todayIso(); d = addDays(d, 1)) {
         const ms = mealsOn(d);
         const a = state.answers[d] || (state.answers[d] = {});
         NUTRI.forEach(([key, f], i) => {
@@ -215,7 +231,7 @@ const FOOD_KEYS = [...FOOD.map((x) => x.k), "wu"];
 const hasFood = (m) => FOOD_KEYS.some((k) => typeof m[k] === "number");
 // Lebensmittel der vollständig erfassten Tage aus „days“ (ab dem ersten Tag, an dem Gruppen erfasst wurden); Ziele anteilig n / 7
 function foodWeek(days) {
-  const all = Object.values(mealStore().items).filter(hasFood).map((m) => m.day).sort();
+  const all = Object.values(mealStore().items).filter(hasFood).map(mealDayOf).sort();
   if (!all.length) return null;
   const ds = days.map((x) => x.d).filter((d) => d >= all[0]);
   if (!ds.length) return { n: 0, start: all[0] };

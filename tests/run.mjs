@@ -1597,6 +1597,34 @@ test("Unverträglichkeiten: Frage „Was davon hast du gegessen“ wird aus den 
   await ctx.close();
 });
 
+test("Mahlzeiten nach Mitternacht zählen bis zum Einschlafen zum Vortag", async () => {
+  const { page, ctx, errors } = await open({ data: { version: 1, lastBackup: null, answers: {}, questions: [] }, settings: { token: "t" } });
+  const r = await page.evaluate(() => {
+    const T = todayIso(), Y = addDays(T, -1), V = addDays(T, -2);
+    const at = (d, hm) => ({ when: `${d}T${hm}:00.000+01:00` });
+    const noData = [mealDayOf(at(Y, "00:20")), mealDayOf(at(Y, "04:50")), mealDayOf(at(Y, "05:10"))];
+    // Einschlafen um 1:30 (gespeichert als 25,5) in der Nacht, die gestern endete → Grenze 1:45
+    const q = ensureHealthQuestion("schlafenszeit", []); state.answers[Y] = { [q.id]: 25.5 };
+    const withBed = [mealDayOf(at(Y, "01:40")), mealDayOf(at(Y, "01:50")), mealDayOf(at(Y, "04:00"))];
+    // vor Mitternacht eingeschlafen, um 3:00 aufgewacht → Grenze 3:00
+    const w = ensureHealthQuestion("aufwachzeit", []); state.answers[V] = { [q.id]: 23, [w.id]: 3 };
+    const early = [mealDayOf(at(V, "02:30")), mealDayOf(at(V, "03:30"))];
+    return { Y, V, X: addDays(V, -1), noData, withBed, early };
+  });
+  assert.deepEqual(r.noData, [r.V, r.V, r.Y]);
+  assert.deepEqual(r.withBed, [r.V, r.Y, r.Y]);
+  assert.deepEqual(r.early, [r.X, r.V]);
+  // Tagessumme: der Snack um 0:20 heute zählt zu gestern
+  const meals = await page.evaluate(() => [
+    { id: "a", name: "Abendessen", when: `${addDays(todayIso(), -1)}T19:00:00.000+01:00`, kcal: 800 },
+    { id: "b", name: "Snack", when: `${todayIso()}T00:20:00.000+01:00`, kcal: 300 }]);
+  await page.route(/notion\/meals/, (rt) => rt.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ meals }) }));
+  const sums = await page.evaluate(async () => { await syncMeals(true); const q = state.questions.find((x) => x.healthKey === "nahrung_kcal"); return [state.answers[addDays(todayIso(), -1)][q.id], (state.answers[todayIso()] || {})[q.id]]; });
+  assert.deepEqual(sums, [1100, undefined]);
+  assert.deepEqual(errors, []);
+  await ctx.close();
+});
+
 test("Fragen per Gedrückthalten verschieben", async () => {
   const data = { version: 1, lastBackup: null, answers: {}, questions: ["A", "B", "C"].map((x) => yesNo(x.toLowerCase(), x + "?")) };
   const { page, ctx, errors } = await open({ data });
