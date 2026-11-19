@@ -598,6 +598,8 @@ async function handle(request, env) {
           // Lebensmittelgruppen: Gramm (Milchprodukte in Portionen, Zuckergetränke in Gläsern)
           gm: num(P["Gemüse (g)"]), ob: num(P["Obst (g)"]), vk: num(P["Vollkorn (g)"]), mi: num(P["Milchprodukte (Port.)"]),
           hf: num(P["Hülsenfrüchte (g)"]), nu: num(P["Nüsse (g)"]), fi: num(P["Fisch (g)"]),
+          // „Enthält“ (Mehrfachauswahl) für die Frage zu Unverträglichkeiten
+          tags: P["Enthält"] && Array.isArray(P["Enthält"].multi_select) ? P["Enthält"].multi_select.map((o) => o.name) : null,
           fl: num(P["Fleisch & Wurst (g)"]), wu: num(P["davon Wurst (g)"]), sg: num(P["Zuckergetränke (Gläser)"]),
           basis: P.Grundlage && P.Grundlage.select ? P.Grundlage.select.name : "", note: txt(P.Notiz)
         });

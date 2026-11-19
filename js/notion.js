@@ -113,6 +113,30 @@ const mealsOn = (day) => Object.values(mealStore().items).filter((m) => m.day ==
 // Tag der Mahlzeit: Datum aus Notion (ohne Uhrzeit = ganzer Tag; mit Uhrzeit = lokales Datum laut Angabe)
 const mealDay = (when) => String(when).slice(0, 10);
 
+/* Frage „Was davon hast du heute gegessen oder getrunken?“ (Vorlage Unverträglichkeiten) aus den Mahlzeiten beantworten:
+   Notion-Spalte „Enthält“ hat dieselben Optionen (Kommas durch „ / “ ersetzt, Notion erlaubt keine Kommas).
+   Sobald an einem Tag eine Mahlzeit erfasst ist (ab dem ersten Tag mit markierten Zutaten), ist die Frage beantwortet –
+   mit allen markierten Optionen bzw. „Nichts davon“. Von Hand geänderte Antworten bleiben stehen. */
+const intolTag = (o) => o.replace(/, /g, " / ");
+const mealAuto = () => (state.mealAuto && typeof state.mealAuto === "object" ? state.mealAuto : (state.mealAuto = {}));
+const tagStart = () => Object.values(mealStore().items).filter((m) => Array.isArray(m.tags) && m.tags.length).map((m) => m.day).sort()[0] || null;
+function mealIntol(d, a) {
+  const fq = typeof intolQ === "function" ? intolQ("intol-food") : null;
+  if (!fq) return;
+  const ms = mealsOn(d), start = tagStart(), auto = mealAuto(), prev = auto[d], cur = a[fq.id];
+  const mine = prev !== undefined && JSON.stringify(cur) === prev; // steht noch die automatische Antwort?
+  if (!ms.length || !start || d < start) {
+    if (mine) { delete a[fq.id]; delete auto[d]; }
+    return;
+  }
+  if (cur !== undefined && !mine) return; // von Hand beantwortet
+  const tags = new Set(ms.flatMap((m) => m.tags || []));
+  const val = fq.options.filter((o) => o !== INTOL_NONE && tags.has(intolTag(o)));
+  a[fq.id] = val.length ? val : [INTOL_NONE];
+  auto[d] = JSON.stringify(a[fq.id]);
+}
+const isMealAuto = (d, q) => q && q.template === "intol-food" && mealAuto()[d] !== undefined && JSON.stringify((state.answers[d] || {})[q.id]) === mealAuto()[d];
+
 let mealsBusy = false;
 async function syncMeals(manual) {
   if (mealsBusy) return false;
@@ -132,7 +156,8 @@ async function syncMeals(manual) {
     settings.notion.mealsAt = Date.now(); settings.notion.mealsErr = ""; saveSettings();
     const changed = before !== JSON.stringify(Object.values(st.items).filter((m) => m.day >= since));
     // Tagessummen ab „since“ neu setzen (Tage ohne Eintrag: keine Werte – nichts gegessen heißt hier „nicht erfasst“)
-    if (changed || manual) {
+    // auch ohne Änderung neu durchgehen, wenn es die Frage zu Unverträglichkeiten gibt (z. B. gerade erst angelegt)
+    if (changed || manual || (typeof intolQ === "function" && intolQ("intol-food"))) {
       const created = [];
       const any = Object.keys(st.items).length > 0;
       const qs = any ? NUTRI.map(([key, , text, unit]) => {
@@ -153,6 +178,7 @@ async function syncMeals(manual) {
           if (vals.length && !partial) a[q.id] = Math.round(vals.reduce((x, y) => x + y, 0) * 10) / 10;
           else delete a[q.id];
         });
+        mealIntol(d, a);
         if (!Object.keys(a).length) delete state.answers[d];
       }
       save();

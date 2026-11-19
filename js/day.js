@@ -67,7 +67,7 @@ function renderDay() {
       const head = th && th !== lastTheme ? `<h3 class="themehead">${themeById(th).i} ${esc(themeById(th).l)}</h3>` : "";
       if (th) lastTheme = th;
       return `${head}<section class="q ${isAnswered(val) ? "done" : ""} ${q.cond ? "child" : ""}" data-qid="${q.id}">
-        <p class="q-title">${esc(q.text)}</p>
+        <p class="q-title">${esc(q.text)}${isMealAuto(current, q) ? ` <span class="muted small qauto">· aus den Mahlzeiten</span>` : ""}</p>
         ${answerBlock(q, current)}
       </section>`;
     }).join("");
@@ -132,7 +132,8 @@ function renderDay() {
 
 /* ================= Abfrage: eine Frage nach der anderen ================= */
 // Teil „morning“: nur die Morgenfragen (Tippen auf die Morgen-Erinnerung)
-const quizQuestions = (date) => (quiz && quiz.part === "morning" ? morningQuestions(date) : askQuestions(date));
+// in der Abfrage nicht fragen, was schon automatisch aus den Mahlzeiten beantwortet ist (auf der Tag-Seite bleibt es änderbar)
+const quizQuestions = (date) => (quiz && quiz.part === "morning" ? morningQuestions(date) : askQuestions(date)).filter((q) => !isMealAuto(date, q));
 function startQuiz(date, part) {
   if (date === todayIso()) capturePlace(false);
   quiz = { date, part };

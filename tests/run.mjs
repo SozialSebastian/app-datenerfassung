@@ -1541,6 +1541,42 @@ test("Ernährung unter Gesundheit: Lebensmittelgruppen mit Wochenzielen (anteili
   await ctx.close();
 });
 
+test("Unverträglichkeiten: Frage „Was davon hast du gegessen“ wird aus den Mahlzeiten beantwortet", async () => {
+  const { page, ctx, errors } = await open({ data: { version: 1, lastBackup: null, answers: {}, questions: [] }, settings: { token: "t" } });
+  await page.evaluate(() => { state.questions.push(...intolMake()); save(); });
+  const meals = await page.evaluate(() => {
+    const T = todayIso(), D = (i) => addDays(T, -i);
+    return [
+      { id: "a", name: "Curry", when: `${T}T13:00:00.000+01:00`, kcal: 700, tags: ["Zwiebeln / Knoblauch / Lauch", "Hülsenfrüchte (Linsen / Bohnen / Kichererbsen)"] },
+      { id: "b", name: "Brot", when: `${T}T08:00:00.000+01:00`, kcal: 400, tags: ["Weizen (Brot / Nudeln / Gebäck)"] },
+      { id: "c", name: "Salat", when: `${D(1)}T13:00:00.000+01:00`, kcal: 300, tags: [] },
+      { id: "o", name: "Alt", when: `${D(3)}T13:00:00.000+01:00`, kcal: 500, tags: [] }
+    ];
+  });
+  let list = meals;
+  await page.route(/notion\/meals/, (r) => r.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ meals: list }) }));
+  const r = await page.evaluate(async () => {
+    await syncMeals(true);
+    const q = intolQ("intol-food"), T = todayIso(), A = (d) => (state.answers[d] || {})[q.id];
+    return { today: A(T), yest: A(addDays(T, -1)), old: A(addDays(T, -3)), inQuiz: askQuestions(T).some((x) => x.id === q.id) && quizQuestions(T).some((x) => x.id === q.id) };
+  });
+  // heute: Optionen in der Reihenfolge der Frage; gestern ohne Markierung → „Nichts davon“; vor 3 Tagen liegt vor dem ersten markierten Tag (gestern hat keine, heute schon) → bleibt offen
+  assert.deepEqual(r.today, ["Weizen (Brot, Nudeln, Gebäck)", "Zwiebeln, Knoblauch, Lauch", "Hülsenfrüchte (Linsen, Bohnen, Kichererbsen)"]);
+  assert.equal(r.yest, undefined);
+  assert.equal(r.old, undefined);
+  assert.equal(r.inQuiz, false);
+  // Tag-Seite: Hinweis „aus den Mahlzeiten“
+  await page.evaluate(() => { current = todayIso(); tab = "day"; render(); });
+  assert.match(await page.locator(".q .qauto").innerText(), /aus den Mahlzeiten/);
+  // von Hand ergänzt → bleibt beim nächsten Abgleich stehen
+  await page.evaluate(() => { const q = intolQ("intol-food"), T = todayIso(); setAnswer(T, q.id, [...state.answers[T][q.id], "Ei"]); });
+  list = [...meals, { id: "d", name: "Apfel", when: `${meals[0].when.slice(0, 10)}T16:00:00.000+01:00`, kcal: 80, tags: ["Äpfel / Birnen / Mango"] }];
+  const r2 = await page.evaluate(async () => { await syncMeals(true); const q = intolQ("intol-food"); return state.answers[todayIso()][q.id]; });
+  assert.ok(r2.includes("Ei") && !r2.includes("Äpfel, Birnen, Mango"));
+  assert.deepEqual(errors, []);
+  await ctx.close();
+});
+
 test("Fragen per Gedrückthalten verschieben", async () => {
   const data = { version: 1, lastBackup: null, answers: {}, questions: ["A", "B", "C"].map((x) => yesNo(x.toLowerCase(), x + "?")) };
   const { page, ctx, errors } = await open({ data });
